@@ -383,11 +383,19 @@ everything after is leverage — if the schedule slips, it slips at 7 and 8.
 ## Commands
 
 ```sh
-docker compose up -d                 # http://localhost:8080/
+docker compose up -d                 # http://localhost:8081/
 docker compose exec web php bin/migrate.php
 docker compose exec web php tests/run.php
-php bin/import-roster.php --dry-run path/to/roster.xls
+
+# The import is ALWAYS two steps, with a diff in between (spec 6.3).
+php bin/import-roster.php path/to/roster.xls   # parse, diff, stage — writes nothing
+php bin/import-roster.php --apply=<batch id>   # the step that writes
+php bin/import-roster.php --dry-run f.xls      # parse, diff, keep nothing
 ```
+
+On the server there is no shell, so the roster goes in through **`/import`**,
+which is the same two steps behind `app.setup_key` until Phase 3 puts it behind
+`Capability::IMPORT_ROSTER`.
 
 Deploy: `git push`, then **Deploy HEAD Commit** in cPanel. Migrations are never
 automatic — run `php bin/migrate.php --status` first.
