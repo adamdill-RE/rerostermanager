@@ -337,7 +337,113 @@ Design consequences:
 
 ---
 
-## 9. Open items
+## 9. Reading the file: what was verified, and how
+
+The prose brief assumed a roster could just be read. It is a **legacy `.xls`** —
+BIFF8 records inside an OLE2 compound file — and there is no Composer on this
+host, so `Rerm\Roster` implements the readers directly. This section records
+what was actually measured, because "we can read .xls" is a claim that deserves
+evidence rather than confidence.
+
+### 9.1 Method
+
+Both binary readers were run over the **real 1,954-row export** and compared
+**cell by cell** against an independent implementation (`xlrd` for `.xls`,
+`openpyxl` for `.xlsx`), with that implementation's own value coercion turned
+off so the comparison was of raw content.
+
+| Reader | Rows | Cells compared | Differences |
+| --- | ---: | ---: | ---: |
+| `XlsReader` (real `.xls`) | 1,955 | 64,515 | **0** |
+| `XlsxReader` (shared-string `.xlsx`) | 1,955 | 64,515 | **0** |
+
+The `.xls` string table spans **32 CONTINUE records** across 261,671 bytes, so
+the hardest path in the format — a string cut in half by a record boundary,
+with the encoding re-declared on the far side — is exercised by the real file
+rather than only by a fixture.
+
+Performance against this host's limits (30s, 128M):
+
+| File | Rows | Time | Peak memory |
+| --- | ---: | ---: | ---: |
+| Real export, `.xls`, 1.2M | 1,955 | 0.07s | 8.0 MB |
+| Same data, `.xlsx`, 0.4M | 1,955 | 0.52s | 12.0 MB |
+| 9,770-row `.xlsx`, 1.9M (at the upload ceiling) | 9,771 | 2.61s | 21.6 MB |
+
+Roughly five times the headroom the real roster needs.
+
+### 9.2 What the cross-check caught
+
+Three defects, none of which would have thrown an error in production:
+
+1. **Every second row and every second cell was dropped** in the `.xlsx`
+   reader. Mixing `XMLReader::read()` with `readOuterXml()` + `next()` advances
+   the cursor twice. Half a roster would have imported, silently.
+2. **Every second shared string was dropped**, shifting every subsequent
+   string index. This is worse than a blank: cells show *real text belonging to
+   other people*. Nothing throws.
+3. **Binary junk was read as a single enormous CSV cell**, because CSV is what
+   format detection falls back to. The import would have rejected it for a
+   missing `Customer Number` column — true, and useless. It now refuses any
+   file containing a NUL byte, naming the likely cause.
+
+Defect 2 is the one worth remembering, because the first cross-check **missed
+it**. The `.xlsx` written by `openpyxl` contains no `xl/sharedStrings.xml` at
+all — it writes every string inline — so a 64,515-cell comparison passed while
+never executing the shared-string path. The bug was caught by a small
+hand-written fixture that *does* use a string table, and only then re-verified
+at scale against a purpose-built 16,614-string workbook.
+
+**A green cross-check proves the paths it happened to execute, and nothing
+else.** Both paths are now covered, and `tests/spreadsheet_test.php` pins each
+one.
+
+### 9.3 Sentinel text is not data
+
+Six cells hold a literal string meaning "nothing":
+
+| Column | Value | Count |
+| --- | --- | ---: |
+| `Prefix` | `N/A` | 2 |
+| `Prefix` | `None` | 1 |
+| `Prefix` | `none` | 1 |
+| `Prefix` | `Na` | 1 |
+| `Preferred Name` | `N/A` | 1 |
+
+A member whose preferred name is `N/A` must not be greeted as "N/A Smith", so
+the import normalises `N/A`, `NA`, `NONE`, `NULL` and `-` to blank **in those
+two columns only** (`docs/spec-v1.md` §6.1). It is deliberately not applied to
+the metric columns, where anything other than `Y` or `N` is a warning rather
+than something to quietly discard.
+
+This was found because `pandas` disagreed with the PHP reader on exactly these
+six cells — its default `na_values` silently converts `"N/A"` and `"None"` to
+NaN. **The PHP reader was correct and the reference implementation was lossy**,
+which is its own argument for keeping every value a string and deciding what
+"empty" means at the import layer rather than the parsing layer.
+
+### 9.4 Fixtures are generated, never committed
+
+A real roster carries ~1,950 people's home addresses, phone numbers and email
+addresses, and this repository is public. CI fails the build if any `.xls`,
+`.xlsx` or `.csv` is tracked.
+
+`tests/BiffFixture.php` therefore writes a genuine BIFF8 workbook at runtime.
+It deliberately exercises what the real export does **not** contain — the real
+file uses only `LABELSST`, `RK` and `MULBLANK`, so `NUMBER`, `MULRK`,
+`FORMULA`, `STRING`, `BOOLERR` and date-formatted cells would otherwise be
+entirely untested.
+
+Its own correctness is not taken on trust: the fixture is read back by `xlrd`,
+which initially **rejected it** — OLE2 directory entries form a red-black tree
+and the root entry's child pointer was unset. Our `CompoundFile` scans the
+directory linearly and so never noticed, which is the more forgiving choice for
+*reading* but would have made the fixture worthless as a test. A test fixture
+only one reader accepts proves nothing.
+
+---
+
+## 10. Open items
 
 | # | Question | Assumed for v1 |
 | --- | --- | --- |

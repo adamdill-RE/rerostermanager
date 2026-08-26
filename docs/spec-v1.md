@@ -530,13 +530,53 @@ rows — so it is a two-step with a diff in between.
 
 ### 6.1 Input
 
-`.csv` preferred, `.xls`/`.xlsx` accepted. `upload_max_filesize` is 2M and the
-sample `.xls` is 1.2M, so the margin on a binary workbook is thin; the Admin
-screen says so and offers "Save as CSV" as the recommended path.
+**All three formats are read natively: `.xls`, `.xlsx` and `.csv`.** The
+administrator uploads whatever Rodeo Houston sent and the app deals with it.
+
+That is not a convenience. Rodeo Houston sends a **legacy `.xls`**
+(`docs/data-findings.md`), so a "please re-save this as CSV first" step would
+sit in front of every single import — and the step people forget is the one
+that matters. There is no Composer here and therefore no PhpSpreadsheet, so
+`Rerm\Roster` implements the readers directly:
+
+| Class | Format | Built on |
+| --- | --- | --- |
+| `XlsReader` | `.xls` — BIFF8 records in an OLE2 container | `CompoundFile`, no extension needed |
+| `XlsxReader` | `.xlsx` / `.xlsm` — zipped XML | `zip` + `xmlreader` |
+| `CsvReader` | `.csv` | `fgetcsv` + `mbstring` |
+
+`Spreadsheet::open()` picks between them **by reading the first eight bytes,
+never by the extension**: `D0CF11E0A1B11AE1` is OLE2, `PK\x03\x04` is a zip,
+anything else is text. The extension is the least reliable thing about an
+uploaded roster — "Save as CSV" in Excel offers to keep the `.xls` name, and a
+workbook mailed as `.xls` is very often really `.xlsx`. Sniffing costs nothing
+and removes an entire class of "the import says my file is corrupt".
+
+Every value arrives as a **string**. That is the whole contract of
+`SpreadsheetReader`, and it exists for one column: `Customer Number` is the
+natural key, and a reader that hands back a float turns 1234567 into 1234567.0.
+It is an identifier, never arithmetic.
+
+Verification, in full, is `docs/data-findings.md` §10: both binary readers were
+checked cell by cell against independent implementations over the real
+1,954-row export — 64,515 cells, zero differences.
+
+**Size.** `upload_max_filesize` is 2M. The sample `.xls` is 1.2M and its
+`.xlsx` equivalent is 0.4M, so all three formats fit comfortably; a 1.9M
+workbook of 9,770 rows parses in 2.6s using 22MB, against limits of 30s and
+128M. Headroom is roughly five times the real roster.
 
 Headers are matched **by name, case-insensitively, ignoring surrounding
 whitespace** — never by position. A file missing `Customer Number`, `Title`, or
 `Subcommittee 1` is rejected outright with the headers it did find listed.
+
+**Sentinel text is normalised to blank.** Six cells in the sample hold the
+literal strings `N/A`, `None`, `none` or `Na` in `Prefix` and `Preferred Name`
+(`docs/data-findings.md` §10.3). A member whose preferred name is "N/A" must
+not be greeted as "N/A Smith", so on import a value matching
+`N/A`, `NA`, `NONE`, `NULL` or `-` case-insensitively becomes an empty string
+in those two columns. It is **not** applied to the metric columns, where only
+`Y` and `N` are meaningful and anything else deserves a warning.
 
 ### 6.2 Modes
 

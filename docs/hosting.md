@@ -93,16 +93,25 @@ Absent, and worth knowing before writing code against them:
   touches. Worth asking the host to enable `ea-php82-php-opcache`; if it is
   enabled later, `opcache.validate_timestamps` becomes a deploy concern.
 
-### No spreadsheet extension
+### No spreadsheet extension, and why it does not matter
 
-There is no `PhpSpreadsheet` (no Composer) and no `xlsx` reader. `zip` is
-present, so a minimal `.xlsx` reader over `xl/worksheets/sheet1.xml` and
-`xl/sharedStrings.xml` is possible, but the legacy `.xls` the sample arrived
-as is a CDFV2/OLE2 compound file and parsing that by hand is not worth it.
+There is no `PhpSpreadsheet`, because there is no Composer. The readers are
+therefore written directly against the extensions this host does have, and
+**all three roster formats are supported natively** — see `docs/spec-v1.md`
+§6.1 and the verification in `docs/data-findings.md` §10.
 
-**CSV is the supported path.** The import screen accepts `.xlsx` on a
-best-effort basis and tells the Admin to "Save as CSV" when it cannot read a
-file. See `docs/spec-v1.md` §6.1.
+- **`.xlsx`** is a zip of XML. `zip` and `xmlreader` are both present, so
+  `XlsxReader` streams it with `XMLReader` rather than building a DOM.
+- **`.xls`** is BIFF8 records inside an OLE2 compound file. That needs no
+  extension at all — `CompoundFile` walks the container with `unpack`, and
+  `XlsReader` walks the records. This is the format Rodeo Houston actually
+  sends, so it was never optional.
+- **`.csv`** needs `mbstring`, for the Windows-1252 that "Save as CSV"
+  produces on a Windows machine.
+
+Measured on this host's limits: the real 1,954-row `.xls` reads in 0.07s using
+8MB; a 1.9M `.xlsx` of 9,770 rows reads in 2.6s using 22MB. Against 30s and
+128M, that is roughly five times the headroom the real roster needs.
 
 ## Password hashing
 

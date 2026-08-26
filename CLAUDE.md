@@ -88,6 +88,11 @@ URL and cookie path is built from `app.base_path` (`/rerm/`) via
   assignment form covering an 85-person team must chunk or paginate.
 - `max_execution_time` is 30s and `upload_max_filesize` is 2M. A 1,954-row
   import must stream and batch — see Phase 2.
+- **`.xls`, `.xlsx` and `.csv` are all read natively**, by `Rerm\Roster`, with
+  no Composer and no build step. `Spreadsheet::open()` chooses by **magic
+  bytes, never by extension**. Rodeo Houston sends a legacy `.xls`, so this is
+  load-bearing, not a nicety. Every cell comes back as a **string** — a float
+  would turn Customer Number 1234567 into 1234567.0.
 
 ---
 
