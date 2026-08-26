@@ -284,6 +284,28 @@ final class Importer
         $staged    = [];
         $rowNumber = 0;
 
+        /**
+         * A row that will not be applied, and the reason, in one place.
+         *
+         * There are six reasons and they were six copies of the same five
+         * lines. Skipping is the operation with the worst failure mode in this
+         * loop — a row dropped without a warning is a member who silently is
+         * not imported — so it is worth having exactly one implementation of
+         * "counted, reported, and staged as skipped so the preview can show
+         * it" rather than six that have to agree.
+         */
+        $skip = function (string $kind, int $rowNumber, string $number, string $detail) use (
+            &$counts,
+            &$staged,
+            $warnings,
+            $batchId
+        ): void {
+            $counts['skip']++;
+            $warnings->add($kind, $rowNumber, $number === '' ? null : $number, $detail);
+            $staged[] = $this->stagedRow($batchId, $rowNumber, $number, 'skip', null, null, null);
+            $staged   = $this->flushStaged($staged);
+        };
+
         foreach ($rows as $row) {
             $rowNumber++;
 
@@ -299,51 +321,49 @@ final class Importer
             $values  = RowNormaliser::normalise($headers, $row);
             $number  = $values['member_number'];
 
+            // There is no natural key on this row, so it can be neither
+            // matched nor created — and inventing one would produce a second
+            // copy of this person on the next import.
             if ($number === '') {
-                $counts['skip']++;
-                $warnings->add(Warnings::MISSING_MEMBER_NUMBER, $rowNumber, null, $this->describeRow($values));
-                $staged[] = $this->stagedRow($batchId, $rowNumber, '', 'skip', null, null, null);
-                $staged   = $this->flushStaged($staged);
+                $skip(Warnings::MISSING_MEMBER_NUMBER, $rowNumber, '', $this->describeRow($values));
                 continue;
             }
 
+            // Longer than the column, and NOT truncated to fit: a shortened
+            // key matches or creates a different member.
             if (mb_strlen($number) > RowNormaliser::MEMBER_NUMBER_WIDTH) {
-                $counts['skip']++;
-                $warnings->add(
+                $skip(
                     Warnings::MISSING_MEMBER_NUMBER,
                     $rowNumber,
-                    mb_substr($number, 0, RowNormaliser::MEMBER_NUMBER_WIDTH),
-                    'Customer Number is ' . mb_strlen($number) . ' characters; the column holds '
+                    '',
+                    'Customer Number is ' . mb_strlen($number) . ' characters ("'
+                    . mb_substr($number, 0, 16) . '…"); the column holds '
                     . RowNormaliser::MEMBER_NUMBER_WIDTH . '. Shortening it would match a different member.'
                 );
-                $staged[] = $this->stagedRow($batchId, $rowNumber, '', 'skip', null, null, null);
-                $staged   = $this->flushStaged($staged);
                 continue;
             }
 
+            // A row this application created rather than one Rodeo Houston
+            // sent. An import never touches one.
             if (isset($systemNumbers[$number])) {
-                $counts['skip']++;
-                $warnings->add(
+                $skip(
                     Warnings::SYSTEM_MEMBER_NUMBER,
                     $rowNumber,
                     $number,
                     'This number belongs to an account this application created, not to a committee member.'
                 );
-                $staged[] = $this->stagedRow($batchId, $rowNumber, $number, 'skip', null, null, null);
-                $staged   = $this->flushStaged($staged);
                 continue;
             }
 
+            // The first row wins, so which value is imported does not depend
+            // on how far down the file a correction happens to sit.
             if (isset($seen[$number])) {
-                $counts['skip']++;
-                $warnings->add(
+                $skip(
                     Warnings::DUPLICATE_MEMBER_NUMBER,
                     $rowNumber,
                     $number,
                     "Already imported from row {$seen[$number]}. This row was skipped; the first one wins."
                 );
-                $staged[] = $this->stagedRow($batchId, $rowNumber, $number, 'skip', null, null, null);
-                $staged   = $this->flushStaged($staged);
                 continue;
             }
 
@@ -351,8 +371,7 @@ final class Importer
             // another team is reported and skipped, never quietly moved into
             // the team the Admin chose.
             if ($mode === self::MODE_TEAM && !$this->sameTeam($values['team_name'], (string) $teamName)) {
-                $counts['skip']++;
-                $warnings->add(
+                $skip(
                     Warnings::WRONG_TEAM,
                     $rowNumber,
                     $number,
@@ -362,8 +381,6 @@ final class Importer
                         (string) $teamName
                     )
                 );
-                $staged[] = $this->stagedRow($batchId, $rowNumber, $number, 'skip', null, null, null);
-                $staged   = $this->flushStaged($staged);
                 continue;
             }
 
@@ -385,16 +402,13 @@ final class Importer
 
             // Update mode touches nobody it has not already got.
             if ($current === null && $mode === self::MODE_UPDATE) {
-                $counts['skip']++;
-                $warnings->add(
+                $skip(
                     Warnings::NOT_IN_ROSTER,
                     $rowNumber,
                     $number,
                     'Not in the roster. An update import never creates a member — run a complete '
                     . 'or team import to add them.'
                 );
-                $staged[] = $this->stagedRow($batchId, $rowNumber, $number, 'skip', null, null, null);
-                $staged   = $this->flushStaged($staged);
                 continue;
             }
 
