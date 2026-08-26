@@ -128,6 +128,73 @@ the account exists. No enumeration.
 The member with no email on file (§`docs/data-findings.md` §5) gets a page
 saying no address is on file and to contact an officer, not a silent success.
 
+### 3.3a Mail safety
+
+Password recovery is the only message this application sends, and there is **no
+bulk send path in v1** — deliberately. That is the first and largest safeguard.
+
+The risk is not deliverability. The account has a **dedicated IP**
+(`docs/hosting.md`), so sender reputation is ours to build rather than inherit
+from whoever else shares a shared address. The risk is **sending by mistake
+while we are building**: an import loads ~1,950 real committee members' real
+email addresses, and a stray loop against that table reaches actual people who
+did not ask for it, cannot be recalled, and would burn the new IP's reputation
+on its first day.
+
+So delivery is not the default state that development has to opt out of. It is
+a state that production has to opt *into*, four times.
+
+| # | Interlock | Ships as | Blocks a send when |
+| ---: | --- | --- | --- |
+| 1 | `mail.enabled` | `false` | not explicitly enabled in `config.local.php` |
+| 2 | `mail.transport` | `file` | not `send` |
+| 3 | `mail.allowed_recipients` | `[]` | non-empty and the address is not on it |
+| 4 | `mail.max_per_request` | `5` | more messages than this in one request |
+
+**These are independent, not layered.** Any one of them blocks delivery on its
+own, so misconfiguring three still sends nothing. The shipped defaults block it
+three times over.
+
+Two of them are worth explaining:
+
+**`transport: 'file'` is the useful development setting**, not `log`. It writes
+a readable `.eml` into `var/mail/` — outside the document root, `0700`, and
+gitignored — so a developer testing recovery opens the file and clicks the real
+link. Nothing is faked, and nothing exists that could escape the machine.
+
+**`allowed_recipients` is the interlock that survives human error.** It is the
+one still standing when somebody enables the first two on a box that happens to
+have a real roster loaded. Populate it with your own addresses in every
+environment that is not production; leave it empty in production, where an
+allowlist would break recovery for the committee.
+
+**`max_per_request` throws rather than trims.** Recovery sends exactly one
+message, so anything past a handful is a loop that should not exist. Silently
+capping it would hide the very bug the ceiling exists to catch.
+
+#### The hard interlock
+
+`app.debug === true` **forces the transport to `file`**, whatever the
+configuration says. Debug is only ever true off production, so this is the one
+rule that cannot be defeated by editing config in the wrong place. It is
+checked in `Rerm\Mail\Mailer` before any transport is selected, and asserted
+by a test.
+
+#### What CI enforces
+
+`.github/check-mail-safety.php` loads `config/config.php` and fails the build if
+the committed defaults would ever send: `enabled` truthy, or `transport` set to
+`send`. The committed configuration is what a fresh deploy reads, and a fresh
+deploy must not be able to email anybody.
+
+#### Going live
+
+Enabling delivery is three edits in `config.local.php` **on the production box
+only** — `enabled => true`, `transport => 'send'`, and an empty
+`allowed_recipients` — plus SPF, DKIM and DMARC on the dedicated IP in cPanel.
+Send a recovery to yourself and read the headers before telling anyone the
+feature exists.
+
 ### 3.4 Sessions
 
 Same model as RESM, for the same measured reasons. The PHP session holds one
@@ -343,6 +410,7 @@ member             id, member_number UNIQUE, first_name, last_name,
                    badge_pickup_person,
                    first_imported_at, last_seen_import_id,
                    absent_since_import_id NULL, -- flagged for purge
+                   purged_at NULL,              -- SOFT delete only (5.5, 6.5)
                    is_active
 
 app_user           id, member_id UNIQUE, level,
@@ -401,6 +469,9 @@ Inherited from RESM and non-negotiable:
   preserves the records pointing at it.
 - Operational history is append-only. `contact_log` is never updated;
   `assignment` is superseded via `removed_at`.
+- **Every foreign key referencing `member` is `RESTRICT`, never `CASCADE`.**
+  Contact history must outlive the roster (§5.5), and a member row that can be
+  deleted is one migration away from taking years of it along.
 
 ### 5.4 Effective metric status
 
@@ -421,6 +492,34 @@ An import that sets `imported_value` to `Y` **resets `progress` to
 `not_started`**: the thing being tracked has happened and the note is now
 history. An import that leaves it `N` **preserves progress**, so a roster
 refresh never erases an officer's work.
+
+### 5.5 Retention: contact history outlives everything
+
+`contact_log` is keyed to a show year, but it is **never reset, rolled or
+purged by anything**. Not by closing a show year, not by opening the next one,
+not by an import, not by a member purge.
+
+That is a deliberate v1 constraint in service of a v2 feature. Producing a
+member's contact history **across multiple years** — every call, who made it,
+what was said — is a thing leadership will want, and the only way to have it in
+2029 is to not throw it away in 2026. Retention costs nothing now: 1,950
+members at even a dozen contacts a year is a rounding error against any storage
+limit, and there is no scenario where the cheaper choice is deleting it.
+
+Three rules make it true, each asserted by a test:
+
+1. **Closing a show year freezes `contact_log`; it never deletes.** §5.1's
+   "contacts reset" means the *new* year starts empty, not that the old one is
+   cleared.
+2. **Every foreign key referencing `member` is `RESTRICT`.** A member row
+   cannot be deleted while history points at it, which is what makes rule 3
+   enforceable rather than merely intended.
+3. **A purge is a soft delete** (§6.5). `purged_at` hides the member; nothing
+   removes them.
+
+The v2 screen is then a query, not a migration — which is the whole point of
+deciding this now. Any v1 change that would make a contact row unreachable from
+its member, or a member row deletable, breaks it.
 
 ---
 
@@ -498,6 +597,18 @@ Flagged members appear on an Admin "Flagged for purge" screen with the batch
 that flagged them, and are excluded from dashboards and rosters by default.
 Purging is a separate, explicitly confirmed, logged action. A member who
 reappears in a later import is un-flagged automatically.
+
+**Purging is a soft delete, and this is not negotiable.** It sets
+`member.purged_at` and drops the member out of every roster and roll-up. It
+does **not** delete the row, and nothing cascades from it: `contact_log`,
+`assignment` and `member_metric` all survive intact. See §5.5 — the contact
+history has to outlive the roster, and a member who lapses for a season and
+returns is the ordinary case, not the exception. A purge that deleted rows
+would take their history with them and could not be undone.
+
+Every foreign key pointing at `member` is therefore `RESTRICT`, never
+`CASCADE`. A test asserts it, because `ON DELETE CASCADE` is the default a
+future migration will reach for without thinking.
 
 ### 6.6 What an import owns
 
@@ -892,6 +1003,7 @@ stays findable.
 | OI-6 | Is `Badge Pickup Person` useful? | Imported, not surfaced |
 | OI-7 | Does a team import name its own team? | Chosen in UI, verified against file |
 | OI-8 | Unify identity with RESM? | No — separate credentials, member number reconciles them |
-| OI-9 | Can `mail()` deliver reliably from this host? | Assume yes; fall back to authenticated SMTP through a domain mailbox if bounce rates say otherwise |
+| ~~OI-9~~ | Can `mail()` deliver reliably from this host? | **Closed: yes — the account has a dedicated IP.** `mail()` + SPF/DKIM/DMARC; SMTP drops to a contingency. Sending *by mistake* is the real risk, handled by §3.3a |
 | ~~OI-10~~ | Does closing a show year carry assignments forward? | **Resolved: yes.** Assignments carry as new rows; metrics and contacts reset |
 | OI-11 | Maximum officers per member | 3, matching the brief's "generally 2, sometimes 3" |
+| OI-12 | Multi-year contact history reporting (v2) | Deferred to v2, but v1 **retains the data unconditionally** (§5.5) so the report is a query rather than a migration |

@@ -158,13 +158,42 @@ selector/verifier token — see `docs/spec-v1.md` §3.4.
 ## Mail
 
 `/usr/sbin/sendmail` is present and `exim` 4.99.5 is running, so PHP `mail()`
-works. Deliverability from a shared IP is the open question — password recovery
-is the only mail this app sends and it must not land in spam.
+works. Password recovery is the only message this app sends.
 
-Ship with `mail()`, a correct `From:` on the domain, and SPF/DKIM configured in
-cPanel. If bounces or spam-foldering show up, the fallback is a small
-authenticated SMTP client against a domain mailbox — no Composer, so
-PHPMailer is not an option. Open item OI-9.
+**This account has a dedicated, exclusive IP**, which changes the calculus. The
+usual shared-hosting problem is inheriting a reputation earned by whoever else
+sends from the same address; that does not apply here. Sender reputation is
+ours alone to build — and, equally, ours alone to ruin. `mail()` plus SPF, DKIM
+and DMARC on that IP is a sound plan, and the SMTP fallback drops to a
+contingency rather than an expectation.
+
+Two things follow from the IP being ours:
+
+- **Configure SPF, DKIM and DMARC in cPanel before the first real send.** On a
+  shared IP these are largely someone else's problem; on a dedicated one an
+  unauthenticated message is filed as spam and teaches every receiver that this
+  address sends unauthenticated mail.
+- **A new IP has no reputation at all**, which is not the same as a good one.
+  The first sends should be low volume and wanted — which password recovery
+  inherently is, since somebody just asked for it. There is no bulk send path
+  in v1, so there is nothing here to warm up gradually.
+
+### Sending by mistake is the larger risk
+
+Deliverability is now a solved problem; sending something we did not mean to is
+not. An import loads ~1,950 real committee members' real addresses, so a stray
+loop against that table reaches real people, cannot be recalled, and burns a
+brand-new IP's reputation on its first day.
+
+Delivery is therefore **off in the committed configuration** and has to be
+opted into, four independent ways, with a fifth interlock that configuration
+cannot defeat: `app.debug === true` forces the transport to `file` regardless.
+CI fails the build if the committed defaults could ever send. The full design
+is `docs/spec-v1.md` §3.3a.
+
+The `file` transport writes a readable `.eml` into `var/mail/` — outside the
+document root, `0700` — so recovery is fully testable locally with nothing
+capable of leaving the machine. (OI-9, closed.)
 
 ## Time
 

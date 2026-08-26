@@ -53,8 +53,12 @@ deployment:
     # 0700 is safe here precisely because nothing serves this directory.
     # var/imports holds uploaded rosters - names, addresses, phone numbers and
     # emails for ~1,950 people. It must never be web-reachable.
-    - /bin/mkdir -p $APP_DIR/var/sessions $APP_DIR/var/imports
-    - /bin/chmod 0700 $APP_DIR/var $APP_DIR/var/sessions $APP_DIR/var/imports
+    # var/mail holds .eml files written by the non-delivering mail transports.
+    # It exists on the server too, because the safest production misconfiguration
+    # is one that writes a file nobody reads rather than one that emails 1,950
+    # people.
+    - /bin/mkdir -p $APP_DIR/var/sessions $APP_DIR/var/imports $APP_DIR/var/mail
+    - /bin/chmod 0700 $APP_DIR/var $APP_DIR/var/sessions $APP_DIR/var/imports $APP_DIR/var/mail
     # Migrations are NOT run automatically. Apply them by hand over SSH or
     # cPanel Terminal, after checking what is pending:
     #   cd ~/rerm-app && php bin/migrate.php --status && php bin/migrate.php

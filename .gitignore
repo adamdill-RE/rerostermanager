@@ -1,8 +1,10 @@
 # Local, machine-specific configuration. Contains credentials — never committed.
 /config/config.local.php
 
-# Runtime state written by the app (sessions, staged imports, logs). Lives
-# outside public/ and is recreated on demand.
+# Runtime state written by the app. Lives outside public/ and is recreated on
+# demand. Includes var/sessions, var/imports (uploaded rosters — PII) and
+# var/mail, where the 'file' mail transport writes .eml files during
+# development instead of delivering them.
 /var/
 
 # Roster exports and sample data. Real rosters carry ~1,950 people's home

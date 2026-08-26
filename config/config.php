@@ -107,8 +107,46 @@ return [
     ],
 
     'mail' => [
-        // Password recovery is the only mail this app sends. Deliverability
-        // from a shared IP is open item OI-9 — see docs/hosting.md.
+        // Password recovery is the only mail this app sends. There is no bulk
+        // send path in v1, deliberately.
+        //
+        // The account has a DEDICATED IP, so reputation is ours to build
+        // rather than inherit — see docs/hosting.md. That solves
+        // deliverability; it does nothing about sending by mistake, which is
+        // the larger risk while we are building. An import loads ~1,950 real
+        // committee members' real addresses, so a stray loop reaches actual
+        // people who did not ask for it and cannot be unsent.
+        //
+        // Four independent interlocks, spec 3.3a. Any one of them blocks a
+        // send, and the shipped defaults below block it three times over.
+
+        // 1. Master switch. FALSE here, so a fresh checkout and a fresh
+        //    deploy both start unable to send. Enabling it is a deliberate
+        //    edit to config.local.php on the machine that should be sending.
+        'enabled' => false,
+
+        // 2. Transport.
+        //      'log'  — a line in the error log, nothing leaves the box
+        //      'file' — a readable .eml in var/mail/, nothing leaves the box
+        //      'send' — real delivery through mail()
+        //    'file' is the useful development setting: the recovery link is
+        //    right there to click, and no message exists that could escape.
+        'transport' => 'file',
+
+        // 3. Recipient allowlist. When non-empty, ONLY these addresses can
+        //    receive; anything else is dropped and logged with the address it
+        //    would have gone to. This is the interlock that survives someone
+        //    turning the first two on while a real roster is loaded, so keep
+        //    it populated with your own addresses in every environment that
+        //    is not production.
+        'allowed_recipients' => [],
+
+        // 4. Per-request ceiling. Password recovery sends exactly one message,
+        //    so anything above a handful means a loop that should not exist.
+        //    Exceeding it throws rather than trimming: a silent cap would hide
+        //    the bug it exists to catch.
+        'max_per_request' => 5,
+
         'from_address' => 'noreply@reshiftmanager.com',
         'from_name'    => 'Rodeo Express Roster',
     ],

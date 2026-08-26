@@ -40,6 +40,13 @@ jobs:
           python3 -m pip install --quiet pyyaml
           python3 .github/check-deployment.py
 
+      - name: Refuse to ship a configuration that can send email
+        # config/config.php is what a fresh checkout and a fresh deploy both
+        # read. An import loads ~1,950 real committee members' real addresses,
+        # so a default that can deliver is one mistake away from messaging the
+        # whole committee. See docs/spec-v1.md 3.3a.
+        run: php .github/check-mail-safety.php
+
       - name: Check tracked file modes
         run: |
           set -euo pipefail
@@ -70,7 +77,7 @@ jobs:
           # in the phases before a directory has any content it is simply not
           # in the checkout, and naming it would make find exit non-zero.
           dirs=""
-          for d in app bin config public tests; do
+          for d in app bin config public tests .github; do
             [ -d "$d" ] && dirs="$dirs $d"
           done
           if [ -z "$dirs" ]; then echo "no PHP directories yet"; exit 0; fi

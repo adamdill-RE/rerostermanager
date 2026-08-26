@@ -75,6 +75,15 @@ URL and cookie path is built from `app.base_path` (`/rerm/`) via
   and `site/` ships one file to `public_html/`. `DOCUMENT_ROOT` is
   `/home/reshiftmanager/public_html`, so `app/` must sit outside it entirely.
 - **Server dirs 0755, files 0644.** A 0700 dir yields 404, not 403.
+- **The app cannot send email until somebody deliberately lets it.**
+  `mail.enabled` ships `false` and `mail.transport` ships `file`; an allowlist
+  and a per-request ceiling stand behind them, and `app.debug === true` forces
+  `file` whatever config says. CI fails the build if the committed defaults
+  could deliver. An import loads ~1,950 real addresses — a stray loop reaches
+  real people and cannot be recalled. Full design: `docs/spec-v1.md` §3.3a.
+- **Nothing ever deletes a member or a contact.** Purge is `purged_at`; every
+  foreign key referencing `member` is `RESTRICT`, never `CASCADE`. Contact
+  history must still be queryable years from now (`docs/spec-v1.md` §5.5).
 - `max_input_vars` is **1000** and PHP truncates silently past it. A bulk
   assignment form covering an 85-person team must chunk or paginate.
 - `max_execution_time` is 30s and `upload_max_filesize` is 2M. A 1,954-row
@@ -242,8 +251,14 @@ imported = N, progress = none, never contacted -> Outstanding (red)
 ```
 
 An import that flips `imported` to `Y` **clears** the progress row — the thing
-being tracked has happened. An import that leaves it `N` **keeps** progress, so
-an officer's work is not erased by a roster refresh.
+being tracked has happened, and the clearing is written to `audit_log` with the
+batch that caused it. An import that leaves it `N` **keeps** progress, so an
+officer's work is not erased by a roster refresh.
+
+`contact_log` is untouched by any of this, ever. Progress is a status flag;
+the contact history is the record, it is retained across every show year, and
+producing a member's history going back years is a v2 feature that v1 exists
+to keep possible.
 
 ---
 
@@ -302,7 +317,7 @@ That boundary is what makes a designation **durable**: an import rewrites
 Effective level is `granted_level ?? title_level`, so a Committee Member made
 a Senior Officer stays one no matter what the next roster calls them.
 
-### The one exception, and it is deliberate
+### The one exception, and it is deliberate — confirmed
 
 **When an import flips a metric's `imported` value from `N` to `Y`, that
 metric's `progress` resets to `not_started`.** The thing being chased has
