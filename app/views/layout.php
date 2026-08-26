@@ -122,6 +122,40 @@ code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monosp
 .chip-danger { color: var(--danger); }
 
 .hint { margin-top: .4rem; }
+
+/* Minimum touch target is 56px, primary 64px — this is used one-handed, on a
+   phone, outdoors, by somebody wearing gloves in February. */
+button {
+    min-height: 64px;
+    width: 100%;
+    padding: 0 1.25rem;
+    border: 0;
+    border-radius: 8px;
+    /* Action Orange, the one orange that takes white text safely. */
+    background: var(--action-orange);
+    color: #FFFFFF;
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+}
+button:hover { filter: brightness(1.08); }
+button:focus-visible { outline: 3px solid var(--rodeo-orange); outline-offset: 2px; }
+
+label { font-weight: 600; }
+
+input[type="password"], input[type="text"] {
+    width: 100%;
+    min-height: 56px;
+    padding: 0 .75rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text);
+    font: inherit;
+}
+input:focus-visible { outline: 3px solid var(--rodeo-orange); outline-offset: 1px; }
+
+form { margin: 1rem 0 0; }
 footer { margin-top: 2.5rem; color: var(--muted); font-size: .85rem; }
 a { color: var(--action-orange); }
 @media (prefers-color-scheme: dark) { a { color: var(--rodeo-orange); } }

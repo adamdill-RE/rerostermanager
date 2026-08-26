@@ -217,7 +217,7 @@ test('the front controller ships and the views it renders exist', function (): v
 
     assertTrue(is_file($root . '/public/index.php'), 'public/index.php is missing — the mount will 403');
 
-    foreach (['layout', 'home', 'status', 'not-found'] as $view) {
+    foreach (['layout', 'home', 'status', 'setup', 'not-found'] as $view) {
         assertTrue(is_file($root . '/app/views/' . $view . '.php'), "app/views/{$view}.php is missing");
     }
 
@@ -225,4 +225,25 @@ test('the front controller ships and the views it renders exist', function (): v
     // lives outside public_html, where the web server cannot reach it.
     $shipped = glob($root . '/public/*.php') ?: [];
     assertSame([$root . '/public/index.php'], $shipped);
+});
+
+test('the master admin number is written down once', function (): void {
+    // public/index.php reads the constant; 003 seeds the literal. If they ever
+    // disagree, /setup silently reports "not yet seeded" against a database
+    // that seeded it perfectly well, and the account can never be unlocked on
+    // a host with no shell.
+    $seed = (string) file_get_contents(dirname(__DIR__) . '/db/migrations/003_seed_master_admin.sql');
+
+    assertTrue(
+        substr_count($seed, "'" . App::MASTER_ADMIN_NUMBER . "'") >= 2,
+        'the seed migration does not use App::MASTER_ADMIN_NUMBER'
+    );
+});
+
+test('setup is refused without the configured key', function (): void {
+    // The route can apply migrations and set the Admin password, so it does
+    // not exist until app.setup_key does — and the committed default is null.
+    $shipped = Config::load(dirname(__DIR__), []);
+
+    assertSame(null, $shipped->get('app.setup_key'), 'setup_key must ship null');
 });
