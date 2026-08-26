@@ -30,6 +30,15 @@ and a checksum registry that refuses to run if an applied migration changed),
 twice on **both** MySQL 8.0 and MariaDB 10.11 and runs `tests/schema_test.php`
 against each.
 
+**Phase 0's front controller, retrofitted.** `public/index.php` was never
+built, so a deployed `/rerm/` answered **403**: `.htaccess` sets
+`DirectoryIndex index.php` and `Options -Indexes`, and a mount directory with
+no `index.php` is a forbidden directory listing rather than an empty
+application. It now serves a holding page, and `/status` — guarded by
+`app.status_key` — reports PHP, the database connection, the migration state
+and whether `var/` is writable, which is how a bad deploy gets diagnosed on a
+host with no shell to hand.
+
 Phase 2 is next: the roster import (`docs/spec-v1.md` §6). The readers already
 exist — `Rerm\Roster` reads `.xls`, `.xlsx` and `.csv` natively — so what
 remains is the three modes, the staged preview, the warnings and absence

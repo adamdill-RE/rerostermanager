@@ -116,6 +116,40 @@ final class App
         return $stamp === false ? $url : $url . '?v=' . $stamp;
     }
 
+    /**
+     * The requested path, relative to the mount point.
+     *
+     *     https://host/rerm/          ->  ''
+     *     https://host/rerm/status    ->  'status'
+     *     https://host/rerm/a/b?x=1   ->  'a/b'
+     *
+     * The .htaccess rewrites every non-file request to index.php without
+     * changing REQUEST_URI, so the original path arrives intact and the mount
+     * point has to be trimmed off here. It comes from app.base_path like every
+     * other path in this application, which is what lets the same code serve
+     * from a subpath locally, on the server, and anywhere it is moved to.
+     */
+    public function requestPath(?string $requestUri = null): string
+    {
+        $uri  = $requestUri ?? (string) ($_SERVER['REQUEST_URI'] ?? '/');
+        $path = parse_url($uri, PHP_URL_PATH);
+
+        // parse_url returns false on a malformed URI and null when there is no
+        // path component. Neither is a route.
+        if (!is_string($path)) {
+            return '';
+        }
+
+        $path = rawurldecode($path);
+        $base = rtrim($this->url(), '/');
+
+        if ($base !== '' && str_starts_with($path, $base)) {
+            $path = substr($path, strlen($base));
+        }
+
+        return trim($path, '/');
+    }
+
     /** Storage and comparison are UTC everywhere; this is display only. */
     public function displayTimezone(): DateTimeZone
     {

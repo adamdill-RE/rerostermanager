@@ -170,3 +170,59 @@ test('e() escapes for both text and attribute contexts', function (): void {
     assertSame('&#039;a&quot;b&#039;', e("'a\"b'"));
     assertSame('', e(null));
 });
+
+// ---------------------------------------------------------------------------
+// Routing
+// ---------------------------------------------------------------------------
+
+test('the requested path is read relative to the mount point', function (): void {
+    $app = App::boot(dirname(__DIR__), app_test_config('/mount/'));
+
+    assertSame('', $app->requestPath('/mount/'));
+    assertSame('', $app->requestPath('/mount'));
+    assertSame('status', $app->requestPath('/mount/status'));
+    assertSame('status', $app->requestPath('/mount/status/'));
+    // A query string is not part of the route.
+    assertSame('status', $app->requestPath('/mount/status?key=secret'));
+    assertSame('roster/team/4', $app->requestPath('/mount/roster/team/4'));
+});
+
+test('the route survives a percent-encoded and a malformed URI', function (): void {
+    $app = App::boot(dirname(__DIR__), app_test_config('/mount/'));
+
+    assertSame('a b', $app->requestPath('/mount/a%20b'));
+    // parse_url returns false here; a request with no usable path is not a
+    // route, and must not become one by accident.
+    assertSame('', $app->requestPath('http://'));
+    assertSame('', $app->requestPath(''));
+});
+
+test('the mount point is trimmed only when it is actually the prefix', function (): void {
+    // Mounted elsewhere, the same code answers the same way — which is the
+    // point of reading it from configuration rather than writing it down.
+    $elsewhere = App::boot(dirname(__DIR__), app_test_config('/somewhere-else/'));
+    assertSame('status', $elsewhere->requestPath('/somewhere-else/status'));
+
+    // A request that never passed through our mount is not silently accepted
+    // as a route under it.
+    $app = App::boot(dirname(__DIR__), app_test_config('/mount/'));
+    assertSame('resm/shifts', $app->requestPath('/resm/shifts'));
+});
+
+test('the front controller ships and the views it renders exist', function (): void {
+    // The 403 this replaced: .htaccess sets DirectoryIndex index.php and
+    // Options -Indexes, so a mount directory without this file is a forbidden
+    // directory listing rather than an application.
+    $root = dirname(__DIR__);
+
+    assertTrue(is_file($root . '/public/index.php'), 'public/index.php is missing — the mount will 403');
+
+    foreach (['layout', 'home', 'status', 'not-found'] as $view) {
+        assertTrue(is_file($root . '/app/views/' . $view . '.php'), "app/views/{$view}.php is missing");
+    }
+
+    // And it is the only PHP that ships to the document root: everything else
+    // lives outside public_html, where the web server cannot reach it.
+    $shipped = glob($root . '/public/*.php') ?: [];
+    assertSame([$root . '/public/index.php'], $shipped);
+});
