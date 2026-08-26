@@ -1,0 +1,191 @@
+name: CI
+
+# There is no staging copy of this application, and it shares a document root
+# with RESM: a bad deploy is discovered on the live site, and it can take a
+# second app down with it. So everything that can be checked without a browser
+# is checked on every push.
+on:
+  push:
+    branches:
+      - claude/roster-management-app-setup-ehwv0u
+      - main
+      - master
+  pull_request:
+
+jobs:
+  static:
+    runs-on: ubuntu-latest
+    name: static checks
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          # Production is 8.2.33. Testing on a newer PHP would hide a syntax or
+          # deprecation problem until it reached the server.
+          php-version: '8.2'
+          extensions: pdo_mysql, mbstring
+          coverage: none
+          # No Composer dependencies by design (CLAUDE.md).
+          tools: none
+
+      - name: Check the deployment manifest
+        # Parses .cpanel.yml the way the host's stricter parser will, and
+        # proves the deploy cannot reach RESM at public_html/resm/ or write
+        # anything but index.html to the document root. Runs by hand too:
+        #   python3 .github/check-deployment.py
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet pyyaml
+          python3 .github/check-deployment.py
+
+      - name: Check tracked file modes
+        run: |
+          set -euo pipefail
+          # The deploy sets permissions with a single 'chmod -R u=rwX,go=rX',
+          # where capital X preserves an execute bit a file already carries.
+          # That is only correct because every file here is mode 100644.
+          if git ls-files -s | awk '$1 != "100644" { print; found = 1 } END { exit !found }'; then
+            echo "The files above are not mode 100644; the deploy assumes they all are." >&2
+            exit 1
+          fi
+          echo "every tracked file is mode 100644"
+
+      - name: No roster data in the repository
+        run: |
+          set -euo pipefail
+          # A real roster carries ~1,950 people's home addresses, phone numbers
+          # and email addresses. This repository is public.
+          if git ls-files | grep -iE '\.(xls|xlsx|csv)$'; then
+            echo "::error::spreadsheet committed — real rosters are PII and this repo is public." >&2
+            exit 1
+          fi
+          echo "no spreadsheets tracked"
+
+      - name: Check syntax
+        run: |
+          set -euo pipefail
+          # Only the directories that exist. Git does not track empty ones, so
+          # in the phases before a directory has any content it is simply not
+          # in the checkout, and naming it would make find exit non-zero.
+          dirs=""
+          for d in app bin config public tests; do
+            [ -d "$d" ] && dirs="$dirs $d"
+          done
+          if [ -z "$dirs" ]; then echo "no PHP directories yet"; exit 0; fi
+          # xargs -r is a no-op on empty input, so a directory with no PHP in
+          # it yet passes cleanly.
+          find $dirs -name '*.php' -print0 | xargs -0 -r -n1 -P4 php -l > /dev/null
+          echo "syntax ok in:$dirs"
+
+      - name: Nothing hard-codes the mount point
+        run: |
+          set -euo pipefail
+          # Every URL is built from app.base_path via $app->url() / asset().
+          # config/config.php is the one place the literal may appear, so it is
+          # not in the list below.
+          dirs=""
+          for d in app bin public tests; do
+            [ -d "$d" ] && dirs="$dirs $d"
+          done
+          if [ -n "$dirs" ] && grep -rn "'/rerm/" --include='*.php' $dirs; then
+            echo "::error::hard-coded /rerm/ outside config — build URLs with \$app->url()." >&2
+            exit 1
+          fi
+          echo "mount point is configured, not hard-coded"
+
+  test:
+    runs-on: ubuntu-latest
+    name: test (${{ matrix.db.name }})
+    # Activates as soon as Phase 1 lands db/migrations/*.sql. Until then the
+    # job runs, finds nothing to migrate, and reports honestly rather than
+    # failing a repository that has no schema yet.
+
+    # Production runs MySQL 8.0.41, measured against the real host. cPanel's
+    # Server Information reports MariaDB, but that describes the database on
+    # the WEB server, which this application never talks to.
+    #
+    # Reading that panel as fact is not a hypothetical mistake. RESM's schema
+    # used STORED generated columns, which MariaDB accepts alongside ON DELETE
+    # CASCADE and MySQL rejects outright with error 1215; a MariaDB-only
+    # pipeline passed it straight through to a server that could not create
+    # the table.
+    strategy:
+      fail-fast: false
+      matrix:
+        db:
+          - name: MySQL 8.0
+            image: mysql:8.0
+          - name: MariaDB 10.11
+            image: mariadb:10.11
+
+    services:
+      db:
+        image: ${{ matrix.db.image }}
+        # Each image reads its own prefix and ignores the other's, so one block
+        # configures both.
+        env:
+          MARIADB_DATABASE: rerm
+          MARIADB_USER: rerm
+          MARIADB_PASSWORD: rerm_dev
+          MARIADB_ROOT_PASSWORD: root_dev
+          MYSQL_DATABASE: rerm
+          MYSQL_USER: rerm
+          MYSQL_PASSWORD: rerm_dev
+          MYSQL_ROOT_PASSWORD: root_dev
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=30
+
+    env:
+      RERM_DB_HOST: 127.0.0.1
+      RERM_DB_PORT: 3306
+      RERM_DB_NAME: rerm
+      RERM_DB_USER: rerm
+      RERM_DB_PASS: rerm_dev
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: pdo_mysql, mbstring
+          coverage: none
+          tools: none
+
+      - name: Apply migrations
+        run: |
+          set -euo pipefail
+          if [ ! -f bin/migrate.php ]; then
+            echo "No migrator yet (Phase 1). Nothing to apply."
+            exit 0
+          fi
+          php bin/migrate.php
+
+      - name: Confirm migrations are idempotent
+        run: |
+          set -euo pipefail
+          if [ ! -f bin/migrate.php ]; then
+            echo "No migrator yet (Phase 1)."
+            exit 0
+          fi
+          php bin/migrate.php | tee /tmp/second-run.txt
+          grep -q 'up to date' /tmp/second-run.txt
+
+      - name: Run tests
+        run: |
+          set -euo pipefail
+          if [ ! -f tests/run.php ]; then
+            echo "No test runner yet (Phase 1)."
+            exit 0
+          fi
+          # --strict is what CI runs: without it a missing database would skip
+          # the tests that matter most and the run would still report success.
+          php tests/run.php --strict

@@ -1,0 +1,50 @@
+# Rodeo Express Roster — public document root (deployed to public_html/rerm/).
+#
+# This file governs /rerm/ ONLY. There is deliberately no .htaccess at
+# public_html/ itself: DOCUMENT_ROOT is public_html, RESM is served from
+# public_html/resm/, and a rewrite rule placed at the root would be evaluated
+# for its requests too. The landing page at / is a static index.html precisely
+# so that no root configuration is needed.
+#
+# LiteSpeed reads Apache-syntax .htaccess, but two Apache habits do not carry
+# over under LSAPI (docs/hosting.md): php_value and php_flag lines are ignored,
+# and anything wrapped in <IfModule mod_php*> never fires. PHP settings belong
+# in MultiPHP INI Editor, not here. Nothing below sets one.
+
+Options -Indexes
+DirectoryIndex index.php
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # No RewriteBase on purpose. In a per-directory .htaccess a relative
+    # substitution is resolved against the directory the file sits in, so this
+    # works unchanged whether the app is mounted at /rerm/ or anywhere else,
+    # and there is no second place to keep the mount point in sync.
+
+    # Serve existing files and directories as they are — assets, mainly.
+    RewriteCond %{REQUEST_FILENAME} -f [OR]
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^ - [L]
+
+    RewriteRule ^ index.php [L]
+</IfModule>
+
+# Dotfiles are never content.
+<FilesMatch "^\.">
+    Require all denied
+</FilesMatch>
+
+# Assets carry a ?v=<mtime> stamp from App::asset(), so a long cache is safe
+# and a changed file busts itself.
+<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresByType text/css               "access plus 1 year"
+    ExpiresByType application/javascript "access plus 1 year"
+    ExpiresByType image/svg+xml          "access plus 1 year"
+    ExpiresByType image/png              "access plus 1 year"
+    ExpiresByType font/woff2             "access plus 1 year"
+
+    # The shell itself must never be cached, or a deploy would not be visible.
+    ExpiresByType text/html              "access plus 0 seconds"
+</IfModule>

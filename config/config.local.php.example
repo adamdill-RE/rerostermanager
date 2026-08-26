@@ -1,0 +1,56 @@
+<?php
+
+declare(strict_types=1);
+
+/**
+ * Copy to config.local.php and fill in. This file is gitignored: it is where
+ * credentials live, and on the server it sits outside public_html so it is not
+ * web-readable.
+ *
+ * Only the keys you want to override need to be present; everything else falls
+ * back to config/config.php.
+ */
+return [
+    'app' => [
+        // Guards /status. Generate one with:
+        //   php -r "echo bin2hex(random_bytes(16)), PHP_EOL;"
+        // Without it, /status returns 404 for everyone.
+        'status_key' => '',
+
+        // Guards /setup, which runs migrations and sets the master
+        // administrator's password from a browser — the only way to do either
+        // without shell access. Generate it the same way.
+        //
+        // Whoever holds this can take the master admin account. Set it when
+        // you need it, then REMOVE THIS LINE once the app is running: with no
+        // key configured, /setup does not exist.
+        'setup_key' => '',
+
+        // Never true on the server.
+        'debug' => false,
+    ],
+
+    'db' => [
+        // cPanel prefixes database and user names with the account name.
+        //
+        // NOT localhost, and NOT 127.0.0.1. Ahosting runs the database on
+        // separate hardware, and the address is an IP rather than a hostname —
+        // the one cPanel shows under Remote MySQL. See docs/hosting.md.
+        //
+        // Getting this wrong reaches the MySQL instance on the web server
+        // instead, which answers:
+        //
+        //   SQLSTATE[HY000] [1524] Plugin 'unix_socket' is not loaded
+        //
+        // That error means the wrong server, not a wrong password. Changing
+        // the password cannot fix it, and MariaDB will not even let you try.
+        'host' => '152.160.193.196',
+
+        // A DIFFERENT database from RESM's reshiftmanager_resm. The two apps
+        // must be able to fail independently, and a migration here must not
+        // be able to reach RESM's tables during a shift.
+        'name' => 'reshiftmanager_rerm',
+        'user' => 'reshiftmanager_rerm',
+        'pass' => '',
+    ],
+];

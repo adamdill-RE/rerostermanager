@@ -1,0 +1,74 @@
+# Local development environment.
+#
+# The layout deliberately mirrors the server rather than being convenient:
+# public/ is mounted inside the document root at /rerm/, site/index.html is
+# mounted at the document root itself, and the application code is mounted at a
+# sibling of the document root. So the subpath, the coexistence with RESM, and
+# the rule that app/ is not web-reachable are all exercised on every local
+# request instead of being discovered after a deploy.
+#
+#   docker compose up -d
+#   docker compose exec web php bin/migrate.php
+#   open http://localhost:8081/
+
+services:
+  web:
+    build: ./docker/php
+    working_dir: /var/www/rerm-app
+    ports:
+      # 8081, not 8080 — RESM's compose file uses 8080 and both are often up
+      # at once on the same machine.
+      - "8081:80"
+    volumes:
+      # Application code — a sibling of /var/www/html, exactly as rerm-app/ is
+      # a sibling of public_html on the server.
+      - .:/var/www/rerm-app
+      # Public documents, mounted at the /rerm/ subpath.
+      - ./public:/var/www/html/rerm
+      # The landing page, as a single file at the document root. Mounted read
+      # only: nothing this app does should ever write to the document root.
+      - ./site/index.html:/var/www/html/index.html:ro
+    environment:
+      RERM_DB_HOST: db
+      RERM_DB_NAME: rerm
+      RERM_DB_USER: rerm
+      RERM_DB_PASS: rerm_dev
+
+      # Local development is plain http, so the session cookie cannot be
+      # Secure or the browser would never send it back. This is the one
+      # session setting that differs from production, and it is set here
+      # rather than defaulting to unsafe.
+      RERM_SESSION_SECURE: "0"
+
+      RERM_DEBUG: "1"
+      RERM_STATUS_KEY: local
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    # MySQL 8.0, because that is what production runs: 8.0.41 on a separate
+    # host (docs/hosting.md). Not mariadb, whatever cPanel reports — that
+    # describes the database on the WEB server, which this app never touches.
+    image: mysql:8.0
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+    environment:
+      MYSQL_DATABASE: rerm
+      MYSQL_USER: rerm
+      MYSQL_PASSWORD: rerm_dev
+      MYSQL_ROOT_PASSWORD: root_dev
+    ports:
+      # 3308: RESM's compose uses 3307 and a local MySQL owns 3306.
+      - "3308:3306"
+    volumes:
+      - db-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "--silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  db-data:

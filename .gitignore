@@ -1,0 +1,24 @@
+# Local, machine-specific configuration. Contains credentials — never committed.
+/config/config.local.php
+
+# Runtime state written by the app (sessions, staged imports, logs). Lives
+# outside public/ and is recreated on demand.
+/var/
+
+# Roster exports and sample data. Real rosters carry ~1,950 people's home
+# addresses, phone numbers and emails — they do not belong in a public
+# repository under any circumstances.
+/data/
+*.xls
+*.xlsx
+*.csv
+
+# Editor and OS noise
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Composer is deliberately unused (see CLAUDE.md); guard against a stray install
+/vendor/
+composer.lock

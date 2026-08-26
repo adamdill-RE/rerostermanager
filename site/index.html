@@ -1,0 +1,187 @@
+<!doctype html>
+<!--
+  https://www.reshiftmanager.com/
+
+  This is the ONLY file this repository deploys to the document root, and it is
+  deliberately static with inline CSS. DOCUMENT_ROOT is public_html itself, and
+  RESM is served from public_html/resm/ — so a .htaccess, a rewrite rule or a
+  shared assets directory placed here would affect how RESM is served. A single
+  .html picked up by DirectoryIndex cannot.
+
+  Palette and touch targets match both apps (CLAUDE.md → Design system).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Rodeo Express</title>
+<style>
+  :root {
+    --rodeo-orange: #EF7622;
+    --action-orange: #B85416;
+    --rodeo-brown: #7F5E46;
+    --rodeo-dust: #C9B29B;
+    --dust-light: #F2EAE2;
+    --ink: #2B2018;
+
+    --surface: #FFFFFF;
+    --surface-raised: var(--dust-light);
+    --border: var(--rodeo-dust);
+    --text: var(--ink);
+    --text-muted: var(--rodeo-brown);
+    --accent: var(--rodeo-orange);
+    --action-bg: var(--action-orange);
+    --action-text: #FFFFFF;
+  }
+
+  /* Follows the device. Neither app pins a theme from here. */
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --surface: #14100D;
+      --surface-raised: #1F1813;
+      --border: #3D3128;
+      --text: #F6EFE8;
+      --text-muted: #C9B29B;
+      --accent: #EF7622;
+      /* On a dark surface the brand orange clears contrast with dark text. */
+      --action-bg: #EF7622;
+      --action-text: #14100D;
+    }
+  }
+
+  * { box-sizing: border-box; }
+
+  html { font-size: 106.25%; -webkit-text-size-adjust: 100%; }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem calc(1rem + env(safe-area-inset-right, 0px))
+             calc(1.5rem + env(safe-area-inset-bottom, 0px))
+             calc(1rem + env(safe-area-inset-left, 0px));
+    background: var(--surface);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto,
+                 "Helvetica Neue", Arial, sans-serif;
+    line-height: 1.5;
+  }
+
+  main { width: 100%; max-width: 26rem; }
+
+  .brand { text-align: center; margin-bottom: 2rem; }
+
+  .brand h1 {
+    margin: 0;
+    font-size: 1.75rem;
+    line-height: 1.15;
+    letter-spacing: -0.01em;
+  }
+
+  /* Accent only — 2.9:1 on white, so it never carries text meaning. */
+  .brand .rule {
+    width: 3.5rem;
+    height: 4px;
+    margin: 0.85rem auto 0;
+    border-radius: 2px;
+    background: var(--accent);
+  }
+
+  .brand p {
+    margin: 0.85rem 0 0;
+    color: var(--text-muted);
+    font-size: 0.95rem;
+  }
+
+  nav { display: grid; gap: 0.75rem; }
+
+  /* 72px, comfortably past the 56px minimum — these are the only two targets
+     on the page and they are often tapped with cold hands. */
+  a.app {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    min-height: 72px;
+    padding: 0.9rem 1.15rem;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface-raised);
+    color: var(--text);
+    text-decoration: none;
+  }
+
+  a.app:hover, a.app:focus-visible { border-color: var(--accent); }
+
+  a.app:focus-visible {
+    outline: 3px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  a.app .label { display: block; font-size: 1.15rem; font-weight: 600; }
+
+  a.app .detail {
+    display: block;
+    margin-top: 0.15rem;
+    font-size: 0.9rem;
+    color: var(--text-muted);
+  }
+
+  a.app .go {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 50%;
+    background: var(--action-bg);
+    color: var(--action-text);
+    font-size: 1.1rem;
+    line-height: 1;
+  }
+
+  footer {
+    margin-top: 2rem;
+    text-align: center;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    a.app { transition: border-color 120ms ease; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <div class="brand">
+    <h1>Rodeo Express</h1>
+    <div class="rule"></div>
+    <p>Houston Livestock Show and Rodeo</p>
+  </div>
+
+  <nav>
+    <a class="app" href="/resm/">
+      <span>
+        <span class="label">Shift Management</span>
+        <span class="detail">Check in, assignments and coverage</span>
+      </span>
+      <span class="go" aria-hidden="true">&rarr;</span>
+    </a>
+
+    <a class="app" href="/rerm/">
+      <span>
+        <span class="label">Roster Management</span>
+        <span class="detail">Dues, indemnity, background checks</span>
+      </span>
+      <span class="go" aria-hidden="true">&rarr;</span>
+    </a>
+  </nav>
+
+  <footer>Committee use only.</footer>
+</main>
+</body>
+</html>

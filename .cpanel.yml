@@ -1,0 +1,60 @@
+---
+deployment:
+  tasks:
+    # This account hosts TWO applications. RESM owns public_html/resm/ and
+    # this deploy must never touch it. Three directories are ours and no
+    # others: the app root outside the document root, the /rerm/ web
+    # directory, and the single landing page file at the document root.
+    - export APP_DIR=/home/reshiftmanager/rerm-app
+    - export WEB_DIR=/home/reshiftmanager/public_html/rerm
+    - export SITE_DIR=/home/reshiftmanager/public_html
+    - /bin/mkdir -p $APP_DIR $WEB_DIR
+    # Cleared first so a file deleted in git is deleted on the server too.
+    # Scoped to directories this repository owns outright - never $SITE_DIR,
+    # which holds RESM.
+    - /bin/rm -rf $APP_DIR/app $APP_DIR/db $APP_DIR/bin
+    - /bin/cp -R app db bin $APP_DIR/
+    # config.php only. config.local.php holds the database credentials, the
+    # status key and the setup key, is not in git, and must survive every
+    # deploy.
+    - /bin/mkdir -p $APP_DIR/config
+    - /bin/cp config/config.php $APP_DIR/config/config.php
+    # Public documents for /rerm/, including .htaccess.
+    - /bin/cp -R public/. $WEB_DIR/
+    # The landing page at https://www.reshiftmanager.com/ - ONE file, copied
+    # individually rather than by directory, because $SITE_DIR also contains
+    # RESM and a recursive copy here is how you take down someone else's app.
+    #
+    # It is deliberately a static .html with inline CSS and no .htaccess:
+    # DOCUMENT_ROOT is public_html itself, so a rewrite rule placed here would
+    # be evaluated for /resm/ requests too.
+    - /bin/cp site/index.html $SITE_DIR/index.html
+    - /bin/chmod 0644 $SITE_DIR/index.html
+    # Directories 0755, files 0644. Capital X sets the execute bit on
+    # directories only, so one pass does both. It also repairs a directory a
+    # previous deploy left untraversable, which matters because a directory at
+    # 0700 answers 404 rather than 403 and looks like a missing file.
+    #
+    # Not find -exec: the braces are a YAML flow indicator, and this parser is
+    # stricter than most. X preserves an execute bit a file already had, which
+    # is safe here because git records every file in this repository as mode
+    # 100644, and CI fails the build if that ever stops being true.
+    - /bin/chmod -R u=rwX,go=rX $APP_DIR/app $APP_DIR/db $APP_DIR/bin $WEB_DIR
+    # config/ is handled separately, and deliberately not recursively. It holds
+    # config.local.php, which this deploy did not create and must not loosen:
+    # it carries the database password. A recursive pass would reset it to
+    # 0644 on every deploy, quietly undoing the mode the administrator set.
+    - /bin/chmod 0755 $APP_DIR/config
+    - /bin/chmod 0644 $APP_DIR/config/config.php
+    # And tighten it if it is there. Guarded, because on a first deploy the
+    # file does not exist yet and a failing task fails the whole deployment.
+    - if test -f $APP_DIR/config/config.local.php; then /bin/chmod 0600 $APP_DIR/config/config.local.php; fi
+    # Sessions and staged import files, private and outside the document root.
+    # 0700 is safe here precisely because nothing serves this directory.
+    # var/imports holds uploaded rosters - names, addresses, phone numbers and
+    # emails for ~1,950 people. It must never be web-reachable.
+    - /bin/mkdir -p $APP_DIR/var/sessions $APP_DIR/var/imports
+    - /bin/chmod 0700 $APP_DIR/var $APP_DIR/var/sessions $APP_DIR/var/imports
+    # Migrations are NOT run automatically. Apply them by hand over SSH or
+    # cPanel Terminal, after checking what is pending:
+    #   cd ~/rerm-app && php bin/migrate.php --status && php bin/migrate.php
