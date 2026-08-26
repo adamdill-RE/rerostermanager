@@ -399,6 +399,9 @@ Three rules keep it honest, and each is asserted by a test:
 
 ```
 show_year          id, label, starts_on, ends_on, is_active, is_open
+                   is_active_key VIRTUAL -- 1 when active, NULL otherwise, so a
+                                         -- unique key makes "exactly one" a
+                                         -- schema rule rather than a habit
 
 division           id, name, is_placeholder, is_active
                    -- is_placeholder marks the seeded (No Division) row (5.1a):
@@ -418,10 +421,12 @@ member             id, member_number UNIQUE, first_name, last_name,
                    first_imported_at, last_seen_import_id,
                    absent_since_import_id NULL, -- flagged for purge
                    purged_at NULL,              -- SOFT delete only (5.5, 6.5)
+                   is_system,                   -- ours, not HLSR's (5.2a)
                    is_active
 
 app_user           id, member_id UNIQUE, level,
                    granted_level NULL, granted_by, granted_at,   -- durable
+                   effective_level VIRTUAL,     -- granted_level ?? level (4.4)
                    scope_division_id NULL, scope_team_id NULL,   -- override
                    password_hash, must_change_password, password_changed_at,
                    is_active, created_at
@@ -460,6 +465,41 @@ import_warning     id, import_batch_id, row_number, member_number NULL,
 audit_log          id, actor_user_id, action, entity, entity_id,
                    before_json, after_json, occurred_at, ip
 ```
+
+### 5.2a What the schema adds, and why
+
+Four things in `db/migrations/001_schema.sql` are not in the list above. Each
+exists because building the tables surfaced a case the column list did not
+cover, and each is asserted by `tests/schema_test.php`.
+
+**`member.is_system`** — the seeded master admin (§3.1) is a member row, because
+every account belongs to one, but they are not on the committee. Without the
+flag the first Complete import would flag them absent for not appearing in the
+file, put them on the Flagged for Purge screen (§6.5), and invite an Admin to
+purge the only account that can sign in. An import never creates, updates,
+absents or purges a system row; no roster or roll-up counts one; and the export
+does not write one back to Rodeo Houston as though it were theirs.
+
+**`app_user.effective_level`** — a `VIRTUAL` generated column holding
+`COALESCE(granted_level, level)`, so §4.4's rule is written down once, in the
+schema, and no query re-derives it. `level` is the title-derived level as of the
+last import, which is what makes the pair self-contained: effective level is
+computable from the `app_user` row alone, with no join to `member`.
+
+**Two enforced singletons.** `show_year.is_active_key` and
+`assignment.is_current` are `VIRTUAL` columns that are `1` while the row counts
+and `NULL` once it does not, and `NULL` does not collide in a unique index. So
+"exactly one active show year" and "one live assignment per member, officer and
+show year" are refused by the database rather than remembered by the
+application, while any number of superseded assignment rows sit behind the live
+one. `VIRTUAL` and never `STORED`, per §5.3.
+
+**Six dead export columns** (`docs/data-findings.md` §1) are imported to columns
+that exist and are surfaced nowhere. The four that have *never* carried a value
+are stored as raw text with a `_raw` suffix: a typed `DATE` column would have to
+guess a format nobody has observed, and would fail an entire import the first
+time it guessed wrong. Typing them is a later migration, once a real export
+populates one.
 
 ### 5.3 Conventions
 
