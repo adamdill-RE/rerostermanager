@@ -59,7 +59,7 @@ jobs:
           fi
           echo "every tracked file is mode 100644"
 
-      - name: No roster data in the repository
+      - name: No roster spreadsheet in the repository
         run: |
           set -euo pipefail
           # A real roster carries ~1,950 people's home addresses, phone numbers
@@ -69,6 +69,13 @@ jobs:
             exit 1
           fi
           echo "no spreadsheets tracked"
+
+      - name: No member PII in the repository
+        # The spreadsheet check above stops the export being committed. This
+        # stops rows being COPIED OUT of it into documentation or fixtures,
+        # which is how real names, member numbers, an email address and a
+        # member's home address reached this public repository once already.
+        run: python3 .github/check-no-pii.py
 
       - name: Check syntax
         run: |

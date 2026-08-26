@@ -193,9 +193,10 @@ leadership sits in a team named after the bare area:
 | `Chuckwagon` (2) | Vice Chairman + Captain |
 | `Administration` (4) | Chairman + 3 Division Chairmen |
 
-**The eight Division Vice Chairmen run areas, not divisions.** the Reed Road Division Vice Chairman
-runs Reed Road — five parking teams, five ticket teams, four early-bird teams,
-roughly 210 people. Division scope shows him all 690 in Satellites, including
+**The eight Division Vice Chairmen run areas, not divisions.** The Division
+Vice Chairman filed under `Reed Road` runs that area — five parking teams, five
+ticket teams, four early-bird teams, roughly 210 people. Division scope shows
+them all 690 in Satellites, including
 610 and Ost-Smith Lands.
 
 **Decision: divisions, as specified.** The over-broad visibility is accepted.
@@ -223,20 +224,26 @@ Every number in this export matches `(NNN) NNN-NNNN` exactly — zero
 exceptions — so normalisation is cheap. Keep both forms: the imported string,
 which is what the member recognises, and E.164 behind the link.
 
-**One member has no email at all** (E. Example, `7000005`, Bus Ops Team A).
-Import must not reject the row, the Email action must be absent rather than
-broken, and password recovery must fail with an explanation rather than a
-silent no-op.
+**One member has no email at all** — a Committee Member on one of the large Bus
+Ops teams. Import must not reject the row, the Email action must be absent
+rather than broken, and password recovery must fail with an explanation rather
+than a silent no-op.
 
-**Two emails are shared by four people:**
+**Two email addresses are shared by four people.** Both pairs share a surname,
+so a household inbox rather than a data error — and in both pairs the two
+members hold **different titles**:
 
-| Address | Members |
+| Shared address | Members, by title |
 | --- | --- |
-| `member-a@example.com` | 7000001 A. Example (Ambassador) · 7000002 B. Example (Committee Member) |
-| `member-b@example.com` | 7000003 C. Example · 7000004 D. Example (Lifetime Committeemen) |
+| a consumer webmail address | Ambassador · Committee Member |
+| an ISP address | Committee Member · Lifetime Committeemen |
 
-This is the case the spec's recovery-email wording exists for, and it is real
-but small. The email must name the member number it applies to, in the subject
+The titles are the load-bearing part: the two people behind one inbox do not
+have the same access, so a recovery email that does not name its member number
+can hand the wrong account to whoever opens the mail first. This is the case
+the spec's recovery-email wording exists for, and it is real but small.
+
+*(Identities deliberately omitted — this repository is public. See §9.5.)* The email must name the member number it applies to, in the subject
 and the first line of the body.
 
 ---
@@ -441,13 +448,84 @@ directory linearly and so never noticed, which is the more forgiving choice for
 *reading* but would have made the fixture worthless as a test. A test fixture
 only one reader accepts proves nothing.
 
+### 9.5 Why none of this document names anybody
+
+**The application's database is not the risk. This repository is.**
+
+They are different places, and they are not equally protected:
+
+| | Where it lives | Who can read it |
+| --- | --- | --- |
+| The roster | MySQL at a private host, behind the app's login | signed-in officers, scoped to what they may see |
+| This repository | `github.com/adamdill-RE/rerostermanager` | **anyone, with no login** — it is public, and must stay public to deploy |
+
+Storing 1,950 members' names, addresses, phones and emails in the database is
+the entire purpose of the application. Putting a single one of them in git is a
+different act with different reach, and **git keeps what it is given** — a
+later `git rm` clears the working tree while the blob stays in history,
+fetchable by anyone who can clone. Undoing it means rewriting history and
+force-pushing, by which point it may already be cloned, forked or cached.
+
+**This repository is public and stays public.** Making it private was
+considered and abandoned: cPanel's Deploy HEAD Commit reads the repository over
+HTTPS with no SSH key configured on this account, so a private repository
+cannot be deployed. Deployment wins, and the repository is therefore treated as
+what it is — world-readable.
+
+**No member detail has ever existed in this repository's history.** It was
+created fresh, from a checkout already scrubbed, after an earlier repository of
+the same name was deleted outright. That distinction matters and is the reason
+deletion was chosen over a history rewrite: a force-push leaves the old objects
+on GitHub's servers, unreachable from any branch but still fetchable by direct
+SHA until GitHub garbage-collects — and the SHAs were published in that
+repository's own public Actions history. Deleting the repository removes the
+objects rather than orphaning them.
+
+The guards below exist because the mistake was made during development, in that
+predecessor. Two paths get roster data into git, and both are ordinary rather
+than careless:
+
+1. **The export is dropped into the working directory** to test the importer,
+   and `git add -A` sweeps it up with everything else.
+2. **Rows are copied out of it** into documentation or a test fixture, because
+   a real example is more convincing than an invented one.
+
+**The second is the one that actually happened.** The spreadsheet guard caught
+the file; then real names, member numbers, an email address and a member's home
+street address were pasted by hand into `docs/` and `tests/`. The guard was
+aimed at the file, and the leak came through the prose — which is why there is
+now a guard aimed at the prose.
+
+The reason all of this outlives any particular repository setting: **access to
+the application is scoped per officer; access to a git checkout is not scoped
+at all.** An Officer sees their team. Anyone who can read this repository would
+hold the whole committee — which is why the roster lives in the database and
+nothing that came out of it lives here.
+
+So there are now three layers, in order of how early they stop it:
+
+| Layer | Stops |
+| --- | --- |
+| `.gitignore` | `git add` on any `.xls`, `.xlsx`, `.csv` or `data/` |
+| `.github/check-deployment.py` + the CI spreadsheet step | a spreadsheet forced past `.gitignore` with `git add -f` |
+| `.github/check-no-pii.py` | an email address, street address or phone number typed into **any** tracked file |
+
+Every finding in this document is therefore **aggregate** — counts,
+distributions, ratios — or refers to people by **title and team**, which is
+what the design questions actually turn on. "The Division Vice Chairman filed
+under Reed Road" carries the same argument as a name and discloses nothing.
+
+Where an example value is unavoidable, it comes from a reserved range:
+`example.com` (RFC 2606) and `(555) 555-01xx` (the NANP block reserved for
+fiction). Both are chosen so the rule needs no exceptions, and CI enforces it.
+
 ---
 
 ## 10. Open items
 
 | # | Question | Assumed for v1 |
 | --- | --- | --- |
-| **OI-1** | Should Senior Officers scope to their area rather than their whole division? | Division, as specified. `area` exists for grouping only. |
+| ~~OI-1~~ | Should Senior Officers scope to their area rather than their whole division? | **Closed: the whole division, deliberately.** Senior Officers help across the division, so seeing all of it is the job, not an over-grant. `area` stays display-only. |
 | ~~OI-2~~ | Are `Coordinator` and `Ambassador` Senior Officers or Officers? The spec lists both in both. | **Closed: Senior Officer.** 12 people affected. |
 | **OI-3** | Should harassment training become a fifth scored metric? | No. Imported and shown, excluded from scoring. |
 | **OI-4** | What is the retention rule for a member flagged absent by a complete roster? | Flagged, never auto-deleted. Admin confirms a purge as a separate logged action. |

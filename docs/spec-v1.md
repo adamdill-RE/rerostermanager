@@ -283,6 +283,13 @@ Senior Officer            ->  members whose division = the officer's division
 Officer                   ->  members whose team = the officer's team
 ```
 
+**A Senior Officer sees their whole division, and that is deliberate.** The
+export files all eight Division Vice Chairmen under an area rather than a
+division (`docs/data-findings.md` §4d), so an area-scoped reading was
+considered and rejected: Senior Officers help across the division, and a
+Coordinator covering two areas that week would be locked out of one of them.
+The breadth is the job, not an over-grant.
+
 Scope comes from the **member record of the signed-in user**, not from the
 team table — teams span divisions (`docs/data-findings.md` §4b), so division is
 a property of the person.
@@ -866,7 +873,7 @@ three selects each would exceed it. So:
   ends with 1–3 officers.
 
 The officer picker lists only assignable officers on that member's team, with
-each one's current load ("Rivera — 14 assigned"), so the work spreads rather
+each one's current load ("A. Rivera — 14 assigned"), so the work spreads rather
 than landing on whoever is first alphabetically.
 
 Removing an assignment sets `removed_at`; the row is never deleted.
@@ -934,8 +941,8 @@ desktop table, where the column header supplies the context.
 ### 8.4 Contact actions
 
 ```html
-<a href="tel:+17135551234">Call</a>
-<a href="sms:+17135551234">Text</a>       <!-- CELL PHONE only -->
+<a href="tel:+15555550100">Call</a>
+<a href="sms:+15555550100">Text</a>       <!-- CELL PHONE only -->
 <a href="mailto:member@example.com">Email</a>        <!-- when an address exists -->
 ```
 
@@ -1035,7 +1042,7 @@ stays findable.
 
 | # | Question | Assumed for v1 |
 | --- | --- | --- |
-| OI-1 | Senior Officer scope: area rather than division? | Division, as specified |
+| ~~OI-1~~ | Senior Officer scope: area rather than division? | **Closed: the whole division.** Senior Officers work across it; the breadth is the point |
 | ~~OI-2~~ | Are `Coordinator` and `Ambassador` Senior or Officer? | **Resolved: Senior Officer.** 12 people |
 | OI-3 | Is harassment training a fifth scored metric? | No — shown, not scored |
 | OI-4 | Retention rule for members flagged absent | Flag only; Admin confirms purge |

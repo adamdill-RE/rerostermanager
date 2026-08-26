@@ -13,6 +13,12 @@ declare(strict_types=1);
  * repository is public, and CI fails the build if any spreadsheet is tracked.
  * BiffFixture writes a genuine BIFF8 workbook, and its own correctness is
  * pinned by the container tests below.
+ *
+ * **Every value below is invented.** Not one name, member number, address or
+ * email in this file comes from a real roster, and none ever should — a
+ * fixture is read by anyone who can read the repository, and this one is
+ * public. Copying a row out of the real export because it is convenient is
+ * exactly how the addresses of 1,950 volunteers end up on the internet.
  */
 
 require_once __DIR__ . '/BiffFixture.php';
@@ -77,7 +83,7 @@ function sample_xls(): string
         ->number(1, 3, 1234.5)->date(1, 4, '2026-03-01')
         ->formulaString(1, 5, 'from formula')->boolean(1, 6, true)
 
-        ->label(2, 0, 'Captain')->rkInt(2, 1, 12345)->label(2, 2, 'Example, Pat')
+        ->label(2, 0, 'Captain')->rkInt(2, 1, 100200)->label(2, 2, 'Example, Pat')
         ->rkScaled(2, 3, -0.25)->date(2, 4, '2026-12-31')
         ->formulaNumber(2, 5, 42.0)->error(2, 6, 0x2A)
 
@@ -203,7 +209,7 @@ test('XlsReader reads every BIFF8 cell type', function (): void {
 test('XlsReader keeps a member number as a string, never a float', function (): void {
     $rows = read_all((new XlsReader(sample_xls()))->rows());
 
-    foreach ([1 => '1234567', 2 => '12345', 3 => '7654321'] as $row => $expected) {
+    foreach ([1 => '1234567', 2 => '100200', 3 => '7654321'] as $row => $expected) {
         assertSame($expected, $rows[$row][1], "row {$row} member number");
         assertTrue(is_string($rows[$row][1]), 'must be a string');
         assertTrue(!str_contains($rows[$row][1], '.'), 'must not gain a decimal point');

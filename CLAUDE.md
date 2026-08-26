@@ -84,6 +84,16 @@ URL and cookie path is built from `app.base_path` (`/rerm/`) via
 - **Nothing ever deletes a member or a contact.** Purge is `purged_at`; every
   foreign key referencing `member` is `RESTRICT`, never `CASCADE`. Contact
   history must still be queryable years from now (`docs/spec-v1.md` §5.5).
+- **No member data in git — not the export, and not a row copied out of it.**
+  **This repository is public and must stay public**, because cPanel's Deploy
+  HEAD Commit reads it over HTTPS and this account has no SSH key. The database
+  is where the roster belongs; a git checkout is not scoped per officer, so
+  anyone who can read the repository holds the whole committee.
+  Three layers enforce it: `.gitignore` refuses the spreadsheet, CI fails on a
+  tracked one, and `.github/check-no-pii.py` fails on an email address, street
+  address or phone number typed into any file. Examples come from reserved
+  ranges — `example.com` and `(555) 555-01xx`. Full reasoning:
+  `docs/data-findings.md` §9.5.
 - `max_input_vars` is **1000** and PHP truncates silently past it. A bulk
   assignment form covering an 85-person team must chunk or paginate.
 - `max_execution_time` is 30s and `upload_max_filesize` is 2M. A 1,954-row
