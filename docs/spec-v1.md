@@ -220,9 +220,10 @@ Scope comes from the **member record of the signed-in user**, not from the
 team table — teams span divisions (`docs/data-findings.md` §4b), so division is
 a property of the person.
 
-A Senior Officer whose own division is blank sees **nothing** and is shown an
-explanatory screen, not an empty roster. An Admin fixes it by setting an
-explicit scope override.
+No division is ever blank: a member whose `Subcommittee 3` arrives empty is
+placed in the real `(No Division)` row (§5.1a). A Senior Officer **can** be
+scoped to it, which is the point — those 72 members have an owner rather than
+belonging to nobody. An Admin can still set an explicit scope override.
 
 **Scope is enforced in the query, not in the view.** Every roster read goes
 through one method, `Rerm\Roster\ScopedQuery::forUser()`, which appends the
@@ -286,15 +287,48 @@ show year is `open` (accepting changes) or `closed` (read-only, exportable).
 Exactly one is `active` at a time.
 
 Closing a show year freezes its metrics, contacts and assignments. Opening the
-next carries **assignments** forward as a starting point (officers rarely
-change wholesale) but **not** metrics or contacts, which reset.
+next **carries assignments forward** as a starting point — officers rarely
+change wholesale, and re-assigning 1,950 people from scratch each year is work
+nobody would do. Metrics and contacts do **not** carry: they reset, because
+last year's dues and last year's phone calls say nothing about this year.
+
+Carried assignments are copied, not shared — new rows against the new show
+year, so editing this year's cannot rewrite last year's record. Any carried
+assignment whose officer is no longer eligible (§6.6) is carried anyway and
+flagged for reassignment rather than dropped.
+
+### 5.1a Divisions, and the one that is ours
+
+Four divisions come from the export. A fifth, **`(No Division)`**, is seeded by
+migration and flagged `is_placeholder = 1`.
+
+72 members arrive with a blank `Subcommittee 3` — 57 honorary members parked in
+a `Lifetime` pseudo-team and **15 ordinary Committee Members on real teams**.
+They land in the placeholder row, which buys three things a `NULL` cannot:
+
+- `member.division_id` is `NOT NULL`, so no query anywhere carries a null
+  branch and no roll-up can quietly omit a bucket.
+- A Senior Officer can be **scoped to it**, giving those 15 members an owner.
+- It sorts, groups and drills down on the Committee Dashboard like any other.
+
+Three rules keep it honest, and each is asserted by a test:
+
+1. **Every import re-evaluates membership.** A populated `Subcommittee 3` moves
+   the member out to the real division; a blank one moves them in. Never sticky.
+2. **The export writes it back as blank**, never as the literal "No Division".
+   It is our bookkeeping, not Rodeo Houston's data, and must not travel back to
+   them as though it were theirs.
+3. **The `no_division` import warning still fires.** The bucket makes those
+   members reachable; it does not make them correctly placed.
 
 ### 5.2 Tables
 
 ```
 show_year          id, label, starts_on, ends_on, is_active, is_open
 
-division           id, name, is_active
+division           id, name, is_placeholder, is_active
+                   -- is_placeholder marks the seeded (No Division) row (5.1a):
+                   -- scopeable and groupable, but exported as blank
 team               id, name, division_id (modal, display only),
                    area (nullable, display grouping ONLY), is_active
 
@@ -304,7 +338,7 @@ member             id, member_number UNIQUE, first_name, last_name,
                    phone, phone_e164, phone_type,
                    email,
                    title, title_level,          -- as imported
-                   division_id NULL, team_id,
+                   division_id NOT NULL, team_id,   -- (No Division) never NULL
                    legal_name_verified, is_rookie, in_other_committees,
                    badge_pickup_person,
                    first_imported_at, last_seen_import_id,
@@ -465,6 +499,92 @@ that flagged them, and are excluded from dashboards and rosters by default.
 Purging is a separate, explicitly confirmed, logged action. A member who
 reappears in a later import is un-flagged automatically.
 
+### 6.6 What an import owns
+
+The most important rule in this application, stated once so no screen has to
+re-decide it: **an import refreshes what Rodeo Houston knows, and never
+overwrites what we know.**
+
+#### HLSR owns — every import overwrites, unconditionally
+
+| Field | Source column |
+| --- | --- |
+| `member.title`, `member.title_level` | `Title` |
+| `member.team_id` | `Subcommittee 1` |
+| `member.division_id` | `Subcommittee 3` (blank → `(No Division)`, §5.1a) |
+| `first_name`, `last_name`, `preferred_name`, `full_name`, `prefix` | the name columns |
+| `address`, `city`, `state`, `zip` | the address columns |
+| `phone`, `phone_e164`, `phone_type` | `Primary Phone`, `Primary Phone Type` |
+| `email` | `Primary Email` |
+| `member_metric.imported_value` ×4 | `Show Dues`, `Committee Dues`, `Indemnity`, `Background Check Completed` |
+| harassment training `imported_value` | `Harassment prevention training` (tri-state) |
+| `is_rookie`, `in_other_committees`, `legal_name_verified`, `badge_pickup_person` | as named |
+
+Phone and email are updated in **every** mode, including Update mode — the
+brief calls for it and they are the two fields that go stale fastest.
+
+#### We own — no import ever writes these
+
+| Table / column | What it holds |
+| --- | --- |
+| `app_user.granted_level`, `granted_by`, `granted_at` | Allowed User designations |
+| `app_user.scope_division_id`, `scope_team_id` | explicit scope overrides |
+| `app_user.password_hash`, `must_change_password`, `password_changed_at` | credentials |
+| `contact_log` — **every row, every column** | who called whom, when, type, notes |
+| `assignment` | officer ↔ member assignments |
+| `member_metric.progress`, `progress_by`, `progress_at`, `progress_note` | our tracked status — *one exception below* |
+| `team.area` | Admin-editable display grouping |
+| `audit_log` | everything |
+
+#### Why designations are durable
+
+An import rewrites `member.title` and the title-derived level. It never touches
+`app_user.granted_level`. Effective level is:
+
+```
+effective_level = granted_level ?? title_level
+```
+
+So a Committee Member designated a Senior Officer stays one no matter what the
+next roster calls them — which is the entire reason designation exists.
+
+#### The one exception, and it is deliberate
+
+**When an import flips a metric's `imported_value` from `N` to `Y`, that
+metric's `progress` resets to `not_started`.**
+
+The thing being chased has happened, so "in progress" is now false. Without the
+reset, a later correction back to `N` would resurface a months-old status as
+though it were current — an officer would see "In Progress" for work nobody is
+doing.
+
+Two guardrails make it safe:
+
+- **The reset is recorded, never silent.** The prior `progress`, its author and
+  its note go to `audit_log` with the `import_batch_id` that cleared them.
+- **`contact_log` is never touched by it.** The record of who called whom, when,
+  and what was said survives every import unconditionally. That is what keeps
+  "why did Johnson's dues flip back to N" answerable, and it is why the reset
+  costs a status flag rather than an officer's work.
+
+An import that leaves `imported_value` at `N` **preserves progress untouched**.
+A roster refresh must never erase chasing that is still in flight.
+
+#### Two consequences worth designing for
+
+**A demotion by import revokes login.** `Captain` → `Committee Member` drops the
+title level to Member, so `app_user.is_active` becomes 0 — unless a
+`granted_level` holds it open. The row is **deactivated, never deleted**: the
+audit trail outlives the account, and a re-promotion on a later import
+reactivates the same row rather than creating a second one.
+
+**A demotion orphans assignments.** Members assigned to an officer who is no
+longer an officer, or who moved to another team, surface on the Assign screen
+(§7.4) as **"officer no longer eligible"** with the members they held. The
+assignment rows are **not** deleted — an assignment that silently empties is
+how twenty people stop being chased without anyone noticing. Re-assignment is
+an explicit act.
+
 ---
 
 ## 7. Screens
@@ -564,20 +684,25 @@ Drilling into a group applies it as the filter on §7.1 and navigates there —
 the dashboard's job is to end at the list of people to call.
 
 A Senior Officer sees their division's groups. An Executive sees all four
-divisions plus the `(none)` bucket, which holds 72 members and must never be
-hidden just because it is untidy.
+divisions plus `(No Division)`, which holds 72 members and must never be hidden
+just because it is untidy — it is a real division row (§5.1a) and behaves like
+any other here.
 
 ### 7.4 Assign Officers to Committeemen
 
 Per the brief, the screen that has to work best. Same-team assignment only.
 
-**Three buckets, in this order:**
+**Four buckets, in this order:**
 
 1. **Unassigned** — members in scope with no current officer. Default view.
-2. **No officer on this team** — members whose team has no assignable officer
+2. **Officer no longer eligible** — members whose assigned officer was demoted
+   or moved teams by an import (§6.6). The assignment still exists and is
+   shown; it just needs re-pointing. Above bucket 3 because it is invisible
+   work that an import created and nobody requested.
+3. **No officer on this team** — members whose team has no assignable officer
    at all. 7 teams, and members of teams whose only officers are already at
    capacity. Not an error the officer can fix; a number leadership must see.
-3. **Assigned** — collapsed by default, expandable to review or change.
+4. **Assigned** — collapsed by default, expandable to review or change.
 
 **The interaction is select-then-assign, not one control per member.**
 `max_input_vars` is 1000 and truncates silently, and an 85-person team with
@@ -754,17 +879,19 @@ after is leverage. If the schedule slips, it slips at 7 and 8.
 ## 12. Open items
 
 Carried from `docs/data-findings.md` §9, plus those this document raises.
+Struck-through rows are decided and are recorded here only so the reasoning
+stays findable.
 
 | # | Question | Assumed for v1 |
 | --- | --- | --- |
 | OI-1 | Senior Officer scope: area rather than division? | Division, as specified |
-| OI-2 | Are `Coordinator` and `Ambassador` Senior or Officer? | Senior Officer |
+| ~~OI-2~~ | Are `Coordinator` and `Ambassador` Senior or Officer? | **Resolved: Senior Officer.** 12 people |
 | OI-3 | Is harassment training a fifth scored metric? | No — shown, not scored |
 | OI-4 | Retention rule for members flagged absent | Flag only; Admin confirms purge |
-| OI-5 | Do the 72 division-less members belong somewhere? | Blank is a real bucket |
+| ~~OI-5~~ | Do the 72 division-less members belong somewhere? | **Resolved: a real `(No Division)` row** (§5.1a), scopeable, exported as blank |
 | OI-6 | Is `Badge Pickup Person` useful? | Imported, not surfaced |
 | OI-7 | Does a team import name its own team? | Chosen in UI, verified against file |
 | OI-8 | Unify identity with RESM? | No — separate credentials, member number reconciles them |
 | OI-9 | Can `mail()` deliver reliably from this host? | Assume yes; fall back to authenticated SMTP through a domain mailbox if bounce rates say otherwise |
-| OI-10 | Does closing a show year carry assignments forward? | Yes — assignments carry, metrics and contacts reset |
+| ~~OI-10~~ | Does closing a show year carry assignments forward? | **Resolved: yes.** Assignments carry as new rows; metrics and contacts reset |
 | OI-11 | Maximum officers per member | 3, matching the brief's "generally 2, sometimes 3" |

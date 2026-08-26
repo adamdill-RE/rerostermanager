@@ -102,9 +102,8 @@ comparison:
 4. Spec never mentions **`Lifetime Director`** at all. One person holds it.
 
 And one ambiguity the spec creates itself: **`Coordinator` and `Ambassador`
-appear in both the Senior Officer list and the Officer list.** Resolved as
-**Senior Officer** — the higher of the two, affecting 12 people. Flagged as
-open item OI-2.
+appear in both the Senior Officer list and the Officer list.** **Confirmed as
+Senior Officer** — the higher of the two, affecting 12 people (OI-2, closed).
 
 **An unrecognised title imports as Member with no login and raises a named
 warning.** It never defaults to officer. The spec's rule — "any title other
@@ -129,9 +128,19 @@ handed accounts to 8 Lifetime Vice Presidents, 4 Past Committee Chairmen and
 **72 members have no division.** 57 are `Lifetime Committeemen` parked in a
 pseudo-team called `Lifetime`; the other **15 are ordinary Committee Members on
 real teams** — `610 Parking Team J`, `Reed Road Ticket Team 1`,
-`Administration-Support` and eight others. A division-scoped Senior Officer
-will not see them. They must appear in an Admin "unplaced members" view and in
-an import warning, or 15 people silently fall out of every roll-up.
+`Administration-Support` and eight others.
+
+**Decision: a real fifth division, `(No Division)`, seeded by migration and
+flagged `is_placeholder`.** Not a `NULL`. `member.division_id` is `NOT NULL`,
+so no query carries a null branch and no roll-up can quietly omit a bucket —
+and a Senior Officer can be *scoped* to it, which gives those 15 members an
+owner. A NULL could never do that.
+
+It stays honest by three rules, each asserted by a test: every import
+re-evaluates membership (a populated `Subcommittee 3` moves the member out), the
+export writes it back as **blank** rather than the literal "No Division", and
+the `no_division` import warning still fires. The bucket makes those members
+reachable; it does not make them correctly placed. (OI-5, closed.)
 
 **Member Services Division is not an operational division.** Its 10 people are
 1 Officer in Charge, 8 Lifetime Vice Presidents and 2 Lifetime Committeemen —
@@ -333,9 +342,9 @@ Design consequences:
 | # | Question | Assumed for v1 |
 | --- | --- | --- |
 | **OI-1** | Should Senior Officers scope to their area rather than their whole division? | Division, as specified. `area` exists for grouping only. |
-| **OI-2** | Are `Coordinator` and `Ambassador` Senior Officers or Officers? The spec lists both in both. | Senior Officer. 12 people affected. |
+| ~~OI-2~~ | Are `Coordinator` and `Ambassador` Senior Officers or Officers? The spec lists both in both. | **Closed: Senior Officer.** 12 people affected. |
 | **OI-3** | Should harassment training become a fifth scored metric? | No. Imported and shown, excluded from scoring. |
 | **OI-4** | What is the retention rule for a member flagged absent by a complete roster? | Flagged, never auto-deleted. Admin confirms a purge as a separate logged action. |
-| **OI-5** | Do the 72 division-less members belong somewhere, or is blank correct? | Blank is a real bucket. Surfaced to Admins, warned on import. |
+| ~~OI-5~~ | Do the 72 division-less members belong somewhere, or is blank correct? | **Closed: a real `(No Division)` row** — scopeable, groupable, exported as blank. See §4a. |
 | **OI-6** | Is `Badge Pickup Person` (972 values) operationally useful? | Imported, not surfaced. |
 | **OI-7** | Does a "team roster" import name its team in the file, or is it chosen in the UI? | Chosen in the UI and confirmed against the file's contents. |

@@ -126,13 +126,30 @@ as display grouping only.
 
 ```
 Committee                     1,954 members
-  Division                    Subcommittee 3 — 4 values, 72 members have none
+  Division                    Subcommittee 3 — 4 values, plus (No Division)
     [Area]                    NOT in the data — derived from team-name prefix,
                               display grouping ONLY, never an access check
       Team                    Subcommittee 1 — 96 values
 ```
 
 `Subcommittee 2` is junk (`Tba 9` ×1,898) and is not imported.
+
+**`(No Division)` is a real division row, not a NULL.** 72 members arrive with
+a blank `Subcommittee 3` and they land here, so `member.division_id` is
+`NOT NULL` and no query carries a null branch. Three things follow from it
+being a placeholder rather than a fact, and all three are load-bearing:
+
+- It is flagged `is_placeholder = 1`. An officer **can** be scoped to it, so
+  those 72 people have an owner — which a NULL could never give them.
+- **Every import re-evaluates it.** A member whose `Subcommittee 3` arrives
+  populated moves out to the real division; one that arrives blank moves in.
+  Membership is never sticky.
+- **The export writes it back as blank, never as "No Division".** It is our
+  bookkeeping, not Rodeo Houston's data, and it must not travel back to them
+  as though it were. A test asserts that.
+
+The `no_division` import warning still fires. The bucket makes those members
+reachable; it does not make them correctly placed.
 
 **The `area` column on `team` is nullable, seeded by prefix heuristic, and
 editable by an Admin. It must never appear in `Rerm\Auth\Access`.** A test
@@ -247,9 +264,9 @@ Full analysis in `docs/data-findings.md`. The load-bearing facts:
   Suppress `sms:` for the 116 non-cell numbers rather than offering a text
   that silently fails.
 - **7 teams span two divisions** and **72 members have no division**, 15 of
-  them ordinary Committee Members on real teams. A division-scoped officer must
-  not be the only path to a member: the `(none)` division is a real bucket that
-  appears in Admin views and in an import warning.
+  them ordinary Committee Members on real teams. They land in the real
+  `(No Division)` row above, so a division-scoped officer can be given them
+  rather than them belonging to nobody.
 - **41 of 96 teams have fewer than two officers**, 7 have none, covering 432
   members. Assignment is same-team only (decided), so those members surface in
   an explicit **"No officer on team"** bucket rather than silently vanishing.
@@ -261,6 +278,53 @@ Full analysis in `docs/data-findings.md`. The load-bearing facts:
 Phone numbers arrive uniformly as `(555) 555-0100`. Keep the imported string
 for display and an E.164 form for `tel:`/`sms:` — same two-column pattern as
 RESM's `PhoneNumber`.
+
+---
+
+## What an import owns, and what it must never touch
+
+The single most important rule in this application. An import refreshes what
+**Rodeo Houston** knows and never overwrites what **we** know. Full column
+table in `docs/spec-v1.md` §6.6.
+
+**HLSR owns — every import overwrites, unconditionally:**
+title · team · division · names · address · phone · phone type · email ·
+the four metric `imported` values · harassment training · rookie ·
+in-other-committees · legal-name-verified · badge pickup
+
+**We own — no import ever writes these:**
+Allowed User grants and who made them · scope overrides · passwords and
+must-change flags · `contact_log` in full · officer assignments ·
+metric `progress` and its note and author · `team.area` · `audit_log`
+
+That boundary is what makes a designation **durable**: an import rewrites
+`member.title` and the title-derived level, and never `app_user.granted_level`.
+Effective level is `granted_level ?? title_level`, so a Committee Member made
+a Senior Officer stays one no matter what the next roster calls them.
+
+### The one exception, and it is deliberate
+
+**When an import flips a metric's `imported` value from `N` to `Y`, that
+metric's `progress` resets to `not_started`.** The thing being chased has
+happened, so "in progress" is now false. Without it, a later correction back
+to `N` would resurface a months-old status as though it were current.
+
+The reset is recorded, never silent: the prior value goes to `audit_log` with
+the batch that cleared it. **`contact_log` is never touched by it** — the
+record of who called whom, and when, and what was said survives every import
+unconditionally. That is what answers "why did Johnson's dues flip back to N".
+
+### Two consequences worth designing for
+
+- **A demotion by import revokes login.** Captain → Committee Member drops the
+  title level to Member, so `app_user.is_active` goes to 0 — unless a
+  `granted_level` holds it open. The row is deactivated, never deleted; the
+  audit trail outlives the account.
+- **A demotion orphans assignments.** Members assigned to an officer who is no
+  longer an officer, or no longer on the team, surface on the Assign screen as
+  **"officer no longer eligible"** and need reassignment. The rows are not
+  deleted — a silently emptied assignment is how 20 people stop being chased
+  without anyone noticing.
 
 ---
 
