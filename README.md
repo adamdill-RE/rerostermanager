@@ -17,13 +17,30 @@ file copy.
 
 ## Where this build stands
 
-**Phase 0 — Foundation, in progress.** The repository, deployment manifest,
-local environment, CI and the specification exist. No application code yet.
+**Phase 1 — Schema, complete.** Every table in `docs/spec-v1.md` §5.2 exists as
+`db/migrations/001_schema.sql`, with the divisions, the seeded `(No Division)`
+placeholder and the first show year in `002`, and a master administrator that
+**ships locked** in `003` — no password hash is committed, and none ever may be,
+because this repository is public.
 
-Phase 1 is next: the schema in `docs/spec-v1.md` §5.2 as
-`db/migrations/001_schema.sql`, plus the migrator and test runner. CI already
-has the database matrix wired and will start exercising it the moment
-`bin/migrate.php` lands.
+Alongside them: `Rerm\Migrator` and `bin/migrate.php` (`--status`, `--dry-run`,
+and a checksum registry that refuses to run if an applied migration changed),
+`Rerm\Database`, and the composition root the rest of the application hangs off
+— `app/bootstrap.php`, `Rerm\Config`, `Rerm\App`. CI applies the migrations
+twice on **both** MySQL 8.0 and MariaDB 10.11 and runs `tests/schema_test.php`
+against each.
+
+Phase 2 is next: the roster import (`docs/spec-v1.md` §6). The readers already
+exist — `Rerm\Roster` reads `.xls`, `.xlsx` and `.csv` natively — so what
+remains is the three modes, the staged preview, the warnings and absence
+flagging.
+
+```sh
+php bin/migrate.php --status      # what is applied, what is pending
+php bin/migrate.php --dry-run     # what would run, without running it
+php bin/migrate.php               # apply
+php tests/run.php --strict        # what CI runs
+```
 
 ## Getting started
 
