@@ -27,6 +27,15 @@ use RuntimeException;
  */
 final class App
 {
+    /**
+     * The seeded master administrator's member number (spec 3.1).
+     *
+     * Safely outside the export's observed range of 151,696 - 2,089,937, so a
+     * real roster can never collide with it. A string like every other member
+     * number: an identifier, never arithmetic.
+     */
+    public const MASTER_ADMIN_NUMBER = '987654321';
+
     private ?PDO $pdo = null;
 
     private function __construct(
