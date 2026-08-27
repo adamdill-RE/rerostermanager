@@ -29,7 +29,13 @@ final class Csrf
     {
         $token = Session::get(self::KEY);
 
-        if (!is_string($token) || strlen($token) !== 64) {
+        // Regenerated unless what is there is exactly what this method
+        // produces: 32 random bytes, hex encoded. A session carrying anything
+        // else — a truncated write, a file left by an older format, a value
+        // some future code put under the same key — is replaced rather than
+        // compared against, because check() has no way to tell a weak token
+        // from a strong one and would happily accept a guessable one.
+        if (!is_string($token) || strlen($token) !== 64 || !ctype_xdigit($token)) {
             $token = bin2hex(random_bytes(32));
             Session::set(self::KEY, $token);
         }

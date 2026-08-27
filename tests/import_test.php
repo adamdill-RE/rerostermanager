@@ -1323,6 +1323,206 @@ test('a staged batch older than its time to live is discarded', function (): voi
 });
 
 // ===========================================================================
+// An apply that dies half way
+// ===========================================================================
+
+/**
+ * Breaks one staged row so the apply fails on it, part way through.
+ *
+ * The value is too long for `member`.`first_name`, and the connection runs
+ * STRICT_ALL_TABLES, so the insert raises rather than truncating. It is done
+ * AFTER staging because staging would have shortened it to the column — this
+ * is standing in for the failures that cannot be prevented at parse time: a
+ * dropped connection to a database on another machine, a lock timeout, a
+ * constraint nobody anticipated.
+ */
+function import_break_row(int $batchId, string $memberNumber): void
+{
+    import_pdo()->prepare(
+        "UPDATE import_staged_row SET payload = JSON_SET(payload, '$.first_name', REPEAT('x', 400)) "
+        . 'WHERE import_batch_id = :batch AND member_number = :number'
+    )->execute([':batch' => $batchId, ':number' => $memberNumber]);
+}
+
+/**
+ * Ten members, staged in chunks of three so the failure lands mid-run with
+ * committed chunks behind it.
+ *
+ * @return array{0: int, 1: Importer}
+ */
+function import_stage_ten_and_break(string $breakAt = '9990009'): array
+{
+    $members = [];
+    for ($i = 0; $i < 10; $i++) {
+        $members[] = import_member((string) (9990000 + $i));
+    }
+
+    $importer = import_importer();
+    $batch    = $importer->stage(import_csv($members), 'partial.csv');
+    import_break_row($batch, $breakAt);
+
+    return [$batch, $importer];
+}
+
+test('an apply that fails half way says what it wrote and what to do', function (): void {
+    import_reset();
+
+    [$batch, $importer] = import_stage_ten_and_break();
+
+    $failure = null;
+    try {
+        $importer->apply($batch);
+    } catch (ImportException $e) {
+        $failure = $e->getMessage();
+    }
+
+    assertTrue($failure !== null, 'the apply must fail');
+
+    // The apply commits one transaction per chunk, so a 1,954-row roster fits
+    // inside a 30-second ceiling against a database on another machine. The
+    // price is that the chunks before the failure are real and no transaction
+    // can undo them. Pretending otherwise is what this whole test is about.
+    $written = (int) import_pdo()->query(
+        "SELECT COUNT(*) FROM member WHERE member_number LIKE '999000%'"
+    )->fetchColumn();
+    assertTrue($written > 0 && $written < 10, "expected a partial write, got {$written} of 10");
+
+    // The message has to carry three things, because between them they are
+    // the whole of what an Admin can do about it.
+    assertTrue(str_contains($failure, 'PARTLY UPDATED'), 'it must say the roster is partly updated');
+    assertTrue(str_contains($failure, 'Upload the file again'), 'it must say what fixes it');
+    assertTrue(str_contains($failure, 'Data too long'), 'it must carry the underlying cause');
+});
+
+test('a failed batch cannot be applied again', function (): void {
+    import_reset();
+
+    [$batch, $importer] = import_stage_ten_and_break();
+    assertThrows(static fn () => $importer->apply($batch), 'PARTLY UPDATED');
+
+    // Before this was recorded, a second Apply re-ran the creates that had
+    // already succeeded and produced a raw duplicate-key error on the most
+    // dangerous screen in the application — with nothing anywhere saying the
+    // roster was half-written.
+    $second = null;
+    try {
+        import_importer()->apply($batch);
+    } catch (ImportException $e) {
+        $second = $e->getMessage();
+    }
+
+    assertTrue($second !== null, 'a failed batch must refuse a second apply');
+    assertTrue(!str_contains($second, 'Duplicate entry'), 'and must not refuse with a database error');
+    assertTrue(str_contains($second, 'failed part way'), 'it must say why it is refusing');
+});
+
+test('the failure is recorded on the batch and in the audit log', function (): void {
+    import_reset();
+
+    [$batch, $importer] = import_stage_ten_and_break();
+    assertThrows(static fn () => $importer->apply($batch), 'failed part way');
+
+    $row = import_pdo()->query("SELECT * FROM import_batch WHERE id = {$batch}")->fetch();
+    assertTrue($row['failed_at'] !== null, 'failed_at must be stamped');
+    assertTrue(str_contains((string) $row['failure_reason'], 'Data too long'), 'the driver message is kept verbatim');
+    assertSame(null, $row['applied_at'], 'a failed batch was never applied');
+
+    // Both questions have to have an answer: what was this file going to do,
+    // and what did it manage.
+    $summary = json_decode((string) $row['summary_json'], true);
+    assertTrue(isset($summary['applied_before_failure']), 'the partial counts are kept beside the staged ones');
+    assertSame(10, (int) $row['rows_created'], 'the staged counts still say what the file said');
+    assertTrue(
+        (int) $summary['applied_before_failure']['created'] < 10,
+        'and the partial counts say what landed'
+    );
+
+    $audit = import_pdo()->query(
+        "SELECT * FROM audit_log WHERE action = 'import_failed' ORDER BY id DESC LIMIT 1"
+    )->fetch();
+    assertTrue(is_array($audit), 'a failure is written to audit_log like everything else');
+    assertSame((string) $batch, (string) $audit['entity_id']);
+});
+
+test('a failed batch is never swept, and never offered for apply', function (): void {
+    import_reset();
+
+    [$batch, $importer] = import_stage_ten_and_break();
+    assertThrows(static fn () => $importer->apply($batch), 'failed part way');
+
+    // Age it well past the 24-hour discard.
+    import_pdo()->prepare(
+        'UPDATE import_batch SET started_at = DATE_SUB(UTC_TIMESTAMP(), INTERVAL 48 HOUR) WHERE id = :id'
+    )->execute([':id' => $batch]);
+
+    // The sweep must skip it. Not for tidiness: member.last_seen_import_id
+    // points at this batch and that foreign key is RESTRICT, so deleting it
+    // would raise a constraint violation on a page an Admin opened to upload
+    // a roster.
+    assertSame(0, $importer->discardExpired(), 'a failed batch is a record, not a stale preview');
+    assertTrue(is_array(import_pdo()->query("SELECT id FROM import_batch WHERE id = {$batch}")->fetch()));
+
+    // And it is not in the list of things waiting to be applied, because it is
+    // not waiting for anything.
+    $stagedIds = array_map(static fn (array $b): int => (int) $b['id'], $importer->stagedBatches());
+    assertTrue(!in_array($batch, $stagedIds, true), 'a failed batch must not read as ready to apply');
+
+    $failedIds = array_map(static fn (array $b): int => (int) $b['id'], $importer->failedBatches());
+    assertTrue(in_array($batch, $failedIds, true), 'it belongs in the record instead');
+});
+
+test('a batch that wrote rows cannot be discarded', function (): void {
+    import_reset();
+
+    [$batch, $importer] = import_stage_ten_and_break();
+    assertThrows(static fn () => $importer->apply($batch), 'failed part way');
+
+    // A parse is disposable. The moment one has touched `member` it stops
+    // being a parse and becomes the only record of a roster that changed when
+    // no import says it did.
+    assertThrows(static fn () => $importer->discard($batch), 'record rather than a parse');
+    assertTrue(is_array(import_pdo()->query("SELECT id FROM import_batch WHERE id = {$batch}")->fetch()));
+
+    // The same is true of one that applied cleanly.
+    $clean = $importer->stage(import_csv([import_member('9991001')]), 'roster.csv');
+    $importer->apply($clean);
+    assertThrows(static fn () => $importer->discard($clean), 'permanent record');
+});
+
+test('uploading the file again is what actually recovers a failed import', function (): void {
+    import_reset();
+
+    [$batch, $importer] = import_stage_ten_and_break();
+    assertThrows(static fn () => $importer->apply($batch), 'Upload the file again');
+
+    $written = (int) import_pdo()->query(
+        "SELECT COUNT(*) FROM member WHERE member_number LIKE '999000%'"
+    )->fetchColumn();
+
+    // The advice has to be true, not merely reassuring. A fresh parse diffs
+    // against the roster as it NOW stands — the rows the failed run managed to
+    // write included — so the new preview shows exactly the remainder, and
+    // shows it before writing anything.
+    $members = [];
+    for ($i = 0; $i < 10; $i++) {
+        $members[] = import_member((string) (9990000 + $i));
+    }
+
+    $retry   = import_importer();
+    $second  = $retry->stage(import_csv($members), 'partial.csv');
+    $preview = $retry->preview($second);
+
+    assertSame(10 - $written, $preview['counts']['create'], 'the preview shows exactly what is left');
+    assertSame($written, $preview['counts']['unchanged'], 'and nothing it already has');
+
+    $result = $retry->apply($second);
+    assertSame(10 - $written, $result['created']);
+    assertSame(10, (int) import_pdo()->query(
+        "SELECT COUNT(*) FROM member WHERE member_number LIKE '999000%'"
+    )->fetchColumn(), 'the roster is whole again');
+});
+
+// ===========================================================================
 // The measured limit
 // ===========================================================================
 

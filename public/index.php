@@ -251,6 +251,46 @@ function setup_state(Rerm\App $app): array
 }
 
 /**
+ * Is the database actually carrying the schema this code expects?
+ *
+ * Deploying is a file copy and applying a migration is a separate, deliberate
+ * act — correctly, because a deploy that migrated itself would change the live
+ * roster's schema the moment a file landed, with nobody watching. The gap
+ * between the two is real, and this is what an Admin walks into during it.
+ *
+ * Without this check they walk into a BLANK 500: /import queries a column that
+ * migration 005 adds, display_errors is Off on the server, and the page comes
+ * back zero bytes long. There is no shell on this host to read a log with, so
+ * a blank page is the end of the road. It is the same failure Phase 0 shipped
+ * — a mount point answering 403 that read like a permissions problem — and it
+ * costs four lines to turn into a sentence naming the fix.
+ *
+ * @return ?string null when the schema is current, else what to do about it
+ */
+function import_schema_blocker(Rerm\App $app): ?string
+{
+    try {
+        $pending = $app->migrator()->pending();
+    } catch (Throwable $e) {
+        return 'The database could not be reached, so this screen cannot tell whether the schema '
+            . 'is up to date. Check /status for the connection.' . "\n\n" . $e->getMessage();
+    }
+
+    if ($pending === []) {
+        return null;
+    }
+
+    return sprintf(
+        "The code on this server is newer than its database: %d migration(s) have never been "
+        . "applied (%s).\n\nThis screen reads columns those migrations add, so it would fail "
+        . "with a blank page rather than an error you could read. Apply them first, from /setup "
+        . "with the same key — migrations are never applied by a deploy, deliberately.",
+        count($pending),
+        implode(', ', $pending)
+    );
+}
+
+/**
  * Teams, for the team-mode picker.
  *
  * Capped, and deliberately: 96 teams is a long <select> but it is one input,
@@ -616,6 +656,24 @@ switch ($app->requestPath()) {
 
         Rerm\Session::start($app);
 
+        // BEFORE anything touches the importer, which reads columns a pending
+        // migration may not have added yet.
+        $blocker = import_schema_blocker($app);
+        if ($blocker !== null) {
+            render($app, 'import', 'Import Roster', [
+                'wide'    => false,
+                'blocked' => $blocker,
+                'notices' => [],
+                'preview' => null,
+                'staged'  => [],
+                'applied' => [],
+                'failedBatches' => [],
+                'teams'   => [],
+                'key'     => import_key_supplied(),
+            ]);
+            break;
+        }
+
         $importer = Rerm\Import\Importer::fromApp($app);
         // A stale preview was computed against a roster that has since
         // changed, so applying it would write a diff nobody has read.
@@ -640,10 +698,15 @@ switch ($app->requestPath()) {
         render($app, 'import', 'Import Roster', [
             // A 1,954-row diff is data, not a list of choices (spec 8.2).
             'wide'    => true,
+            'blocked' => null,
             'notices' => $outcome['notices'],
             'preview' => $preview,
             'staged'  => $importer->stagedBatches(10),
             'applied' => $importer->appliedBatches(5),
+            // Kept and listed, never swept: a batch that wrote rows and then
+            // stopped is the only record of a roster that changed when no
+            // import says it did.
+            'failedBatches' => $importer->failedBatches(5),
             'teams'   => import_teams($app),
             'key'     => import_key_supplied(),
         ]);

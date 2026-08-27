@@ -827,6 +827,15 @@ final class Importer
             'sample_absent'  => $this->sampleByAction($batchId, 'absent', $sampleSize),
             'expires_at'     => $this->expiryOf($batch),
             'applied'        => $batch['applied_at'] !== null,
+            // A failed batch is neither applied nor appliable, and the screen
+            // has to be able to tell all three apart.
+            'failed'         => $batch['failed_at'] !== null,
+            'failure'        => $batch['failed_at'] === null ? null : [
+                'at'      => (string) $batch['failed_at'],
+                'reason'  => (string) $batch['failure_reason'],
+                'applied' => $batch['summary']['applied_before_failure'] ?? [],
+                'advice'  => $this->failureAdvice($batch),
+            ],
         ];
     }
 
@@ -937,6 +946,15 @@ final class Importer
             );
         }
 
+        // A batch that died half way is spent, and for exactly the same reason
+        // an applied one is: its diff was computed against a roster that has
+        // since changed — by its own partial work. Re-running it would re-run
+        // the creates that already succeeded and fail on the member number's
+        // unique key, which is a database error where a sentence is needed.
+        if ($batch['failed_at'] !== null) {
+            throw new ImportException($this->failureAdvice($batch));
+        }
+
         $showYear = $this->showYear((int) $batch['show_year_id']);
         if ((int) $showYear['is_open'] !== 1) {
             throw new ImportException(
@@ -961,41 +979,151 @@ final class Importer
 
         $applied = ['created' => 0, 'updated' => 0, 'unchanged' => 0, 'absent' => 0, 'accounts' => 0, 'progress_reset' => 0];
 
-        foreach (['create', 'update', 'unchanged'] as $action) {
-            foreach ($this->stagedChunks($batchId, $action) as $chunk) {
+        // ONE TRANSACTION PER CHUNK, AND THAT IS THE WHOLE PROBLEM THIS CATCH
+        // EXISTS FOR. A single transaction around 1,954 members plus 9,770
+        // metric rows would hold locks on the roster for the length of the
+        // import, against a database on another machine, inside a 30-second
+        // ceiling — so the apply is batched, and a failure in the ninth chunk
+        // rolls back the ninth chunk and nothing else.
+        //
+        // The eight before it are committed and real. No amount of care here
+        // can undo them, so the job is not to pretend otherwise: it is to
+        // record how far this got, refuse to run it again, and say the one
+        // thing that fixes it.
+        try {
+            foreach (['create', 'update', 'unchanged'] as $action) {
+                foreach ($this->stagedChunks($batchId, $action) as $chunk) {
+                    $this->pdo->beginTransaction();
+                    try {
+                        $result = $this->applyChunk($chunk, $action, $mode, $batchId, $showYearId, $divisions, $teams, $actorUserId, $now);
+                        $this->pdo->commit();
+                    } catch (Throwable $e) {
+                        $this->pdo->rollBack();
+
+                        throw $e;
+                    }
+
+                    foreach ($result as $key => $value) {
+                        $applied[$key] = ($applied[$key] ?? 0) + $value;
+                    }
+                }
+            }
+
+            // Absence last: a member seen in this file has already had their
+            // flag cleared above, so nothing here can flag somebody the file
+            // contained.
+            foreach ($this->stagedChunks($batchId, 'absent') as $chunk) {
                 $this->pdo->beginTransaction();
                 try {
-                    $result = $this->applyChunk($chunk, $action, $mode, $batchId, $showYearId, $divisions, $teams, $actorUserId, $now);
+                    $applied['absent'] += $this->applyAbsent($chunk, $batchId);
                     $this->pdo->commit();
                 } catch (Throwable $e) {
                     $this->pdo->rollBack();
 
                     throw $e;
                 }
-
-                foreach ($result as $key => $value) {
-                    $applied[$key] = ($applied[$key] ?? 0) + $value;
-                }
             }
-        }
-
-        // Absence last: a member seen in this file has already had their flag
-        // cleared above, so nothing here can flag somebody the file contained.
-        foreach ($this->stagedChunks($batchId, 'absent') as $chunk) {
-            $this->pdo->beginTransaction();
-            try {
-                $applied['absent'] += $this->applyAbsent($chunk, $batchId);
-                $this->pdo->commit();
-            } catch (Throwable $e) {
-                $this->pdo->rollBack();
-
-                throw $e;
-            }
+        } catch (Throwable $e) {
+            throw $this->markFailed($batchId, $e, $applied, $actorUserId);
         }
 
         $this->markApplied($batchId, $actorUserId, $applied);
 
         return $applied;
+    }
+
+    /**
+     * Records a part-way failure and returns the exception to throw for it.
+     *
+     * Everything about this method is in service of one sentence reaching the
+     * Admin: the roster is partly updated, and uploading the file again is
+     * what fixes it. A fresh parse diffs against the roster as it now stands,
+     * rows this run managed to write included, so the next preview shows
+     * exactly the remainder — and shows it before writing anything, which is
+     * the property the two-step exists for and which a retry of this batch
+     * would not have.
+     *
+     * The counts are what actually landed, not what was staged. rows_created
+     * and the rest stay as the parse computed them, because they are the
+     * record of what this file said; the partial result goes to summary_json
+     * beside them, so both questions — what was it going to do, and what did
+     * it manage — have an answer.
+     *
+     * @param array<string, int> $applied
+     */
+    private function markFailed(int $batchId, Throwable $cause, array $applied, ?int $actorUserId): ImportException
+    {
+        $reason = $cause->getMessage();
+
+        try {
+            $batch   = $this->batch($batchId);
+            $summary = is_array($batch['summary']) ? $batch['summary'] : [];
+            $summary['applied_before_failure'] = $applied;
+            $summary['failure'] = ['reason' => mb_substr($reason, 0, 500), 'at' => App::now()];
+
+            $this->pdo->prepare(
+                'UPDATE import_batch SET failed_at = :now, failure_reason = :reason, summary_json = :summary '
+                . 'WHERE id = :id'
+            )->execute([
+                ':now'     => App::now(),
+                ':reason'  => mb_substr($reason, 0, 500),
+                ':summary' => self::json($summary),
+                ':id'      => $batchId,
+            ]);
+
+            $this->pdo->prepare(
+                'INSERT INTO audit_log (actor_user_id, action, entity, entity_id, after_json, ip) '
+                . 'VALUES (:actor, :action, :entity, :entity_id, :after_json, :ip)'
+            )->execute([
+                ':actor'      => $actorUserId,
+                ':action'     => 'import_failed',
+                ':entity'     => 'import_batch',
+                ':entity_id'  => (string) $batchId,
+                ':after_json' => self::json(['applied_before_failure' => $applied, 'reason' => mb_substr($reason, 0, 500)]),
+                ':ip'         => substr((string) ($_SERVER['REMOTE_ADDR'] ?? ''), 0, 45),
+            ]);
+
+            $advice = $this->failureAdvice($this->batch($batchId));
+        } catch (Throwable $recordingFailed) {
+            // The database that just refused the import may also refuse to be
+            // written about. Losing the record is bad; losing the original
+            // cause on top of it would be worse, so the message carries both
+            // rather than this method throwing something new.
+            $advice = 'The import failed part way through and the roster may be partly updated. '
+                . 'The failure could not be recorded either (' . $recordingFailed->getMessage() . '). '
+                . 'Upload the file again: a fresh preview will diff against the roster as it now '
+                . "stands and show exactly what is left.\n\n" . $reason;
+        }
+
+        return new ImportException($advice, 0, $cause);
+    }
+
+    /**
+     * What an Admin looking at a failed batch needs to be told, in one place,
+     * so the screen and the exception cannot say different things.
+     *
+     * @param array<string, mixed> $batch
+     */
+    private function failureAdvice(array $batch): string
+    {
+        $partial = $batch['summary']['applied_before_failure'] ?? [];
+        $rows    = (int) ($partial['created'] ?? 0) + (int) ($partial['updated'] ?? 0);
+
+        return sprintf(
+            "Batch %d failed part way through at %s UTC, after writing %s to the roster. "
+            . "The roster is PARTLY UPDATED and no transaction can undo that — the apply commits "
+            . "in batches so a 1,954-row import fits inside this server's 30-second limit.\n\n"
+            . "This batch cannot be applied again: its diff was computed against the roster as it "
+            . "stood BEFORE its own partial work. Upload the file again instead. The new preview "
+            . "diffs against the roster as it now stands, so it will show exactly what is left — "
+            . "and show it before writing anything.\n\nWhat went wrong: %s",
+            (int) $batch['id'],
+            (string) $batch['failed_at'],
+            $rows === 0
+                ? 'no member rows'
+                : number_format($rows) . ' member row' . ($rows === 1 ? '' : 's'),
+            (string) $batch['failure_reason'] === '' ? '(not recorded)' : (string) $batch['failure_reason']
+        );
     }
 
     /**
@@ -1654,6 +1782,11 @@ final class Importer
     /**
      * Staged batches waiting to be applied, newest first.
      *
+     * A failed batch is not one of these. It is not waiting for anything: it
+     * cannot be applied and it will not be swept, so offering it here beside
+     * batches that CAN be applied is the same mistake as leaving its Apply
+     * button live.
+     *
      * @return array<int, array<string, mixed>>
      */
     public function stagedBatches(int $limit = 20): array
@@ -1663,7 +1796,30 @@ final class Importer
             . 'FROM import_batch b '
             . 'INNER JOIN show_year y ON y.id = b.show_year_id '
             . 'LEFT JOIN team t ON t.id = b.team_id '
-            . 'WHERE b.applied_at IS NULL ORDER BY b.id DESC LIMIT ' . max(1, $limit)
+            . 'WHERE b.applied_at IS NULL AND b.failed_at IS NULL '
+            . 'ORDER BY b.id DESC LIMIT ' . max(1, $limit)
+        );
+
+        return $read->fetchAll();
+    }
+
+    /**
+     * Batches that died part way, newest first.
+     *
+     * Kept forever, like every other import record. A failed batch is the only
+     * answer to "the roster changed and no import says it did", and half of
+     * one of these is exactly the shape that question takes.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function failedBatches(int $limit = 10): array
+    {
+        $read = $this->pdo->query(
+            'SELECT b.*, y.label AS show_year_label, t.name AS team_name '
+            . 'FROM import_batch b '
+            . 'INNER JOIN show_year y ON y.id = b.show_year_id '
+            . 'LEFT JOIN team t ON t.id = b.team_id '
+            . 'WHERE b.failed_at IS NOT NULL ORDER BY b.id DESC LIMIT ' . max(1, $limit)
         );
 
         return $read->fetchAll();
@@ -1688,9 +1844,46 @@ final class Importer
         return $read->fetchAll();
     }
 
-    /** Drops a staged batch and everything parsed into it. */
+    /**
+     * Drops a staged batch and everything parsed into it.
+     *
+     * Only a batch that wrote nothing. A parse is disposable; the moment one
+     * has touched `member` it stops being a parse and becomes a record, and
+     * the record is what answers "why did this member's dues flip back to N"
+     * years from now.
+     *
+     * The database would refuse anyway — `member`.`last_seen_import_id` points
+     * at the batch and every foreign key here is RESTRICT — but it would
+     * refuse with a constraint violation on a page an Admin opened to do
+     * something else. This says it in words instead.
+     *
+     * @throws ImportException when the batch applied or partly applied
+     */
     public function discard(int $batchId): void
     {
+        $read = $this->pdo->prepare('SELECT applied_at, failed_at FROM import_batch WHERE id = :id');
+        $read->execute([':id' => $batchId]);
+        $batch = $read->fetch();
+
+        if (!is_array($batch)) {
+            return;
+        }
+
+        if ($batch['applied_at'] !== null) {
+            throw new ImportException(
+                "Batch {$batchId} was applied on {$batch['applied_at']} UTC. An applied import is a "
+                . 'permanent record and is never deleted.'
+            );
+        }
+
+        if ($batch['failed_at'] !== null) {
+            throw new ImportException(
+                "Batch {$batchId} failed part way through and wrote rows to the roster, so it is a "
+                . 'record rather than a parse. It is kept, and it is already excluded from the '
+                . 'batches waiting to be applied — nothing needs to be done with it.'
+            );
+        }
+
         // import_warning has no CASCADE — it is a record, and the only thing
         // that removes one is removing the batch it belongs to, here.
         $this->pdo->prepare('DELETE FROM import_warning WHERE import_batch_id = :id')
@@ -1722,8 +1915,15 @@ final class Importer
             ->modify('-' . $this->stageTtlHours . ' hours')
             ->format('Y-m-d H:i:s');
 
+        // failed_at IS NULL is load-bearing, not tidiness. A failed batch has
+        // member rows pointing at it through last_seen_import_id, and that
+        // foreign key is RESTRICT — so sweeping one would not orphan anything,
+        // it would raise a constraint violation, on a page an Admin opened to
+        // upload a roster. RESTRICT is what makes forgetting this loud; this
+        // line is what makes it not happen.
         $read = $this->pdo->prepare(
-            'SELECT id FROM import_batch WHERE applied_at IS NULL AND started_at < :cutoff'
+            'SELECT id FROM import_batch '
+            . 'WHERE applied_at IS NULL AND failed_at IS NULL AND started_at < :cutoff'
         );
         $read->execute([':cutoff' => $cutoff]);
 
