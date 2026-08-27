@@ -21,7 +21,7 @@ use Rerm\Auth\Capability;
 /** @var array<int, array{cap: Capability, label: string, route: ?string, phase: string}> $tiles */
 $tiles = [
     ['cap' => Capability::ViewStatusDashboard,   'label' => 'My Roster Status',    'route' => null,     'phase' => 'Phase 5'],
-    ['cap' => Capability::ViewRoster,            'label' => 'View My Roster',      'route' => null,     'phase' => 'Phase 4'],
+    ['cap' => Capability::ViewRoster,            'label' => 'View My Roster',      'route' => 'roster', 'phase' => ''],
     ['cap' => Capability::AssignOfficers,        'label' => 'Assign Officers',     'route' => null,     'phase' => 'Phase 6'],
     ['cap' => Capability::ViewCommitteeDashboard, 'label' => 'Committee Dashboard', 'route' => null,    'phase' => 'Phase 7'],
     ['cap' => Capability::ImportRoster,          'label' => 'Import Roster',       'route' => 'import', 'phase' => ''],
