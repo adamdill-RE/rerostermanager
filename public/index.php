@@ -755,33 +755,69 @@ function flash_set(string $kind, string $message): void
 }
 
 /**
- * The list state a log-contact form carries so its 303 lands the officer
- * back on the exact filtered page they acted from — whitelisted here, never
- * echoed into a Location header raw.
+ * The list state a form carries so its 303 lands the officer back on the
+ * exact page they acted from — whitelisted here, never echoed into a
+ * Location header raw.
+ *
+ * One helper rather than one per screen (Phase 6): each allowed key names
+ * what may travel, either as the list of values it may hold or as
+ * ['int' => n] for a number that travels only when it exceeds n. Everything
+ * else in the input is dropped, a key not in the list included, so a crafted
+ * `return` cannot smuggle a parameter into the redirect.
  *
  * @param array<string, mixed> $input
+ * @param array<string, mixed> $allowed
  */
-function dashboard_return_query(array $input): string
+function return_query(array $input, array $allowed): string
 {
     $params = [];
-    if (($input['mode'] ?? '') === 'mine' || ($input['mode'] ?? '') === 'team') {
-        $params['mode'] = $input['mode'];
-    }
-    if (($input['show'] ?? '') === 'all') {
-        $params['show'] = 'all';
-    }
-    $page = (int) ($input['page'] ?? 1);
-    if ($page > 1) {
-        $params['page'] = $page;
-    }
-    $size = (int) ($input['size'] ?? 0);
-    if ($size > 0) {
-        $params['size'] = $size;
+
+    foreach ($allowed as $key => $rule) {
+        $value = $input[$key] ?? null;
+
+        if (is_array($rule) && array_key_exists('int', $rule)) {
+            $number = is_scalar($value) ? (int) $value : 0;
+            if ($number > (int) $rule['int']) {
+                $params[$key] = $number;
+            }
+            continue;
+        }
+
+        if (is_string($value) && in_array($value, (array) $rule, true)) {
+            $params[$key] = $value;
+        }
     }
 
     $query = http_build_query($params);
 
     return $query === '' ? '' : '?' . $query;
+}
+
+/** My Roster Status: the toggle, the filter and the page (spec 7.1). */
+function dashboard_return_query(array $input): string
+{
+    return return_query($input, [
+        'mode' => ['mine', 'team'],
+        'show' => ['all'],
+        'page' => ['int' => 1],
+        'size' => ['int' => 0],
+    ]);
+}
+
+/**
+ * Assign Officers: the team, the bucket and the page (spec 7.4).
+ *
+ * `sel` is deliberately absent. It is a render hint that pre-ticks rows, and
+ * carrying it back would re-tick a selection that has just been acted on.
+ */
+function assign_return_query(array $input): string
+{
+    return return_query($input, [
+        'team'   => ['int' => 0],
+        'bucket' => Rerm\Roster\AssignPage::BUCKETS,
+        'page'   => ['int' => 1],
+        'size'   => ['int' => 0],
+    ]);
 }
 
 /** Renders My Roster Status — the 'dashboard' route, and the landing page. */
@@ -864,6 +900,193 @@ function log_contact_act(Rerm\App $app, Rerm\Auth\User $user): never
     // same 404 a typed URL would.
     render($app, 'not-found', 'Not found', [], 404);
     exit;
+}
+
+// ---------------------------------------------------------------------------
+// Assign Officers (spec 7.4) — Officer and above, through
+// Capability::AssignOfficers. One route, both verbs: the form posts back to
+// the screen it came from and 303s to the same team, bucket and page.
+// ---------------------------------------------------------------------------
+
+/** Renders Assign Officers — the team picker, or one team's four buckets. */
+function assign_screen(Rerm\App $app, Rerm\Auth\User $user): void
+{
+    $year = active_show_year($app);
+    if ($year === null) {
+        render($app, 'not-found', 'Not found', [], 404);
+
+        return;
+    }
+
+    render($app, 'assign', 'Assign Officers', [
+        // A data screen (spec 8.2): the wide container above 720px.
+        'wide'    => true,
+        'user'    => $user,
+        'year'    => $year,
+        'notices' => flash_take(),
+        'assign'  => Rerm\Roster\AssignPage::fromApp($app)->page($user, $year['id'], $_GET),
+    ]);
+}
+
+/**
+ * What the officer is told about a bulk write, in one sentence plus whatever
+ * the action could not do. Everything that was skipped is named — the count
+ * is never left to be inferred from a list that got shorter (decided 2).
+ *
+ * @param array<string, mixed> $result
+ * @return array{0: string, 1: string} flash kind, message
+ */
+function assign_notice(array $result, int $maxOfficers): array
+{
+    $outcome = $result['outcome'];
+    $plural  = static fn (int $n, string $one, string $many): string => $n . ' ' . ($n === 1 ? $one : $many);
+
+    // refused_all shares this path: it IS a write that changed nothing, and
+    // the clauses below say precisely why — "on another team" and "not in
+    // your roster" are different facts and must not read as the same one.
+    if ($outcome === 'assigned' || $outcome === 'removed' || $outcome === 'refused_all') {
+        $parts = [];
+
+        // The lead clause states what LANDED. When nothing did, it says so
+        // in those words rather than reporting "Assigned 0 members" and
+        // leaving the reason to the sentence after it.
+        if ($outcome !== 'removed') {
+            $parts[] = (int) $result['assigned'] === 0
+                ? sprintf('Nothing was assigned to %s.', $result['officer_name'])
+                : sprintf(
+                    'Assigned %s to %s — now %s.',
+                    $plural((int) $result['assigned'], 'member', 'members'),
+                    $result['officer_name'],
+                    $plural((int) $result['officer_load'], 'member assigned', 'members assigned')
+                );
+        } elseif ((int) $result['removed'] === 0) {
+            $parts[] = 'Nothing was removed.';
+        } else {
+            $parts[] = $result['officer_name'] === ''
+                ? sprintf('Removed %s.', $plural((int) $result['removed'], 'assignment', 'assignments'))
+                : sprintf(
+                    'Removed %s to %s — now %s.',
+                    $plural((int) $result['removed'], 'assignment', 'assignments'),
+                    $result['officer_name'],
+                    $plural((int) $result['officer_load'], 'member assigned', 'members assigned')
+                );
+        }
+
+        if ((int) $result['repointed'] > 0) {
+            $parts[] = sprintf(
+                'Cleared %s to an officer who is no longer eligible.',
+                $plural((int) $result['repointed'], 'assignment', 'assignments')
+            );
+        }
+        if ((int) $result['already'] > 0) {
+            $parts[] = sprintf(
+                '%s already had them.',
+                $plural((int) $result['already'], 'member', 'members')
+            );
+        }
+        if ($result['at_cap'] !== []) {
+            // By name and count, never a silent trim: the officers they
+            // already hold are the reason, so they are named too.
+            $named = array_map(
+                static fn (array $m): string => $m['name'] . ' (' . implode(', ', $m['officers']) . ')',
+                array_slice($result['at_cap'], 0, 3)
+            );
+            $more  = count($result['at_cap']) - count($named);
+            $parts[] = sprintf(
+                'Skipped %s already at the %d-officer limit: %s%s.',
+                $plural(count($result['at_cap']), 'member', 'members'),
+                $maxOfficers,
+                implode('; ', $named),
+                $more > 0 ? sprintf(' and %d more', $more) : ''
+            );
+        }
+        if ((int) $result['cross_team'] > 0) {
+            $parts[] = sprintf(
+                'Skipped %s on another team — assignment is same-team only.',
+                $plural((int) $result['cross_team'], 'member', 'members')
+            );
+        }
+        if ((int) $result['refused'] > 0) {
+            $parts[] = sprintf(
+                'Skipped %s that are not in your roster.',
+                $plural((int) $result['refused'], 'member', 'members')
+            );
+        }
+
+        $changed = (int) $result['assigned'] + (int) $result['removed'] + (int) $result['repointed'];
+
+        return [$changed > 0 ? 'ok' : 'warn', implode(' ', $parts)];
+    }
+
+    if ($outcome === 'year_closed') {
+        return ['danger', 'This show year is closed and read-only. Nothing was changed.'];
+    }
+    if ($outcome === 'bad_officer') {
+        return ['danger', 'Choose an officer from this team. Nothing was changed.'];
+    }
+    if ($outcome === 'too_many') {
+        return ['danger', sprintf(
+            'That was more than %d members in one action. Nothing was changed — assign a page at a time.',
+            Rerm\Roster\AssignOfficers::MAX_SELECTION
+        )];
+    }
+    if ($outcome === 'nothing_to_do') {
+        return ['warn', $result['action'] === 'remove'
+            ? 'None of those members were assigned to that officer. Nothing was changed.'
+            : 'Everyone on this team already has an officer. Nothing to do.'];
+    }
+
+    if ($outcome === 'nothing_selected') {
+        return ['warn', $result['action'] === 'remove'
+            ? 'Nobody was selected. Tick the members you want to remove first.'
+            : 'Nobody was selected. Tick the members you want to assign first.'];
+    }
+
+    if ($outcome === 'bad_action') {
+        // Only reachable from a hand-made POST: every button on the screen
+        // carries one of the three actions.
+        return ['danger', 'That form did not say what to do. Nothing was changed.'];
+    }
+
+    // Anything a future outcome adds. Unreachable today — a test holds every
+    // declared outcome to a branch above — and a catch-all saying nothing
+    // changed is the safe answer to a question this function cannot read.
+    return ['danger', 'Nothing was changed.'];
+}
+
+/**
+ * The Assign Officers POST (spec 7.4): CSRF, then the write through
+ * Rerm\Roster\AssignOfficers — which re-checks Access::allows() with a
+ * Subject per selected member and verifies the target officer against the
+ * member's own team — then a 303 back to the same team, bucket and page.
+ */
+function assign_act(Rerm\App $app, Rerm\Auth\User $user): never
+{
+    // The form carries its list state as ONE hidden query string, parsed here
+    // and then whitelisted like any other input.
+    $state = [];
+    parse_str(is_string($_POST['return'] ?? null) ? $_POST['return'] : '', $state);
+    $return = 'assign' . assign_return_query($state);
+
+    if (!Rerm\Csrf::check()) {
+        flash_set(...stale_form_notice());
+        redirect($app, $return);
+    }
+
+    $result = Rerm\Roster\AssignOfficers::fromApp($app)->apply($user, $_POST);
+
+    // An if-chain, not a switch: tests/auth_test.php reads every `case '…':`
+    // in this file as a route label, and these outcomes are not routes.
+    if ($result['outcome'] === 'no_year') {
+        render($app, 'not-found', 'Not found', [], 404);
+        exit;
+    }
+
+    flash_set(...assign_notice(
+        $result,
+        (int) $app->config()->get('roster.max_officers_per_member', 3)
+    ));
+    redirect($app, $return);
 }
 
 // ---------------------------------------------------------------------------
@@ -1240,6 +1463,17 @@ switch ($path) {
             'year'   => $year,
             'roster' => Rerm\Roster\RosterPage::fromApp($app)->page($user, $year['id'], $_GET),
         ]);
+        break;
+
+    case 'assign':
+        // Both verbs on one route. A POST never falls through: assign_act()
+        // 303s to the screen it came from, or renders a 404 for a database
+        // with no active show year.
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            assign_act($app, $user);
+        }
+
+        assign_screen($app, $user);
         break;
 
     case 'import':

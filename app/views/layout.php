@@ -356,6 +356,72 @@ details.defs dd { margin: 0; color: var(--muted); font-size: .9rem; }
 .roster label.pg select { flex: 1; width: auto; }
 .roster button[type="submit"] { margin: .5rem 0 .75rem; }
 
+/* --- Assign Officers (spec 7.4) --------------------------------------------
+   The checkbox column, the sticky action bar and the bucket counts. The bar
+   is CSS position: sticky and nothing else — there is no JavaScript in this
+   application, so it cannot count a live selection and does not pretend to;
+   the count comes back in the flash after the write. */
+.toggle a .n {
+    margin-left: .4rem;
+    padding: 0 .4rem;
+    border-radius: 999px;
+    border: 1px solid currentColor;
+    font-size: .8rem;
+    font-variant-numeric: tabular-nums;
+}
+.toggle { flex-wrap: wrap; }
+.toggle a { flex: 1 1 10rem; padding: 0 .6rem; text-align: center; }
+
+/* 56px minimum, one-handed, in gloves: the whole name is the label, so the
+   target is the row's width rather than the box. */
+.assign td.pick input[type="checkbox"] {
+    width: 1.6rem;
+    height: 1.6rem;
+    accent-color: var(--action-orange);
+}
+.assign td.who label { display: block; min-height: 44px; padding: .3rem 0; cursor: pointer; }
+.assign td .off { display: block; font-size: .9rem; }
+
+.actionbar {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    margin-top: .5rem;
+    padding: .6rem .75rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: 0 -4px 14px rgba(0, 0, 0, .12);
+}
+.actionbar p.ab { display: grid; gap: .5rem; margin: .35rem 0; }
+@media (min-width: 720px) {
+    .actionbar p.ab { grid-template-columns: 1fr auto; align-items: center; }
+    .actionbar p.ab button { width: auto; min-width: 14rem; }
+}
+
+form.quick { margin: 1rem 0; padding: .75rem .9rem; border: 1px dashed var(--border); border-radius: 10px; }
+form.quick label { display: block; margin-bottom: .4rem; }
+form.quick button { margin-top: .5rem; }
+
+/* Visible to a screen reader, not to the eye: the checkbox column header and
+   the two action-bar selects, whose buttons already say what they do. */
+.vh {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+}
+
+@media (max-width: 719px) {
+    /* The stacked card puts the checkbox beside the name rather than on its
+       own labelled line. */
+    .assign td.pick { display: inline-flex; margin-right: .6rem; vertical-align: top; }
+    .assign td.pick::before { content: none; }
+    .assign td.who { display: inline-block; width: calc(100% - 3rem); }
+}
+
 textarea {
     width: 100%;
     min-height: 56px;

@@ -23,7 +23,7 @@ use Rerm\Auth\Capability;
 $tiles = [
     ['cap' => Capability::ViewStatusDashboard,   'label' => 'My Roster Status',    'route' => 'dashboard', 'phase' => ''],
     ['cap' => Capability::ViewRoster,            'label' => 'View My Roster',      'route' => 'roster', 'phase' => ''],
-    ['cap' => Capability::AssignOfficers,        'label' => 'Assign Officers',     'route' => null,     'phase' => 'Phase 6'],
+    ['cap' => Capability::AssignOfficers,        'label' => 'Assign Officers',     'route' => 'assign', 'phase' => ''],
     ['cap' => Capability::ViewCommitteeDashboard, 'label' => 'Committee Dashboard', 'route' => null,    'phase' => 'Phase 7'],
     ['cap' => Capability::ImportRoster,          'label' => 'Import Roster',       'route' => 'import', 'phase' => ''],
     ['cap' => Capability::ExportRoster,          'label' => 'Export Roster',       'route' => null,     'phase' => 'Phase 8'],

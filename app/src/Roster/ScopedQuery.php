@@ -53,15 +53,7 @@ final class ScopedQuery
      */
     public static function forUser(User $user, string $alias = 'm'): self
     {
-        // The alias reaches the SQL string, so it is held to identifier
-        // characters however unlikely a dynamic value is. Everything the USER
-        // controls travels as a binding.
-        if (preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $alias) !== 1) {
-            throw new \InvalidArgumentException("'{$alias}' is not a table alias.");
-        }
-
-        $visible = "{$alias}.is_system = 0 AND {$alias}.purged_at IS NULL "
-            . "AND {$alias}.absent_since_import_id IS NULL";
+        $visible = self::visible($alias);
 
         if ($user->level->atLeast(Level::ExecutiveOfficer)) {
             return new self($visible, []);
@@ -89,6 +81,31 @@ final class ScopedQuery
         // anyway returns no rows rather than throwing, because the guard that
         // should have refused the screen is Access's job, not this one's.
         return self::nobody($visible);
+    }
+
+    /**
+     * The visibility half, alone: system rows, purges and absence flags, with
+     * no scope at all.
+     *
+     * Public because the roster is not the only thing that has to respect it.
+     * Phase 6 asks the same question of a member being considered as an
+     * OFFICER — a purged or absent one is no more assignable than they are
+     * visible — and a second spelling of these three columns is a second
+     * place for a purged member to keep holding twenty people.
+     *
+     * @param string $alias the member table's alias in the caller's FROM
+     */
+    public static function visible(string $alias = 'm'): string
+    {
+        // The alias reaches the SQL string, so it is held to identifier
+        // characters however unlikely a dynamic value is. Everything the USER
+        // controls travels as a binding.
+        if (preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $alias) !== 1) {
+            throw new \InvalidArgumentException("'{$alias}' is not a table alias.");
+        }
+
+        return "{$alias}.is_system = 0 AND {$alias}.purged_at IS NULL "
+            . "AND {$alias}.absent_since_import_id IS NULL";
     }
 
     private static function nobody(string $visible): self
