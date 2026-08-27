@@ -711,13 +711,159 @@ function setup_set_admin_password(Rerm\App $app): array
  * (spec 5.2a), so a missing one means a database that was never seeded —
  * worth a sentence rather than a blank page.
  *
- * @return ?array{id: int, label: string}
+ * @return ?array{id: int, label: string, is_open: bool}
  */
 function active_show_year(Rerm\App $app): ?array
 {
-    $row = $app->db()->query('SELECT id, label FROM show_year WHERE is_active = 1')->fetch();
+    $row = $app->db()->query('SELECT id, label, is_open FROM show_year WHERE is_active = 1')->fetch();
 
-    return is_array($row) ? ['id' => (int) $row['id'], 'label' => (string) $row['label']] : null;
+    return is_array($row)
+        ? [
+            'id'      => (int) $row['id'],
+            'label'   => (string) $row['label'],
+            // The write paths re-read this before writing; the screens use it
+            // to say a closed year is read-only instead of offering forms
+            // whose submissions would be refused.
+            'is_open' => (int) $row['is_open'] === 1,
+        ]
+        : null;
+}
+
+// ---------------------------------------------------------------------------
+// My Roster Status (spec 7.1) — Officer and above, through
+// Capability::ViewStatusDashboard, and the landing screen since Phase 5
+// ---------------------------------------------------------------------------
+
+/**
+ * A one-request notice carried across the POST → 303 → GET boundary in the
+ * session, so log-contact can confirm on the page the officer lands back on.
+ * Taken exactly once: the reload after that is clean.
+ *
+ * @return array<int, array{0: string, 1: string}>
+ */
+function flash_take(): array
+{
+    $notice = Rerm\Session::get('flash_notice');
+    Rerm\Session::forget('flash_notice');
+
+    return is_array($notice) ? [$notice] : [];
+}
+
+function flash_set(string $kind, string $message): void
+{
+    Rerm\Session::set('flash_notice', [$kind, $message]);
+}
+
+/**
+ * The list state a log-contact form carries so its 303 lands the officer
+ * back on the exact filtered page they acted from — whitelisted here, never
+ * echoed into a Location header raw.
+ *
+ * @param array<string, mixed> $input
+ */
+function dashboard_return_query(array $input): string
+{
+    $params = [];
+    if (($input['mode'] ?? '') === 'mine' || ($input['mode'] ?? '') === 'team') {
+        $params['mode'] = $input['mode'];
+    }
+    if (($input['show'] ?? '') === 'all') {
+        $params['show'] = 'all';
+    }
+    $page = (int) ($input['page'] ?? 1);
+    if ($page > 1) {
+        $params['page'] = $page;
+    }
+    $size = (int) ($input['size'] ?? 0);
+    if ($size > 0) {
+        $params['size'] = $size;
+    }
+
+    $query = http_build_query($params);
+
+    return $query === '' ? '' : '?' . $query;
+}
+
+/** Renders My Roster Status — the 'dashboard' route, and the landing page. */
+function dashboard_screen(Rerm\App $app, Rerm\Auth\User $user): void
+{
+    $year = active_show_year($app);
+    if ($year === null) {
+        render($app, 'not-found', 'Not found', [], 404);
+
+        return;
+    }
+
+    render($app, 'dashboard', 'My Roster Status', [
+        // A data screen (spec 8.2): the wide container above 720px.
+        'wide'    => true,
+        'user'    => $user,
+        'year'    => $year,
+        'notices' => flash_take(),
+        // 'statusPage', not 'status': render() extracts with EXTR_SKIP and
+        // its own int $status parameter would win that collision.
+        'statusPage' => Rerm\Roster\StatusPage::fromApp($app)->page($user, $year['id'], $_GET),
+    ]);
+}
+
+/**
+ * The log-contact POST (spec 7.1, decided 2): CSRF, then the write through
+ * Rerm\Roster\LogContact — which re-checks Access::allows() with a Subject
+ * per member — then a 303 back to the same filtered page. The one outcome
+ * that is not a redirect is not_found: an out-of-scope or non-existent
+ * member gets the same 404 a typed URL would, because this application does
+ * not discuss what exists with people who cannot see it.
+ */
+function log_contact_act(Rerm\App $app, Rerm\Auth\User $user): never
+{
+    // The form carries its list state as ONE hidden query string (fifty
+    // forms a page — one field beats four); parsed here and then whitelisted
+    // like any other input.
+    $state = [];
+    parse_str(is_string($_POST['return'] ?? null) ? $_POST['return'] : '', $state);
+    $return = 'dashboard' . dashboard_return_query($state);
+
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        redirect($app, 'dashboard');
+    }
+
+    if (!Rerm\Csrf::check()) {
+        flash_set(...stale_form_notice());
+        redirect($app, $return);
+    }
+
+    $result  = Rerm\Roster\LogContact::fromApp($app)->log($user, $_POST);
+    $outcome = $result['outcome'];
+
+    // An if-chain, not a switch: tests/auth_test.php reads every `case '…':`
+    // in this file as a route label, and these outcomes are not routes.
+    if ($outcome === 'logged') {
+        $message = 'Contact with ' . $result['member_name'] . ' is logged.';
+        if ($result['progress_changes'] > 0) {
+            $message .= sprintf(
+                ' %d progress status%s updated.',
+                $result['progress_changes'],
+                $result['progress_changes'] === 1 ? '' : 'es'
+            );
+        }
+        flash_set('ok', $message);
+        redirect($app, $return);
+    }
+
+    if ($outcome === 'year_closed') {
+        flash_set('danger', 'This show year is closed and read-only. Nothing was logged.');
+        redirect($app, $return);
+    }
+
+    if ($outcome === 'bad_type') {
+        flash_set('danger', 'Choose how the contact happened. Nothing was logged.');
+        redirect($app, $return);
+    }
+
+    // no_year, not_found: an out-of-scope or non-existent member gets the
+    // same 404 a typed URL would.
+    render($app, 'not-found', 'Not found', [], 404);
+    exit;
 }
 
 // ---------------------------------------------------------------------------
@@ -998,8 +1144,29 @@ if ($guard !== Rerm\Routes::PUBLIC
 
 switch ($path) {
     case '':
+        // The landing swap (Phase 5 decided 1): My Roster Status for anyone
+        // who may use it, the menu for anyone who may not. mayUse is the
+        // LEVEL question — no member is being acted on by rendering a screen;
+        // everything on the screen re-checks per member.
+        if (Rerm\Auth\Access::mayUse($user, Rerm\Auth\Capability::ViewStatusDashboard)) {
+            dashboard_screen($app, $user);
+        } else {
+            render($app, 'menu', 'Menu', ['user' => $user]);
+        }
+        break;
+
+    case 'dashboard':
+        dashboard_screen($app, $user);
+        break;
+
+    case 'menu':
         render($app, 'menu', 'Menu', ['user' => $user]);
         break;
+
+    case 'log-contact':
+        log_contact_act($app, $user);
+
+        // Unreachable: log_contact_act() redirects or exits.
 
     case 'login':
         // Already signed in: the menu, not a second login. The link in a

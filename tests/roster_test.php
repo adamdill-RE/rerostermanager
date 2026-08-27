@@ -80,13 +80,13 @@ test('every status carries its word and a colour class — never a hue alone', f
 
     sort($labels);
     assertSame(
-        ['Complete', 'Contacted', 'In Progress', 'Not reported', 'Outstanding', 'Reported'],
+        ['Complete', 'Contacted', 'Member Handling', 'Not reported', 'Open/No Contact', 'Reported Complete'],
         $labels,
-        'the six words of spec 8.3, each spelled once'
+        'the six words of spec 8.3 as renamed by the owner at Phase 4 close (Phase 5 decided 5), each spelled once'
     );
 
-    // The two amber states stay tellable apart: In Progress is the filled
-    // chip, Contacted the outline.
+    // The two amber states stay tellable apart: Member Handling is the
+    // filled chip, Contacted the outline.
     assertTrue(str_contains(MetricStatus::InProgress->chipClass(), 'chip-fill'));
     assertTrue(!str_contains(MetricStatus::Contacted->chipClass(), 'chip-fill'));
 });
