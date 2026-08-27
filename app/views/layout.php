@@ -425,6 +425,56 @@ form.quick button { margin-top: .5rem; }
     .assign td.who { display: inline-block; width: calc(100% - 3rem); }
 }
 
+/* --- Committee Dashboard (spec 7.3) ----------------------------------------
+   One table, three levels, two layouts. Above 720px the level shows as
+   indentation and weight; below it the row is a stacked card and the level
+   travels as a word in the name cell, because indentation does not survive
+   the transform. */
+.committee td.grp .lvl {
+    display: inline-block;
+    min-width: 4.2rem;
+    color: var(--muted);
+    font-size: .78rem;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+}
+.committee td.grp .sub { display: block; color: var(--muted); font-size: .85rem; }
+.committee td.grp a { font-weight: 700; }
+.committee tr.lv-division td.grp { font-size: 1.02rem; }
+.committee td.metric { font-variant-numeric: tabular-nums; }
+.committee td.metric .bar { height: 8px; border-radius: 4px; }
+.committee td.metric .mn { font-size: .82rem; color: var(--muted); }
+
+@media (max-width: 719px) {
+    /* The four requirement cells share wrapped lines, each carrying its own
+       short label — the roster card's pattern, with the bar under the name. */
+    .committee td.metric {
+        display: inline-block;
+        width: 47%;
+        margin: .15rem 1% .15rem 0;
+        vertical-align: top;
+    }
+    .committee td.metric::before { display: block; }
+    .committee td.grp { display: block; font-size: 1.05rem; }
+    .committee td.grp::before { content: none; }
+    /* The three triage numbers read as a row of their own under the bars. */
+    .committee tr.lv-area td.grp { padding-left: .6rem; }
+    .committee tr.lv-team td.grp { padding-left: 1.2rem; }
+}
+
+@media (min-width: 720px) {
+    .committee td.grp .lvl { min-width: 0; margin-right: .4rem; }
+    .committee tr.lv-area td.grp { padding-left: 1.6rem; }
+    .committee tr.lv-team td.grp { padding-left: 3rem; }
+    .committee tr.lv-division td.grp { border-left: 3px solid var(--action-orange); }
+    .committee td.metric { white-space: nowrap; }
+    /* inline-FLEX, not inline-block: .bar lays its segments out with flex
+       and a block display would stack them vertically. */
+    .committee td.metric .bar { display: inline-flex; width: 3.4rem; vertical-align: middle; }
+    .committee td.metric .mn { margin-left: .35rem; }
+    .committee th.num a { white-space: nowrap; }
+}
+
 textarea {
     width: 100%;
     min-height: 56px;

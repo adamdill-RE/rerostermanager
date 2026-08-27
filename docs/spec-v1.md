@@ -969,6 +969,54 @@ already use (`return_query()`), so the return-state work is a table entry
 rather than new code. Proving the equality for the two new figures is the real
 work here, and the tests owe it.
 
+#### What Phase 7 decided for itself
+
+Three things were left open for the build. They were decided as follows, and
+`tests/committee_test.php` holds each one.
+
+**The three levels open through the URL, not through `<details>`.** `<details>`
+collapses *pixels* and ships the *bytes* anyway: a closed one has already
+downloaded every row inside it, and §10 budgets the download. Four divisions,
+~20 areas and 96 teams with four proportion bars each is a page the browser
+would draw a corner of and fetch all of. So `?division=` opens one division
+into its areas and `?area=` opens one of those into its teams — Phase 6's
+one-bucket-at-a-time, and Phase 5's one-log-sheet-at-a-time, applied to a
+tree. The state is shareable and survives a reload. Where a level offers only
+one choice — a Senior Officer's single division — it is simply open, because
+there is nothing to collapse it to. Measured at the real roster's shape: 31.6KB
+for the divisions alone, 49.2KB with one division open, **75.4KB fully
+expanded** (5 divisions + 8 areas + a 15-team area), against the 100KB budget;
+the roll-up read is under 50ms against a 500ms one.
+
+**`AssignPage::teamsInScope()` stays private.** What the two screens share is
+the *predicate* — `EligibleOfficers::memberHasAssignment()` and
+`::countsByTeam()` — not an aggregate. That query `INNER JOIN`s `team` and
+groups by team alone, so lifting it would have dropped the members with no
+team and collapsed the seven division-spanning teams into one row each; this
+roll-up's group is the **(division, team) pair**, because division is a
+property of the member. A test holds the two screens' coverage numbers to each
+other, so the choice is verified rather than argued.
+
+**Sort state is a whitelist, and never reaches a query.** The roll-up is
+derived in PHP, so it is also sorted in PHP over rows that already exist —
+there is no `ORDER BY` for a sort key to reach. The key still chooses from
+`CommitteePage::sortKeys()`, because "it cannot reach SQL today" is a
+coincidence of the implementation and not a rule. A metric column sorts by its
+**outstanding count**: every other sortable figure on the row is a count of
+people, and a completion rate mixed in among them would make "descending" mean
+two different things on one screen. Ties break on the group name ascending in
+both directions, which at 50–65% outstanding is the ordinary case.
+
+Two smaller consequences, both of the every-figure-equals-the-list rule. A
+figure is a **link only where §7.1 can reproduce it**: "no officer on this
+team" has no filter spelling and so is a number rather than a link, and
+`(No team)` — members with no team at all, who can never be assigned because
+assignment is same-team — is a counted group that carries no drill-down. And a
+triage drill-down carries `show=all` as well as `mode=team`, because §7.1's
+list defaults to outstanding-only and a fully complete member who has never
+been contacted would otherwise be counted by the figure and missing from the
+list it landed on.
+
 ### 7.4 Assign Officers to Committeemen
 
 Per the brief, the screen that has to work best. Same-team assignment only.
@@ -1163,7 +1211,7 @@ reason, and the 432 members on thin teams are counted rather than lost.
 recorded there. Seeds `team.area` by migration; adds the group,
 never-contacted and no-officer filters to §7.1. **Done when** an Executive can
 reach the team nobody is working in two taps, and every figure on the roll-up
-lands on exactly the people it counted.
+lands on exactly the people it counted. **Shipped 2026-08-27.**
 
 ### Phase 8 — Admin
 §7.5: designation, export, show-year control, purge confirmation, audit log.

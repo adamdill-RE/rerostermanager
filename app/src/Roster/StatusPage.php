@@ -30,6 +30,19 @@ use Rerm\Auth\User;
  * default is My members if the officer holds any assignments this show year,
  * else My team (spec 7.1) — which at launch, before Phase 6 writes the first
  * assignment, lands everyone on My team.
+ *
+ * PHASE 7 ADDED FOUR FILTERS, AND THEY ARE WHAT MAKES THE DASHBOARD HONEST
+ *
+ * The Committee Dashboard drills down to this screen, and spec 7.1's own rule
+ * — every figure equals the list filtered to it — has to survive the trip. So
+ * this class reads `division=`, `team[]=` (spec 7.2's shape, never a second
+ * one), `contact=never` and `assigned=none`, applies them to the SAME `$where`
+ * the cards and the list share, and reports back exactly what it applied.
+ *
+ * `has_assignments` is deliberately computed BEFORE any of them, on the
+ * unfiltered scope: it answers "does this officer hold anybody at all", which
+ * is what the toggle's default rule means. Computing it after would make an
+ * officer's default mode depend on which team they happened to drill into.
  */
 final class StatusPage
 {
@@ -85,6 +98,61 @@ final class StatusPage
             ? $input['mode']
             : null;
         $mode = $requestedMode ?? ($hasAssignments ? 'mine' : 'team');
+
+        // ------------------------------------------------------------------
+        // The drill-down filters (spec 7.3, decided 4). Every one of them
+        // NARROWS the scoped predicate — none can widen it, because each is
+        // ANDed onto ScopedQuery's own — so they are applied whatever the
+        // signed-in level is. There is no picker for them on this screen:
+        // they arrive in the URL from the Committee Dashboard, where the
+        // figure that made the link is the figure they have to reproduce.
+        //
+        // They are applied BEFORE the three reads and after nothing, so the
+        // dashboard cards and the list are both filtered. That is what makes
+        // "clicking 40 never contacted lands on those 40" true rather than
+        // approximately true.
+        // ------------------------------------------------------------------
+
+        $divisionFilter = (int) ($input['division'] ?? 0);
+        $teamFilter     = RosterPage::teamIds($input['team'] ?? []);
+        $contactFilter  = ($input['contact'] ?? '') === 'never';
+        $assignedFilter = ($input['assigned'] ?? '') === 'none';
+
+        if ($divisionFilter > 0) {
+            $where .= ' AND m.division_id = :filter_division';
+            $bind[':filter_division'] = $divisionFilter;
+        }
+
+        if ($teamFilter !== []) {
+            // team[] is spec 7.2's existing filter shape, not a second one.
+            // The ids are already cast to int and they still intersect the
+            // scope predicate, so an out-of-scope id yields nothing rather
+            // than something.
+            $places = [];
+            foreach (array_values($teamFilter) as $i => $teamId) {
+                $places[]                  = ":filter_team_{$i}";
+                $bind[":filter_team_{$i}"] = $teamId;
+            }
+            $where .= ' AND m.team_id IN (' . implode(', ', $places) . ')';
+        }
+
+        if ($contactFilter) {
+            // Never contacted THIS show year — the absence spec 5.4 reads as
+            // Outstanding rather than Contacted, and the Committee
+            // Dashboard's default sort column.
+            $where .= ' AND NOT EXISTS (SELECT 1 FROM contact_log cn'
+                . ' WHERE cn.member_id = m.id AND cn.show_year_id = :filter_contact_year)';
+            $bind[':filter_contact_year'] = $showYearId;
+        }
+
+        if ($assignedFilter) {
+            // EligibleOfficers' fragment, so "unassigned" here is the same
+            // question the Assign screen's bucket 1 and the Committee
+            // Dashboard's unassigned column both ask.
+            [$hasAny, $bindHasAny] = EligibleOfficers::memberHasAssignment('m', 'flt', $showYearId);
+            $where .= " AND NOT {$hasAny}";
+            $bind  += $bindHasAny;
+        }
 
         // My members narrows the scoped WHERE; every read below shares it so
         // the dashboard and the list describe the same people.
@@ -264,7 +332,82 @@ final class StatusPage
             // selects are ~1KB of repeated <option> text, and fifty copies
             // is half the spec 10 first-paint budget by themselves.
             'log_open'     => (int) ($input['log'] ?? 0),
+
+            // The drill-down filters as they were actually applied, with the
+            // names to say them in. A screen that has been narrowed by a URL
+            // has to show what it was narrowed to, or the officer reads a
+            // roster that is quietly missing people.
+            'filters'      => [
+                'division'      => $divisionFilter > 0 ? $divisionFilter : null,
+                'teams'         => $teamFilter,
+                'contact'       => $contactFilter ? 'never' : null,
+                'assigned'      => $assignedFilter ? 'none' : null,
+                'active'        => $divisionFilter > 0 || $teamFilter !== []
+                    || $contactFilter || $assignedFilter,
+                'division_name' => $divisionFilter > 0
+                    ? $this->divisionName($scoped, $divisionFilter)
+                    : '',
+                'team_names'    => $teamFilter !== []
+                    ? $this->teamNames($scoped, $teamFilter)
+                    : [],
+            ],
         ];
+    }
+
+    /**
+     * The name of a filtered division, for the sentence that says what this
+     * screen was narrowed to.
+     *
+     * Read THROUGH THE SCOPE, not off the division table: a crafted
+     * `?division=` naming somebody else's division returns an empty roster
+     * either way, and this stops it also returning that division's NAME. The
+     * scope predicate alone is the right filter here rather than the whole
+     * `$where` — the question is "does this user see anybody in it", not
+     * "does anybody in it match every triage filter as well".
+     */
+    private function divisionName(ScopedQuery $scoped, int $divisionId): string
+    {
+        $read = $this->pdo->prepare(
+            'SELECT d.name FROM division d INNER JOIN member m ON m.division_id = d.id'
+            . ' WHERE ' . $scoped->predicate() . ' AND d.id = :name_division LIMIT 1'
+        );
+        $read->execute($scoped->bindings() + [':name_division' => $divisionId]);
+        $name = $read->fetchColumn();
+
+        return is_string($name) ? $name : '';
+    }
+
+    /**
+     * The names of the filtered teams, one query, through the same scope and
+     * in the order the URL named them so the sentence reads the way the link
+     * was built.
+     *
+     * @param array<int, int> $teamIds
+     * @return array<int, string>
+     */
+    private function teamNames(ScopedQuery $scoped, array $teamIds): array
+    {
+        [$places, $bind] = MemberReads::idList($teamIds, 'filter_team_name');
+
+        $read = $this->pdo->prepare(
+            'SELECT DISTINCT t.id, t.name FROM team t INNER JOIN member m ON m.team_id = t.id'
+            . ' WHERE ' . $scoped->predicate() . " AND t.id IN ({$places})"
+        );
+        $read->execute($scoped->bindings() + $bind);
+
+        $names = [];
+        foreach ($read->fetchAll() as $row) {
+            $names[(int) $row['id']] = (string) $row['name'];
+        }
+
+        $ordered = [];
+        foreach ($teamIds as $teamId) {
+            if (isset($names[$teamId])) {
+                $ordered[$teamId] = $names[$teamId];
+            }
+        }
+
+        return $ordered;
     }
 
     /**

@@ -760,10 +760,13 @@ function flash_set(string $kind, string $message): void
  * Location header raw.
  *
  * One helper rather than one per screen (Phase 6): each allowed key names
- * what may travel, either as the list of values it may hold or as
- * ['int' => n] for a number that travels only when it exceeds n. Everything
- * else in the input is dropped, a key not in the list included, so a crafted
- * `return` cannot smuggle a parameter into the redirect.
+ * what may travel, either as the list of values it may hold, as
+ * ['int' => n] for a number that travels only when it exceeds n, or — since
+ * Phase 7 — as ['ints' => n] for a LIST of such numbers, which is what
+ * spec 7.2's team[] filter is and what the Committee Dashboard's drill-down
+ * hands to spec 7.1. Everything else in the input is dropped, a key not in
+ * the list included, so a crafted `return` cannot smuggle a parameter into
+ * the redirect.
  *
  * @param array<string, mixed> $input
  * @param array<string, mixed> $allowed
@@ -783,6 +786,24 @@ function return_query(array $input, array $allowed): string
             continue;
         }
 
+        if (is_array($rule) && array_key_exists('ints', $rule)) {
+            // De-duplicated and capped at 200, the same ceiling
+            // RosterPage::teamIds() applies: a thousand-value query string
+            // must not become a thousand-placeholder statement, and
+            // max_input_vars is 1000 with silent truncation.
+            $numbers = [];
+            foreach ((array) $value as $item) {
+                $number = is_scalar($item) ? (int) $item : 0;
+                if ($number > (int) $rule['ints']) {
+                    $numbers[$number] = $number;
+                }
+            }
+            if ($numbers !== []) {
+                $params[$key] = array_slice(array_values($numbers), 0, 200);
+            }
+            continue;
+        }
+
         if (is_string($value) && in_array($value, (array) $rule, true)) {
             $params[$key] = $value;
         }
@@ -793,14 +814,25 @@ function return_query(array $input, array $allowed): string
     return $query === '' ? '' : '?' . $query;
 }
 
-/** My Roster Status: the toggle, the filter and the page (spec 7.1). */
+/**
+ * My Roster Status: the toggle, the filter, the page — and, since Phase 7,
+ * the four drill-down filters (spec 7.3, decided 4).
+ *
+ * They have to travel, or logging a contact from a drilled-down view would
+ * 303 back to the whole roster and the officer would lose the forty people
+ * they were working. A table entry each, not new code.
+ */
 function dashboard_return_query(array $input): string
 {
     return return_query($input, [
-        'mode' => ['mine', 'team'],
-        'show' => ['all'],
-        'page' => ['int' => 1],
-        'size' => ['int' => 0],
+        'mode'     => ['mine', 'team'],
+        'show'     => ['all'],
+        'division' => ['int' => 0],
+        'team'     => ['ints' => 0],
+        'contact'  => ['never'],
+        'assigned' => ['none'],
+        'page'     => ['int' => 1],
+        'size'     => ['int' => 0],
     ]);
 }
 
@@ -900,6 +932,32 @@ function log_contact_act(Rerm\App $app, Rerm\Auth\User $user): never
     // same 404 a typed URL would.
     render($app, 'not-found', 'Not found', [], 404);
     exit;
+}
+
+// ---------------------------------------------------------------------------
+// Committee Dashboard (spec 7.3) — Senior Officer and above, through
+// Capability::ViewCommitteeDashboard. READ-ONLY: no POST, no CSRF check and
+// no Access::allows() per member, because nothing on it writes. The route
+// guard and ScopedQuery are still not optional.
+// ---------------------------------------------------------------------------
+
+/** Renders the Committee Dashboard — the roll-up by division, area and team. */
+function committee_screen(Rerm\App $app, Rerm\Auth\User $user): void
+{
+    $year = active_show_year($app);
+    if ($year === null) {
+        render($app, 'not-found', 'Not found', [], 404);
+
+        return;
+    }
+
+    render($app, 'committee', 'Committee Dashboard', [
+        // A data screen (spec 8.2): the wide container above 720px.
+        'wide'      => true,
+        'user'      => $user,
+        'year'      => $year,
+        'committee' => Rerm\Roster\CommitteePage::fromApp($app)->page($user, $year['id'], $_GET),
+    ]);
 }
 
 // ---------------------------------------------------------------------------
@@ -1463,6 +1521,10 @@ switch ($path) {
             'year'   => $year,
             'roster' => Rerm\Roster\RosterPage::fromApp($app)->page($user, $year['id'], $_GET),
         ]);
+        break;
+
+    case 'committee':
+        committee_screen($app, $user);
         break;
 
     case 'assign':

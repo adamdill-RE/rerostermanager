@@ -113,6 +113,48 @@ enum MetricStatus: string
     }
 
     /**
+     * The order every stacked proportion bar and every legend walks, best to
+     * worst: Complete, then the two states an officer has moved, then the two
+     * that are still open, then Not reported.
+     *
+     * It is here rather than in a view because two screens draw that bar —
+     * My Roster Status's four cards and the Committee Dashboard's roll-up
+     * rows — and a bar whose segments ran in a different order on one of them
+     * would be a proportion that reads differently on two screens, exactly as
+     * a chip would.
+     *
+     * @return array<int, self>
+     */
+    public static function ladder(): array
+    {
+        return [
+            self::Complete,
+            self::Reported,
+            self::InProgress,
+            self::Contacted,
+            self::Outstanding,
+            self::NotReported,
+        ];
+    }
+
+    /**
+     * The bar-segment class in app/views/layout.php — also the legend's dot.
+     * Contacted is the hatched amber, so it reads apart from Member Handling
+     * inside a bar even before the legend is.
+     */
+    public function barClass(): string
+    {
+        return match ($this) {
+            self::Complete    => 's-complete',
+            self::Reported    => 's-reported',
+            self::InProgress  => 's-handling',
+            self::Contacted   => 's-contacted',
+            self::Outstanding => 's-open',
+            self::NotReported => 's-notrep',
+        };
+    }
+
+    /**
      * The chip class in app/views/layout.php. Colour accompanies the word,
      * never replaces it: In Progress is a filled amber chip and Contacted an
      * amber outline, so the two amber states stay tellable apart even before
