@@ -181,10 +181,12 @@ asserts that, and covers `ScopedQuery`, `EligibleOfficers` and `AssignOfficers`
 too — the files that decide who may hold twenty people. It exists so a 96-team
 dashboard is legible, nothing more.
 
-The column is **`NULL` on all 96 teams until Phase 7**: the schema, the index
-and the rule that no import writes it all shipped in Phase 1, but the seeding
-migration is Phase 7's and the Admin editor is Phase 8's (`docs/spec-v1.md`
-§7.3).
+The column is **seeded by `006_seed_team_area.sql`** (Phase 7): the seven bare
+area team names — `Reed Road`, `610`, `Emlr`, `Bus Ops`, `Ost-Smith Lands`,
+`Chuckwagon`, `Administration` — are the area list, and every other team takes
+the longest of those its name starts with. A team matching none keeps `NULL`
+and groups under **(No area)**, the same honest-placeholder pattern as
+`(No Division)`. The Admin editor is still Phase 8's (`docs/spec-v1.md` §7.3).
 
 ### Scope is derived from title, not from placement
 
@@ -378,7 +380,7 @@ Each phase ends shippable. `docs/spec-v1.md` carries the detail.
 | **4 · View My Roster** | Scoped roster, predictive search, team filter, contact links, expandable contact history | An Officer sees their team and nothing else, on a phone |
 | **5 · My Roster Status** | The dashboard, the member list, log-a-contact, progress statuses, mine/team toggle | Effective-status table above is provably correct |
 | **6 · Assign Officers** | Unassigned isolation, bulk assign, thin-team flagging | Every assignable member has 1–3 officers or a named reason |
-| **7 · Committee Dashboard** | Roll-up by division and team with drill-down | An Executive can find the worst team in two taps |
+| **7 · Committee Dashboard** | Roll-up by division, area and team with drill-down; `team.area` seeded; §7.1 gains the group, `contact=never` and `assigned=none` filters | An Executive can find the worst team in two taps, and every figure lands on exactly the people it counted |
 | **8 · Admin** | Designate Admins and Allowed Users, export by show year, show-year start/stop | A full round trip: import → work → export |
 | **9 · v2** | Create Forms; recruiting and retention automation | out of scope for v1 |
 

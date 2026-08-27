@@ -38,6 +38,42 @@ final class View
     }
 
     /**
+     * The stacked proportion bar: one segment per NON-ZERO status, in
+     * MetricStatus::ladder() order, widths summing to 100% of $total. Zero
+     * counts render nothing at all — a segment of width zero is bytes that
+     * draw no pixels, and this markup repeats four times a row.
+     *
+     * $titles adds a per-segment `title` naming the state and its count. My
+     * Roster Status wants it: four big cards, and the hover is how the exact
+     * number is read off a bar. The Committee Dashboard does not: at up to
+     * forty rows the attribute is ~35 bytes x 4 segments x 4 metrics x 40
+     * rows against a 100KB first-paint budget (spec 10), and that screen
+     * prints the count beside the bar instead.
+     *
+     * Returns escaped HTML, safe to echo.
+     *
+     * @param array<string, int> $counts MetricStatus->value => count
+     */
+    public static function bar(array $counts, int $total, bool $titles = false): string
+    {
+        $html = '<div class="bar">';
+
+        foreach (MetricStatus::ladder() as $status) {
+            $n = (int) ($counts[$status->value] ?? 0);
+            if ($n === 0) {
+                continue;
+            }
+
+            $html .= '<span class="' . e($status->barClass()) . '" style="width:'
+                . e(number_format($n * 100 / max(1, $total), 1)) . '%"'
+                . ($titles ? ' title="' . e($status->label()) . ' ' . e(number_format($n)) . '"' : '')
+                . '></span>';
+        }
+
+        return $html . '</div>';
+    }
+
+    /**
      * A UTC DATETIME as relative words with the absolute (the display
      * timezone via $app->toDisplay) to ride in the title attribute. Returns
      * two PLAIN strings — the caller escapes both.

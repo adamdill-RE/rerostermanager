@@ -91,6 +91,14 @@ final class Routes
         // reaching the screen never means seeing past one's scope.
         'roster'   => Capability::ViewRoster->value,
 
+        // The Committee Dashboard (spec 7.3) — Senior Officer and above, and
+        // the first route whose capability floor is above Officer. Read-only:
+        // there is no write path on it at all, so no POST and no CSRF check —
+        // but the guard here and ScopedQuery inside CommitteePage are not
+        // optional, and a Senior Officer reaching it still sees exactly their
+        // own division's groups.
+        'committee' => Capability::ViewCommitteeDashboard->value,
+
         // The import, behind the capability it was always meant for. Admin
         // only, everywhere-scoped; the setup-key era ended with Phase 3.
         'import'   => Capability::ImportRoster->value,

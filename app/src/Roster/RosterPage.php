@@ -279,9 +279,13 @@ final class RosterPage
      * past the 96 real teams — a thousand-value query string must not become
      * a thousand-placeholder statement.
      *
+     * Public since Phase 7: spec 7.3's drill-down applies the SAME team[]
+     * filter to My Roster Status, and a second normaliser would be a second
+     * place for the cap and the digits-only rule to drift.
+     *
      * @return array<int, int>
      */
-    private static function teamIds(mixed $input): array
+    public static function teamIds(mixed $input): array
     {
         $ids = [];
         foreach ((array) $input as $value) {

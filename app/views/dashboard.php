@@ -52,25 +52,13 @@ $pct = static fn (int $n, int $total): string => number_format($n * 100 / max(1,
 /**
  * The ladder order every bar and legend walks (decided 4). Not reported is
  * last and grey, rendered only if it ever occurs.
+ *
+ * It lives on MetricStatus since Phase 7, beside the segment class and the
+ * chip class, because the Committee Dashboard draws the same bar: a
+ * proportion that ran in a different order on two screens would be as wrong
+ * as a chip that did.
  */
-$ladder = [
-    MetricStatus::Complete,
-    MetricStatus::Reported,
-    MetricStatus::InProgress,
-    MetricStatus::Contacted,
-    MetricStatus::Outstanding,
-    MetricStatus::NotReported,
-];
-
-/** Bar-segment class per status; s-contacted is the hatched amber. */
-$segClass = [
-    MetricStatus::Complete->value    => 's-complete',
-    MetricStatus::Reported->value    => 's-reported',
-    MetricStatus::InProgress->value  => 's-handling',
-    MetricStatus::Contacted->value   => 's-contacted',
-    MetricStatus::Outstanding->value => 's-open',
-    MetricStatus::NotReported->value => 's-notrep',
-];
+$ladder = MetricStatus::ladder();
 
 /** One shared popover per status; every legend button targets these ids. */
 $popId = [
@@ -103,20 +91,43 @@ $progressChoices = [
 
 $defaultMode = $statusPage['has_assignments'] ? 'mine' : 'team';
 
+/** The drill-down filters as applied (spec 7.3, decided 4), or none. */
+$filters = $statusPage['filters'];
+
 /**
  * A dashboard URL carrying the toggle, filter and size with the caller's
  * overrides. Defaults stay out of the URL so the plain screen has a plain
  * address; a changed toggle or filter resets to page 1 unless told otherwise.
  *
+ * The Committee Dashboard's drill-down filters ride along on EVERY link here.
+ * An officer who followed "40 never contacted" into a team and then turned a
+ * page, or flipped the toggle, must not silently get the whole roster back —
+ * losing a filter is losing the forty people they came to work.
+ *
  * @param array<string, mixed> $overrides
  */
-$href = static function (array $overrides = []) use ($app, $statusPage, $defaultMode): string {
+$href = static function (array $overrides = []) use ($app, $statusPage, $defaultMode, $filters): string {
     $params = [
         'mode' => $statusPage['mode'],
         'show' => $statusPage['show'],
         'size' => $statusPage['size'],
         'page' => 1,
     ];
+
+    // Written before the overrides so a caller can drop one by passing null.
+    if ($filters['division'] !== null) {
+        $params['division'] = $filters['division'];
+    }
+    if ($filters['teams'] !== []) {
+        $params['team'] = $filters['teams'];
+    }
+    if ($filters['contact'] !== null) {
+        $params['contact'] = $filters['contact'];
+    }
+    if ($filters['assigned'] !== null) {
+        $params['assigned'] = $filters['assigned'];
+    }
+
     $params = array_merge($params, $overrides);
 
     if ($params['mode'] === $defaultMode) {
@@ -131,11 +142,36 @@ $href = static function (array $overrides = []) use ($app, $statusPage, $default
     if ($params['page'] === 1) {
         unset($params['page']);
     }
+    foreach ($params as $key => $value) {
+        if ($value === null) {
+            unset($params[$key]);
+        }
+    }
 
     $query = http_build_query($params);
 
     return $app->url('dashboard') . ($query === '' ? '' : '?' . $query);
 };
+
+/**
+ * What this screen was narrowed to, in words — a filtered roster that does
+ * not say it is filtered is a roster that is quietly missing people.
+ *
+ * @var array<int, string> $filterWords
+ */
+$filterWords = [];
+if ($filters['division_name'] !== '') {
+    $filterWords[] = $filters['division_name'];
+}
+foreach ($filters['team_names'] as $teamName) {
+    $filterWords[] = $teamName;
+}
+if ($filters['contact'] === 'never') {
+    $filterWords[] = 'never contacted';
+}
+if ($filters['assigned'] === 'none') {
+    $filterWords[] = 'no officer assigned';
+}
 
 $dash  = $statusPage['dashboard'];
 $total = (int) $dash['total'];
@@ -149,6 +185,25 @@ $fully = (int) $dash['fully_complete'];
         ? 'the working set: outstanding on at least one requirement, next call first'
         : 'everyone in this view, next call first' ?>.
 </p>
+
+<?php if ($filters['active']) { ?>
+    <?php /* Arrived from the Committee Dashboard (spec 7.3, decided 4). Every
+             figure there equals this list filtered to it, so this screen has
+             to say WHICH filter it is showing — and offer the way out. */ ?>
+    <div class="card">
+        <span class="chip chip-info">Filtered</span>
+        <span><?= e($filterWords === []
+            ? 'a group from the Committee Dashboard'
+            : implode(' · ', $filterWords)) ?></span>
+        <p class="hint">
+            <a href="<?= e($href([
+                'division' => null, 'team' => null, 'contact' => null, 'assigned' => null,
+            ])) ?>">Show my whole roster</a>
+            &middot;
+            <a href="<?= e($app->url('committee')) ?>">Back to the Committee Dashboard</a>
+        </p>
+    </div>
+<?php } ?>
 
 <?php foreach ($notices as [$level, $message]) { ?>
     <div class="card">
@@ -182,6 +237,16 @@ $fully = (int) $dash['fully_complete'];
                 Assignments arrive with the Assign Officers screen. Until then,
                 <a href="<?= e($href(['mode' => 'team'])) ?>">My team</a> shows
                 everyone in your scope.
+            </p>
+        <?php } elseif ($filters['active']) { ?>
+            <h2>Nobody matches this filter</h2>
+            <p>
+                Your scope holds members, but none of them are in the group
+                this link named. The figure that sent you here may have been
+                worked since &mdash;
+                <a href="<?= e($href([
+                    'division' => null, 'team' => null, 'contact' => null, 'assigned' => null,
+                ])) ?>">show my whole roster</a>.
             </p>
         <?php } else { ?>
             <h2>Your roster is empty</h2>
@@ -222,16 +287,7 @@ $fully = (int) $dash['fully_complete'];
             <p class="headline"><strong><?= e($number($complete)) ?></strong>
                 of <?= e($number($total)) ?> complete
                 <span class="out"><?= e($number((int) $card['outstanding'])) ?> outstanding</span></p>
-            <div class="bar">
-                <?php foreach ($ladder as $s) {
-                    $n = (int) $counts[$s->value];
-                    if ($n === 0) {
-                        continue; // zero-count states render nothing (decided 4)
-                    }
-                ?><span class="<?= e($segClass[$s->value]) ?>" style="width:<?= e($pct($n, $total)) ?>%"
-                    title="<?= e($s->label()) ?> <?= e($number($n)) ?>"></span><?php
-                } ?>
-            </div>
+            <?= View::bar($counts, $total, true) ?>
             <ul class="legend">
                 <?php foreach ($ladder as $s) {
                     $n = (int) $counts[$s->value];
@@ -239,7 +295,7 @@ $fully = (int) $dash['fully_complete'];
                         continue;
                     }
                 ?>
-                <li><span class="dot <?= e($segClass[$s->value]) ?>"></span><button type="button"
+                <li><span class="dot <?= e($s->barClass()) ?>"></span><button type="button"
                     class="deflink" popovertarget="<?= e($popId[$s->value]) ?>"><?= e($s->label()) ?></button>
                     <span class="n"><?= e($number($n)) ?></span></li>
                 <?php } ?>
@@ -304,11 +360,18 @@ $fully = (int) $dash['fully_complete'];
     // lists are the bytes the budget does not have.
     $lcAction = e($app->url('log-contact'));
 
+    // The filters travel too, whitelisted again on the way back by
+    // dashboard_return_query() — a 303 that dropped them would land the
+    // officer on the whole roster after logging one call.
     $returnState = http_build_query(array_filter([
-        'mode' => $statusPage['mode'],
-        'show' => $statusPage['show'] === 'all' ? 'all' : null,
-        'page' => $statusPage['page'] > 1 ? $statusPage['page'] : null,
-        'size' => $statusPage['size'] !== $statusPage['size_default'] ? $statusPage['size'] : null,
+        'mode'     => $statusPage['mode'],
+        'show'     => $statusPage['show'] === 'all' ? 'all' : null,
+        'division' => $filters['division'],
+        'team'     => $filters['teams'] === [] ? null : $filters['teams'],
+        'contact'  => $filters['contact'],
+        'assigned' => $filters['assigned'],
+        'page'     => $statusPage['page'] > 1 ? $statusPage['page'] : null,
+        'size'     => $statusPage['size'] !== $statusPage['size_default'] ? $statusPage['size'] : null,
     ]));
     $lcShared = Rerm\Csrf::field()
         . '<input type="hidden" name="return" value="' . e($returnState) . '">';

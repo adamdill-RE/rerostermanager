@@ -40,6 +40,9 @@ Every one of these is load-bearing on this host — see `docs/hosting.md`.
 | `001_schema.sql` | Every table in `docs/spec-v1.md` §5.2 and §5.2a. Schema, so **not** atomic. |
 | `002_seed_reference.sql` | The four export divisions, the seeded `(No Division)` placeholder, the first show year. Pure data, atomic. |
 | `003_seed_master_admin.sql` | Member number `987654321` and its Admin account, **shipped locked**. Pure data, atomic. |
+| `004_import_staging.sql` | The staging half of the two-step apply (§6.3). |
+| `005_import_failure.sql` | What a half-applied import leaves behind, so it stays recoverable. |
+| `006_seed_team_area.sql` | `team.area` by the longest-prefix rule over the seven bare-area team names (§7.3), and the one line that ends "Master Administrator Administrator". Pure data, atomic. |
 
 `schema_migration` is created by the migrator itself rather than by a
 migration: something has to exist before the first migration can be recorded,
