@@ -231,12 +231,19 @@ test('Officers and Members grant nothing at all', function (): void {
 // The forbidden column
 // ---------------------------------------------------------------------------
 
-test('team.area appears nowhere in Access or ScopedQuery', function (): void {
+test('team.area appears nowhere in Access, ScopedQuery or the eligibility rule', function (): void {
     // The column is display grouping, seeded by a prefix heuristic and
     // editable by an Admin (CLAUDE.md). A permission that read it would move
     // with a cosmetic edit. This holds the SOURCE clean, comments included,
     // so it cannot creep in as "just documentation" and then get referenced.
-    foreach (['Auth/Access.php', 'Roster/ScopedQuery.php'] as $file) {
+    // Phase 6 adds the two files that decide who may HOLD twenty people —
+    // the same class of decision, held to the same rule.
+    foreach ([
+        'Auth/Access.php',
+        'Roster/ScopedQuery.php',
+        'Roster/EligibleOfficers.php',
+        'Roster/AssignOfficers.php',
+    ] as $file) {
         $source = (string) file_get_contents(__DIR__ . '/../app/src/' . $file);
         assertTrue($source !== '', $file . ' is readable');
         assertSame(0, preg_match('/\barea\b/i', $source), $file . ' must never mention team.area');

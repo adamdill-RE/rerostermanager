@@ -77,6 +77,15 @@ final class Routes
         'forgot'   => self::PUBLIC,
         'reset'    => self::PUBLIC,
 
+        // Assign Officers (spec 7.4) — Officer and above, scoped. One route
+        // for the screen and its writes: the form posts back to the page it
+        // came from and 303s to the same team, bucket and page, so a separate
+        // write path would be a second name for one screen. The guard covers
+        // both verbs; every mutation inside re-checks Access::allows() with a
+        // Subject per selected member, because a bulk POST is fifty
+        // per-member questions and not one.
+        'assign'   => Capability::AssignOfficers->value,
+
         // View My Roster (spec 7.2) — Officer and above. The level check is
         // here; the rows themselves come through ScopedQuery::forUser(), so
         // reaching the screen never means seeing past one's scope.
