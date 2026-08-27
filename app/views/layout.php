@@ -38,6 +38,7 @@ declare(strict_types=1);
     --ok: #2F6B3A;
     --warn: #8A5A00;
     --danger: #A32B1C;
+    --info: #1F5C8A;
 
     --page: #FFFFFF;
     --surface: var(--dust-light);
@@ -62,6 +63,7 @@ declare(strict_types=1);
         --ok: #6FBF7F;
         --warn: #D9A441;
         --danger: #E5796A;
+        --info: #7FB3D9;
     }
 }
 
@@ -128,6 +130,14 @@ code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monosp
 .chip-ok { color: var(--ok); }
 .chip-warn { color: var(--warn); }
 .chip-danger { color: var(--danger); }
+.chip-info { color: var(--info); }
+.chip-muted { color: var(--muted); }
+/* The filled variant separates In Progress (solid amber) from Contacted
+   (amber outline) before the word is even read — spec 5.4's two amber
+   states. The text takes the page colour so it stays readable both ways
+   round: white on #8A5A00 in light, near-black on #D9A441 in dark. */
+.chip-fill { background: currentColor; }
+.chip-fill .chip-word { color: var(--page); }
 
 .hint { margin-top: .4rem; }
 
@@ -180,6 +190,57 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
     table th, table td { padding: .4rem .6rem; border-bottom: 1px solid var(--border); }
     table thead th { border-bottom: 2px solid var(--border); font-size: .85rem; color: var(--muted); }
     table td::before { content: none; }
+}
+
+/* The roster list (spec 7.2 + 8.2) — the same transformation as above, with
+   one refinement: each member is a <tbody> holding their row AND their
+   <details> expansion row, so below 720px the CARD is the tbody and the two
+   rows stay inside one border instead of splitting into two cards. */
+.roster .who { font-weight: 700; }
+.roster .who .sub { display: block; font-weight: 400; color: var(--muted); font-size: .85rem; }
+.roster td.actions a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    text-decoration: none;
+}
+
+@media (max-width: 719px) {
+    .roster tbody.member {
+        display: block;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: .6rem .75rem;
+        margin-bottom: .6rem;
+    }
+    .roster tr { border: 0; border-radius: 0; padding: 0; margin: 0; }
+    .roster td.who { display: block; font-size: 1.05rem; }
+    .roster td.who::before { content: none; }
+    /* The four metric chips share one wrapped line, each with its short
+       label riding along as the cell's data-label. */
+    .roster td.metric { display: inline-flex; align-items: center; gap: .3rem; margin: .1rem .6rem .1rem 0; }
+    /* Call / Text / Email as a row of real touch targets — 56px minimum,
+       gloves in February. Absent actions leave no gap: only what works
+       is rendered. */
+    .roster td.actions { display: flex; gap: .5rem; margin-top: .5rem; }
+    .roster td.actions::before { content: none; }
+    .roster td.actions a {
+        flex: 1;
+        min-height: 56px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+    }
+    .roster td.expand { display: block; }
+    .roster td.expand::before { content: none; }
+}
+
+@media (min-width: 720px) {
+    .roster td.actions a { margin-right: .75rem; min-height: 44px; padding: 0 .25rem; }
+    /* The expansion row reads as part of the row above it: the member's own
+       row keeps a light rule, the expansion carries the section one. */
+    .roster tr.detail td { border-bottom: 1px solid var(--border); padding-top: 0; }
+    .roster tr.entry td { border-bottom: 0; }
 }
 
 select, input[type="file"] {

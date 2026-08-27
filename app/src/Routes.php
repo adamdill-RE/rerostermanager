@@ -57,6 +57,11 @@ final class Routes
         'forgot'   => self::PUBLIC,
         'reset'    => self::PUBLIC,
 
+        // View My Roster (spec 7.2) — Officer and above. The level check is
+        // here; the rows themselves come through ScopedQuery::forUser(), so
+        // reaching the screen never means seeing past one's scope.
+        'roster'   => Capability::ViewRoster->value,
+
         // The import, behind the capability it was always meant for. Admin
         // only, everywhere-scoped; the setup-key era ended with Phase 3.
         'import'   => Capability::ImportRoster->value,

@@ -702,6 +702,25 @@ function setup_set_admin_password(Rerm\App $app): array
 }
 
 // ---------------------------------------------------------------------------
+// View My Roster (spec 7.2) — Officer and above, through Capability::ViewRoster
+// ---------------------------------------------------------------------------
+
+/**
+ * The active show year, which everything metric-, contact- and
+ * assignment-related is keyed to. The schema enforces exactly one active row
+ * (spec 5.2a), so a missing one means a database that was never seeded —
+ * worth a sentence rather than a blank page.
+ *
+ * @return ?array{id: int, label: string}
+ */
+function active_show_year(Rerm\App $app): ?array
+{
+    $row = $app->db()->query('SELECT id, label FROM show_year WHERE is_active = 1')->fetch();
+
+    return is_array($row) ? ['id' => (int) $row['id'], 'label' => (string) $row['label']] : null;
+}
+
+// ---------------------------------------------------------------------------
 // Import (spec 6) — Admin only since Phase 3, through Capability::ImportRoster
 // ---------------------------------------------------------------------------
 
@@ -1033,6 +1052,26 @@ switch ($path) {
             'memberNumber' => $outcome['member_number'],
             'done'         => $outcome['done'],
             'minLength'    => (int) $app->config()->get('auth.min_password_length'),
+        ]);
+        break;
+
+    case 'roster':
+        $year = active_show_year($app);
+        if ($year === null) {
+            render($app, 'not-found', 'Not found', [], 404);
+            break;
+        }
+
+        // Read-only: the guard above answered "may they use this screen" and
+        // ScopedQuery inside RosterPage answers "which rows". The moment a
+        // later phase puts a button on these rows, that action checks
+        // Access::allows() with a Subject per member.
+        render($app, 'roster', 'View My Roster', [
+            // A data screen (spec 8.2): the wide container above 720px.
+            'wide'   => true,
+            'user'   => $user,
+            'year'   => $year,
+            'roster' => Rerm\Roster\RosterPage::fromApp($app)->page($user, $year['id'], $_GET),
         ]);
         break;
 
