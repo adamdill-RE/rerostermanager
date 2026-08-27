@@ -1088,7 +1088,7 @@ stays findable.
 | OI-4 | Retention rule for members flagged absent | Flag only; Admin confirms purge |
 | ~~OI-5~~ | Do the 72 division-less members belong somewhere? | **Resolved: a real `(No Division)` row** (§5.1a), scopeable, exported as blank |
 | OI-6 | Is `Badge Pickup Person` useful? | Imported, not surfaced |
-| OI-7 | Does a team import name its own team? | Chosen in UI, verified against file |
+| ~~OI-7~~ | Does a team import name its own team? | **Closed: chosen in the UI, verified against every row** (Phase 2). A row naming another team is warned about and skipped, never retargeted |
 | OI-8 | Unify identity with RESM? | No — separate credentials, member number reconciles them |
 | ~~OI-9~~ | Can `mail()` deliver reliably from this host? | **Closed: yes — the account has a dedicated IP.** `mail()` + SPF/DKIM/DMARC; SMTP drops to a contingency. Sending *by mistake* is the real risk, handled by §3.3a |
 | ~~OI-10~~ | Does closing a show year carry assignments forward? | **Resolved: yes.** Assignments carry as new rows; metrics and contacts reset |
