@@ -192,3 +192,44 @@ test('the backing values are exactly what the schema stores', function (): void 
         $values
     );
 });
+
+test('titles() returns seniority order, and a screen relies on it', function (): void {
+    // Transcribed a second time, like the map itself: the Assign screen sorts
+    // its rows by this order, so reordering MAP silently reorders a roster.
+    // Note it is FINER than Level — the three Officer titles are separated,
+    // which is the whole reason a screen wants it.
+    assertSame(
+        [
+            'Chairman',
+            'Vice President',
+            'Officer in Charge',
+            'Division Chairman',
+            'Division Vice Chairman',
+            'Coordinator',
+            'Ambassador',
+            'Vice Chairman',
+            'Captain',
+            'Assistant Captain',
+            'Committee Member',
+            'Lifetime Committeemen',
+            'Lifetime Vice Presidents',
+            'Lifetime Director',
+            'Past Committee Chairman',
+        ],
+        TitleMap::titles()
+    );
+
+    // The order is a rank, so every title's level must be non-increasing
+    // down the list. A title inserted in the wrong block fails here.
+    $previous = null;
+    foreach (TitleMap::titles() as $title) {
+        $level = TitleMap::level($title);
+        if ($previous !== null) {
+            assertTrue(
+                $previous->rank() >= $level->rank(),
+                "{$title} sits above a title of a lower level"
+            );
+        }
+        $previous = $level;
+    }
+});

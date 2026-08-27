@@ -295,6 +295,7 @@ $href = static function (array $overrides = []) use ($app, $assign): string {
             <tr>
                 <?php if ($canAct) { ?><th><span class="vh">Select</span></th><?php } ?>
                 <th>Name</th>
+                <th>Title</th>
                 <?php foreach (Metric::scored() as $metric) { ?>
                     <th><?= e($metric->shortLabel()) ?></th>
                 <?php } ?>
@@ -323,6 +324,10 @@ $href = static function (array $overrides = []) use ($app, $assign): string {
             echo e($row['display_name']), ' <span class="sub">', e($row['member_number']), '</span>';
             echo $canAct ? '</label>' : '';
             echo '</td>';
+
+            // The export's own word for what they do. Sorted on, so the team
+            // reads top-down as its own hierarchy rather than alphabetically.
+            echo '<td class="title" data-label="Title">', e($row['title']), '</td>';
 
             foreach (Metric::scored() as $metric) {
                 echo '<td class="metric" data-label="', e($metric->shortLabel()), '">',

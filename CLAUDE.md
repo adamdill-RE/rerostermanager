@@ -177,7 +177,14 @@ reachable; it does not make them correctly placed.
 
 **The `area` column on `team` is nullable, seeded by prefix heuristic, and
 editable by an Admin. It must never appear in `Rerm\Auth\Access`.** A test
-asserts that. It exists so a 96-team dashboard is legible, nothing more.
+asserts that, and covers `ScopedQuery`, `EligibleOfficers` and `AssignOfficers`
+too — the files that decide who may hold twenty people. It exists so a 96-team
+dashboard is legible, nothing more.
+
+The column is **`NULL` on all 96 teams until Phase 7**: the schema, the index
+and the rule that no import writes it all shipped in Phase 1, but the seeding
+migration is Phase 7's and the Admin editor is Phase 8's (`docs/spec-v1.md`
+§7.3).
 
 ### Scope is derived from title, not from placement
 

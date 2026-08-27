@@ -121,7 +121,18 @@ final class TitleMap
     }
 
     /**
-     * Every title the map knows, in the export's spelling.
+     * Every title the map knows, in the export's spelling — and **in
+     * seniority order**, highest first, exactly as spec 4.2 lists them.
+     *
+     * The order is a guarantee, not an accident of how MAP was typed: the
+     * Assign screen sorts its rows by it so a team reads Captain, Assistant
+     * Captain, Committee Member rather than alphabetically, where Assistant
+     * Captain outranks everybody and Committee Member lands in the middle.
+     * tests/title_map_test.php transcribes the order a second time, so
+     * reordering MAP has to be done twice, on purpose.
+     *
+     * Note this is FINER than Level: it separates the three titles that all
+     * map to Officer, which is the whole reason a screen wants it.
      *
      * @return array<int, string>
      */

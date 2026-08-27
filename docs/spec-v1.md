@@ -873,18 +873,101 @@ Grouped by **division**, then by **area**, then by **team** — three collapsibl
 levels. Area is the display grouping from `docs/data-findings.md` §4d and
 carries no permission meaning.
 
-Each row: group name, member count, and the four metrics as compact proportion
-bars with counts. Sortable by any metric so "which team is worst on background
-checks" is one tap. Two extra columns the brief implies and the data demands:
-**never contacted** and **no officer assigned**.
-
-Drilling into a group applies it as the filter on §7.1 and navigates there —
-the dashboard's job is to end at the list of people to call.
-
 A Senior Officer sees their division's groups. An Executive sees all four
 divisions plus `(No Division)`, which holds 72 members and must never be hidden
 just because it is untidy — it is a real division row (§5.1a) and behaves like
 any other here.
+
+**Four things were decided with the owner at Phase 6 close.** They are recorded
+here so Phase 7 builds them rather than re-deciding them.
+
+#### Columns: compliance AND triage, every one sortable
+
+Each row carries the group name, the member count, the four metrics as compact
+proportion bars with counts — and, beside them, **unassigned**, **no officer on
+this team** and **never contacted**.
+
+Both families, because compliance alone cannot answer the question this screen
+exists for. `docs/data-findings.md` §8 measured 50–65% of the committee
+outstanding on every metric, so 96 teams will all render between roughly 35%
+and 50% complete and sorting by "worst on background checks" returns a list
+whose top and bottom differ by noise. The compliance numbers describe the
+*committee*; they do not distinguish the *teams*.
+
+What distinguishes them is movement and ownership. **Never contacted**
+separates "behind, but somebody is working it" from "nobody has touched these
+people". **Unassigned** — real since Phase 6 — says a team is not behind but
+*unowned*, which has a completely different remedy. So:
+
+- every column sorts, in both directions;
+- the **default sort is never-contacted, descending**, so the first screen
+  answers "where is nobody working?" rather than "who is behind?", which at 65%
+  outstanding is a question with no useful answer;
+- the four metric bars stay exactly as specified. They are the reference an
+  Executive will want; they are just not the entry point.
+
+`assignment` coverage sits **beside** the compliance numbers rather than in a
+panel of its own, because a team's unassigned count changes what you do about
+its bad numbers. "No officer on this team" (§7.4 bucket 3 — 7 teams, 432
+members) is a column here as well as a section there: officers read the Assign
+screen, leadership reads this one, and closing that gap is leadership's act.
+
+`Rerm\Roster\AssignPage` already computes members / unassigned / ineligible /
+eligible-officer-count per team for §7.4's team picker. Phase 7 lifts that
+query rather than writing a second one — and it yields **assignments needing
+re-pointing** for free, which is a fifth triage column if it is wanted.
+
+#### Area is seeded by migration, then Admin-editable
+
+`team.area` is `NULL` for all 96 teams today: the column, its index and the
+rule that no import writes it all exist, but the seeding never did. Phase 7
+adds it as a **pure-data migration** (`-- rerm:atomic`), and Phase 8's Manage
+Teams screen makes it editable.
+
+The heuristic, stated once: the seven bare-area team names — `Reed Road`,
+`610`, `Emlr`, `Bus Ops`, `Ost-Smith Lands`, `Chuckwagon`, `Administration` —
+are the area list, and every other team takes **the longest of those its name
+starts with**. A team matching none keeps `NULL` and groups under **(No area)**,
+the same honest-placeholder pattern as `(No Division)`.
+
+That migration is also where the master administrator's `preferred_name`
+becomes `'Master'`, ending "Master Administrator Administrator". The standing
+rule holds — no migration is added *solely* for that — and this is the first
+pure-data migration since it was noticed.
+
+`area` may appear in this screen's code. It must still never appear in
+`Rerm\Auth\Access`, `ScopedQuery`, `EligibleOfficers` or `AssignOfficers`;
+`tests/access_test.php` asserts that for all four.
+
+#### Drill-down carries `mode=team`, and every figure filters to itself
+
+Drilling into a group applies it as the filter on §7.1 and navigates there —
+the dashboard's job is to end at the list of people to call.
+
+Two consequences, and the first is a trap Phase 6 created:
+
+**§7.1 defaults to My members the moment an officer holds an assignment**, and
+Phase 6 made that branch real. A Senior Officer drilling into "40 never
+contacted" would otherwise land on §7.1 filtered to that team *and* silently
+narrowed to the handful assigned to them personally — three people, not forty.
+The dashboard's promise breaks exactly when Phase 6 succeeds. So **the
+drill-down link carries `mode=team` explicitly**, in the URL where it is
+visible, rather than a new defaulting rule that is not.
+
+**Every figure equals the list filtered to it** (§7.1's own rule, Phase 5).
+Clicking the number 40 under never-contacted must land on those 40, not on all
+85 members of the team. So §7.1 gains three filters it does not have:
+
+| Filter | Spelling |
+| --- | --- |
+| the group | `division=` / `team[]=` — §7.2's existing shape, not a second one |
+| never contacted | `contact=never` |
+| no officer | `assigned=none` |
+
+They travel through the same whitelist helper the log-contact and assign forms
+already use (`return_query()`), so the return-state work is a table entry
+rather than new code. Proving the equality for the two new figures is the real
+work here, and the tests owe it.
 
 ### 7.4 Assign Officers to Committeemen
 
@@ -915,6 +998,22 @@ three selects each would exceed it. So:
 The officer picker lists only assignable officers on that member's team, with
 each one's current load ("A. Rivera — 14 assigned"), so the work spreads rather
 than landing on whoever is first alphabetically.
+
+**Rows carry the member's title and are ordered by it**, then by last name, in
+every bucket — so a team reads top-down as its own hierarchy. The order is
+seniority, never the title string: alphabetically `Assistant Captain` outranks
+everybody and `Committee Member` lands in the middle. It comes from
+`title_level` for the coarse rank and `TitleMap::titles()` for the order within
+a level, because the three Officer titles are one level and a team that lists
+them alphabetically is not a hierarchy. An unrecognised title sorts last among
+Members, the same direction §4.2 errs in. An Allowed User sorts by the title
+shown rather than the level they were granted — a row reading "Committee
+Member" from among the Captains looks like a bug whatever the grant says.
+
+That ordering **supersedes the never-contacted-first rule for this screen**.
+Triage order lives on §7.1, which is where an officer decides who to call;
+this screen is where somebody decides who is responsible. The last-contact
+column stays and is still read — it just no longer sorts.
 
 Removing an assignment sets `removed_at`; the row is never deleted.
 
@@ -1060,7 +1159,11 @@ all 18 combinations.
 reason, and the 432 members on thin teams are counted rather than lost.
 
 ### Phase 7 — Committee Dashboard
-§7.3: three-level roll-up with drill-down into §7.1.
+§7.3: three-level roll-up with drill-down into §7.1, per the four decisions
+recorded there. Seeds `team.area` by migration; adds the group,
+never-contacted and no-officer filters to §7.1. **Done when** an Executive can
+reach the team nobody is working in two taps, and every figure on the roll-up
+lands on exactly the people it counted.
 
 ### Phase 8 — Admin
 §7.5: designation, export, show-year control, purge confirmation, audit log.
@@ -1094,3 +1197,8 @@ stays findable.
 | ~~OI-10~~ | Does closing a show year carry assignments forward? | **Resolved: yes.** Assignments carry as new rows; metrics and contacts reset |
 | OI-11 | Maximum officers per member | 3, matching the brief's "generally 2, sometimes 3" |
 | OI-12 | Multi-year contact history reporting (v2) | Deferred to v2, but v1 **retains the data unconditionally** (§5.5) so the report is a query rather than a migration |
+| ~~OI-13~~ | Which roll-up columns lead the Committee Dashboard? | **Decided: both, all sortable**, default sort never-contacted descending (§7.3). At 50–65% outstanding, compliance does not distinguish teams; contact and coverage do |
+| ~~OI-14~~ | Is `team.area` worth populating for the middle roll-up level? | **Decided: yes, seeded by migration in Phase 7**, Admin-editable in Phase 8, longest-prefix rule over the seven bare-area team names (§7.3) |
+| ~~OI-15~~ | How does drill-down interact with §7.1's My members default? | **Decided: the link carries `mode=team` explicitly** (§7.3). Phase 6 made the default real, and it would otherwise hide the very people the drill-down counted |
+| ~~OI-16~~ | Does assignment coverage belong on the Committee Dashboard? | **Decided: beside the compliance numbers**, not in a panel of its own (§7.3). Unassigned changes what you do about a team's bad numbers |
+| ~~OI-17~~ | Does the Assign screen order by contact age or by title? | **Decided: by title, then name** (§7.4), superseding decided 5 for that screen. Never-contacted-first stays on §7.1, which is the screen for deciding who to call |

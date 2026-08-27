@@ -217,7 +217,10 @@ function as_fixture(): array
         'never1'  => ['team' => 1, 'last' => 'Never1', 'title' => 'Committee Member',  'level' => 'member',  'contacted_days' => null],
         'never2'  => ['team' => 1, 'last' => 'Never2', 'title' => 'Committee Member',  'level' => 'member',  'contacted_days' => null],
         'old'     => ['team' => 1, 'last' => 'Old',    'title' => 'Committee Member',  'level' => 'member',  'contacted_days' => 20],
-        'recent'  => ['team' => 1, 'last' => 'Recent', 'title' => 'Committee Member',  'level' => 'member',  'contacted_days' => 2],
+        // Contacted most recently of anybody AND given a last name that sorts
+        // FIRST: under the old contact ordering they were last, under title
+        // ordering they lead the members. No test here can pass by accident.
+        'recent'  => ['team' => 1, 'last' => 'Aarons', 'title' => 'Committee Member',  'level' => 'member',  'contacted_days' => 2],
         'demoted' => ['team' => 1, 'last' => 'Demoted', 'title' => 'Committee Member', 'level' => 'member',  'contacted_days' => null],
         'moved'   => ['team' => 1, 'last' => 'Moved',  'title' => 'Committee Member',  'level' => 'member',  'contacted_days' => null],
         'mixed'   => ['team' => 1, 'last' => 'Mixed',  'title' => 'Committee Member',  'level' => 'member',  'contacted_days' => null],
@@ -530,21 +533,80 @@ test('bucket 2 catches both ways an import breaks an assignment', function (): v
     assertSame([true, false], $flags, 'off1 is still valid, off4 is not — ordered by officer name');
 });
 
-test('decided 5: never contacted first, then oldest contact, then name', function (): void {
+test('rows read as the team hierarchy: title first, then name', function (): void {
     as_baseline();
     $page = as_page(as_officer(), ['bucket' => 'unassigned']);
 
+    // Captains, then the Assistant Captain, then the committee members —
+    // and inside each title, by last name. off1 and off7 are both Captains
+    // so their names separate them; off2 is an Assistant Captain and sorts
+    // below both however their names fall.
     assertSame(
-        ['never1', 'never2', 'off1', 'off2', 'off3', 'off4', 'off7', 'old', 'recent'],
-        as_keys($page['rows']),
-        'the most invisible members surface first'
+        ['off1', 'off7', 'off2', 'recent', 'never1', 'never2', 'off3', 'off4', 'old'],
+        as_keys($page['rows'])
     );
 });
 
-test('the other buckets order by name — they are review, not triage', function (): void {
+test('title ordering is seniority, never alphabetical', function (): void {
+    as_baseline();
+    $rows = as_page(as_officer(), ['bucket' => 'unassigned'])['rows'];
+
+    // Alphabetically 'Assistant Captain' precedes 'Captain', and 'Committee
+    // Member' lands between them. Anything that sorted the title STRING
+    // would produce that; this asserts it does not.
+    $titles = [];
+    foreach ($rows as $row) {
+        $titles[] = $row['title'];
+    }
+    assertSame(
+        ['Captain', 'Captain', 'Assistant Captain', 'Committee Member', 'Committee Member',
+            'Committee Member', 'Committee Member', 'Committee Member', 'Committee Member'],
+        $titles
+    );
+});
+
+test('the contact aggregate no longer drives the order — but the column stays', function (): void {
+    as_baseline();
+    $rows = as_page(as_officer(), ['bucket' => 'unassigned'])['rows'];
+    $byKey = array_combine(as_keys($rows), $rows);
+
+    // 'recent' was contacted two days ago and leads the members; 'old' was
+    // contacted twenty days ago and is last; four never-contacted members sit
+    // between them. Under the superseded ordering that was exactly inverted.
+    assertTrue($byKey['recent']['last_contact'] !== null, 'the last contact is still read');
+    assertTrue($byKey['old']['last_contact'] !== null);
+    assertSame(null, $byKey['never1']['last_contact']);
+
+    $keys = as_keys($rows);
+    assertTrue(
+        array_search('recent', $keys, true) < array_search('never1', $keys, true),
+        'the most recently contacted member is NOT sorted last'
+    );
+});
+
+test('an Allowed User sorts by the title shown, not by the level they were granted', function (): void {
+    as_baseline();
+    $rows  = as_page(as_officer(), ['bucket' => 'unassigned'])['rows'];
+    $byKey = array_combine(as_keys($rows), $rows);
+
+    // off3 holds granted_level 'officer' and IS an eligible officer, but the
+    // export still calls them a Committee Member. The column shows that, so
+    // the sort has to agree with it — a row displaying 'Committee Member'
+    // from among the Captains reads as a bug, whatever the grant says.
+    assertSame('Committee Member', $byKey['off3']['title']);
+    $keys = as_keys($rows);
+    assertTrue(
+        array_search('off3', $keys, true) > array_search('off2', $keys, true),
+        'the grant does not lift them out of their title group'
+    );
+});
+
+test('the other buckets read the same way', function (): void {
     as_baseline();
     $page = as_page(as_officer(), ['bucket' => 'assigned']);
 
+    // Both Committee Members, so their names separate them — the same rule
+    // as every other bucket, not a second one.
     assertSame(['full', 'one'], as_keys($page['rows']));
 });
 
