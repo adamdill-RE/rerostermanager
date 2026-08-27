@@ -21,10 +21,12 @@ declare(strict_types=1);
  *     expand with <details>, which needs none.
  *
  * @var Rerm\App                             $app
+ * @var ?string                              $blocked  set when the schema is behind the code
  * @var array<int, array{0:string,1:string}> $notices
  * @var array<string, mixed>|null            $preview
  * @var array<int, array<string, mixed>>     $staged
  * @var array<int, array<string, mixed>>     $applied
+ * @var array<int, array<string, mixed>>     $failedBatches
  * @var array<int, array<string, mixed>>     $teams
  * @var string                               $key
  */
@@ -62,6 +64,19 @@ $mode = (string) ($_POST['mode'] ?? Importer::MODE_COMPLETE);
     to <?= e((string) ini_get('upload_max_filesize')) ?>; a full roster is
     about 1.2M as <code>.xls</code> and 0.4M as <code>.csv</code>.
 </p>
+
+<?php if (($blocked ?? null) !== null) { ?>
+    <div class="card">
+        <h2><?= $chip('danger', 'Schema is behind') ?> Nothing can be imported yet</h2>
+        <?php foreach (explode("\n\n", $blocked) as $paragraph) { ?>
+            <p><?= e($paragraph) ?></p>
+        <?php } ?>
+        <form method="get" action="<?= e($app->url('setup')) ?>">
+            <input type="hidden" name="key" value="<?= e($key) ?>">
+            <button type="submit">Go to Setup and apply them</button>
+        </form>
+    </div>
+<?php return; } ?>
 
 <?php foreach ($notices as [$level, $message]) { ?>
     <div class="card">
@@ -130,9 +145,50 @@ $mode = (string) ($_POST['mode'] ?? Importer::MODE_COMPLETE);
     $batch  = $preview['batch'];
     $counts = $preview['counts'];
     $done   = $preview['applied'] === true;
+    $failed = $preview['failed'] === true;
 ?>
+    <?php if ($failed) {
+        $partial = $preview['failure']['applied'] ?? [];
+        $written = (int) ($partial['created'] ?? 0) + (int) ($partial['updated'] ?? 0);
+    ?>
+        <div class="card">
+            <h2><?= $chip('danger', 'Failed part way') ?> The roster is partly updated</h2>
+            <p>
+                This import stopped at <?= e((string) $preview['failure']['at']) ?> UTC
+                (<?= e($app->toDisplay((string) $preview['failure']['at'])->format('D j M, H:i T')) ?>)
+                after writing <strong><?= e($number($written)) ?></strong> member row(s).
+                Nothing can undo that: the apply commits in batches so that a 1,954-row import fits
+                inside this server&rsquo;s 30-second limit, and the batches before the failure are
+                committed.
+            </p>
+            <p>
+                <strong>Upload the file again.</strong> A fresh read diffs against the roster as it
+                now stands &mdash; including the rows this run managed to write &mdash; so the next
+                preview shows exactly what is left, and shows it before writing anything. This batch
+                cannot be applied again, because its diff was measured against the roster as it
+                stood before its own partial work.
+            </p>
+            <dl class="facts">
+                <dt>Created</dt>
+                <dd><?= e($number((int) ($partial['created'] ?? 0))) ?></dd>
+                <dt>Updated</dt>
+                <dd><?= e($number((int) ($partial['updated'] ?? 0))) ?></dd>
+                <dt>Unchanged</dt>
+                <dd><?= e($number((int) ($partial['unchanged'] ?? 0))) ?></dd>
+                <dt>What went wrong</dt>
+                <dd class="mono"><?= e((string) $preview['failure']['reason']) ?></dd>
+            </dl>
+            <form method="get" action="<?= e($app->url('import')) ?>">
+                <input type="hidden" name="key" value="<?= e($key) ?>">
+                <button type="submit">Upload the file again</button>
+            </form>
+        </div>
+    <?php } ?>
+
     <div class="card">
-        <h2><?= $done ? 'Applied' : '2 &middot; What this file would do' ?></h2>
+        <h2><?php
+            echo $failed ? 'What this file was going to do' : ($done ? 'Applied' : '2 &middot; What this file would do');
+        ?></h2>
         <dl class="facts">
             <dt>File</dt>
             <dd class="mono"><?= e((string) $batch['filename']) ?></dd>
@@ -358,7 +414,7 @@ $mode = (string) ($_POST['mode'] ?? Importer::MODE_COMPLETE);
         </div>
     <?php } ?>
 
-    <?php if (!$done) { ?>
+    <?php if (!$done && !$failed) { ?>
         <div class="card">
             <h2>3 &middot; Apply, or throw it away</h2>
             <p>
@@ -386,7 +442,7 @@ $mode = (string) ($_POST['mode'] ?? Importer::MODE_COMPLETE);
                 <button type="submit" class="quiet">Discard this preview</button>
             </form>
         </div>
-    <?php } else { ?>
+    <?php } elseif ($done) { ?>
         <div class="card">
             <p>
                 <?= $chip('ok', 'Applied') ?>
@@ -427,6 +483,42 @@ $mode = (string) ($_POST['mode'] ?? Importer::MODE_COMPLETE);
                     <td data-label="">
                         <a href="<?= e($app->url('import') . '?key=' . rawurlencode($key) . '&batch=' . (int) $row['id']) ?>">Review</a>
                     </td>
+                </tr>
+            <?php } ?>
+            </tbody>
+        </table>
+    </div>
+<?php } ?>
+
+<?php if ($failedBatches !== []) { ?>
+    <div class="card">
+        <h2><?= $chip('danger', 'Failed') ?> Imports that stopped part way</h2>
+        <p class="hint">
+            Each of these wrote some rows to the roster and then stopped, so each is kept as a
+            record rather than discarded &mdash; it is the only thing that explains a roster that
+            changed when no import says it did. None of them can be applied; re-uploading the file
+            is what finishes the job.
+        </p>
+        <table>
+            <thead>
+                <tr>
+                    <th scope="col">Batch</th><th scope="col">File</th>
+                    <th scope="col" class="num">Rows written</th><th scope="col">Failed</th>
+                    <th scope="col">Reason</th>
+                </tr>
+            </thead>
+            <tbody>
+            <?php foreach ($failedBatches as $row) {
+                $summary = json_decode((string) ($row['summary_json'] ?? ''), true);
+                $partial = is_array($summary) ? ($summary['applied_before_failure'] ?? []) : [];
+                $written = (int) ($partial['created'] ?? 0) + (int) ($partial['updated'] ?? 0);
+            ?>
+                <tr>
+                    <td data-label="Batch" class="mono"><?= e((string) $row['id']) ?></td>
+                    <td data-label="File"><?= e((string) $row['filename']) ?></td>
+                    <td data-label="Rows written" class="num"><?= e($number($written)) ?></td>
+                    <td data-label="Failed"><?= e($app->toDisplay((string) $row['failed_at'])->format('j M H:i')) ?></td>
+                    <td data-label="Reason" class="mono"><?= e(mb_substr((string) $row['failure_reason'], 0, 120)) ?></td>
                 </tr>
             <?php } ?>
             </tbody>

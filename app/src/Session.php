@@ -25,7 +25,87 @@ namespace Rerm;
  */
 final class Session
 {
+    /**
+     * Settings applied before every session_start(), and NOT left to the host.
+     *
+     * use_strict_mode refuses a session id the server never issued, which is
+     * what makes fixation an attack that does not work rather than one nobody
+     * has tried. use_only_cookies refuses one supplied in a URL, which is what
+     * stops a signed-in officer pasting their own session into a group chat
+     * along with the link.
+     *
+     * Both ship OFF on this host, and docker/php/php.ini reproduces that so
+     * code relying on either default fails on a laptop instead of on the
+     * server.
+     *
+     * @var array<string, string>
+     */
+    public const HARDENING = [
+        'session.use_strict_mode'  => '1',
+        'session.use_only_cookies' => '1',
+    ];
+
     private static bool $started = false;
+
+    /**
+     * The cookie parameters, as a value.
+     *
+     * Separated from start() so that they can be ASSERTED. Every one of them
+     * is a security decision whose host default is wrong, and start() cannot
+     * run under the CLI test runner at all — which would have left the five
+     * settings that keep this application's session out of RESM's hands as
+     * the only untested thing in the codebase.
+     *
+     * @return array<string, mixed>
+     */
+    public static function cookieParams(App $app): array
+    {
+        $config = $app->config();
+
+        return [
+            'lifetime' => (int) $config->get('session.lifetime', 0),
+            // The mount point, from app.base_path and from nowhere else. This
+            // domain also serves RESM at /resm/, and a cookie scoped to `/`
+            // — which is this host's default — is a cookie RESM receives.
+            'path'     => $app->url(),
+            // Empty, so the cookie is host-only. A domain attribute would
+            // widen it to every subdomain.
+            'domain'   => '',
+            // Configurable ONLY because local development is plain http;
+            // docker-compose sets RERM_SESSION_SECURE=0 and production does
+            // not, so the default here is true rather than the host's false.
+            'secure'   => $config->get('session.secure', true) === true,
+            // Never configurable. No script in this application reads the
+            // session cookie, so there is no case for exposing it to one.
+            'httponly' => true,
+            // Lax rather than Strict: a recovery link mailed to an officer has
+            // to arrive signed in, and every state change here is a POST that
+            // checks a CSRF token of its own.
+            'samesite' => 'Lax',
+        ];
+    }
+
+    /** The cookie's name — distinct from RESM's, which shares this domain. */
+    public static function name(App $app): string
+    {
+        return (string) $app->config()->get('session.name', 'RERMSESS');
+    }
+
+    /**
+     * Where session files live.
+     *
+     * Ours by default, not the cPanel-wide directory RESM would otherwise be
+     * sharing with us — two applications writing session files into one
+     * directory is two applications able to read each other's.
+     */
+    public static function savePath(App $app): string
+    {
+        $configured = $app->config()->get('session.save_path', null);
+
+        return is_string($configured) && $configured !== ''
+            ? $configured
+            : $app->path('var/sessions');
+    }
 
     public static function start(App $app): void
     {
@@ -35,38 +115,17 @@ final class Session
             return;
         }
 
-        $config = $app->config();
-
-        $savePath = $config->get('session.save_path', null);
-        if (!is_string($savePath) || $savePath === '') {
-            // Ours, not the cPanel-wide directory RESM would otherwise be
-            // sharing with us. Outside the document root, and 0700.
-            $savePath = $app->path('var/sessions');
-        }
+        $savePath = self::savePath($app);
         if (is_dir($savePath) && is_writable($savePath)) {
             session_save_path($savePath);
         }
 
-        session_name((string) $config->get('session.name', 'RERMSESS'));
+        session_name(self::name($app));
+        session_set_cookie_params(self::cookieParams($app));
 
-        session_set_cookie_params([
-            'lifetime' => (int) $config->get('session.lifetime', 0),
-            // /rerm/, from app.base_path and from nowhere else. A cookie
-            // scoped to / on this domain is a cookie RESM receives.
-            'path'     => $app->url(),
-            'domain'   => '',
-            'secure'   => $config->get('session.secure', true) === true,
-            'httponly' => true,
-            // Lax rather than Strict: a link mailed to an officer has to
-            // arrive signed in, and every state change here is a POST that
-            // checks a CSRF token of its own.
-            'samesite' => 'Lax',
-        ]);
-
-        // Refuses a session id the server never issued, which is what makes
-        // fixation an attack that does not work rather than one nobody tried.
-        ini_set('session.use_strict_mode', '1');
-        ini_set('session.use_only_cookies', '1');
+        foreach (self::HARDENING as $setting => $value) {
+            ini_set($setting, $value);
+        }
 
         session_start();
         self::$started = true;
