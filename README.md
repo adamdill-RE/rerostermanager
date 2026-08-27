@@ -17,6 +17,30 @@ file copy.
 
 ## Where this build stands
 
+**Phase 2 — Import, complete.** `docs/spec-v1.md` §6 in full: three modes, a
+staged preview with a row-by-row diff, thirteen kinds of warning and absence
+flagging that never deletes anybody. A 1,954-row roster stages and applies in
+about a second against a limit of thirty, and a second import of the same file
+reports 1,954 unchanged and nothing created — which is the assertion that
+proves the diff is honest.
+
+It runs two ways, because this host has **no SSH and no cPanel Terminal**, so a
+CLI-only importer is one production could not use:
+
+- **`/import`**, guarded for now by `app.setup_key` — the only thing that can
+  load a roster onto the live site. Phase 3 replaces that guard with
+  `Capability::IMPORT_ROSTER`; the marker is in `public/index.php`.
+- **`bin/import-roster.php`**, for local work against a real file.
+
+Both are two steps with a diff in between, and neither writes to `member` until
+a second, explicit act naming a batch id. The rule underneath all of it is
+`docs/spec-v1.md` §6.6: **an import refreshes what Rodeo Houston knows and
+never overwrites what we know.** Allowed User grants, scope overrides,
+passwords, contact history, officer assignments, tracked progress and a team's
+area all survive it — with one deliberate exception, a metric moving `N` to `Y`
+clearing that metric's progress, which is written to `audit_log` rather than
+happening quietly.
+
 **Phase 1 — Schema, complete.** Every table in `docs/spec-v1.md` §5.2 exists as
 `db/migrations/001_schema.sql`, with the divisions, the seeded `(No Division)`
 placeholder and the first show year in `002`, and a master administrator that
@@ -39,16 +63,22 @@ application. It now serves a holding page, and `/status` — guarded by
 and whether `var/` is writable, which is how a bad deploy gets diagnosed on a
 host with no shell to hand.
 
-Phase 2 is next: the roster import (`docs/spec-v1.md` §6). The readers already
-exist — `Rerm\Roster` reads `.xls`, `.xlsx` and `.csv` natively — so what
-remains is the three modes, the staged preview, the warnings and absence
-flagging.
+Phase 3 is next: authentication and the capability matrix
+(`docs/spec-v1.md` §3 and §4). `Rerm\Auth\TitleMap` and `Rerm\Auth\Level`
+already exist, because the import writes `member.title_level` on every row and
+creates an account for every officer title; what remains is login, the forced
+first reset, recovery, rotating tokens, the rate limit and `ScopedQuery`.
 
 ```sh
 php bin/migrate.php --status      # what is applied, what is pending
 php bin/migrate.php --dry-run     # what would run, without running it
 php bin/migrate.php               # apply
 php tests/run.php --strict        # what CI runs
+
+php bin/import-roster.php roster.xls        # parse, diff, stage — writes nothing
+php bin/import-roster.php --apply=<id>      # the step that writes
+php bin/import-roster.php --dry-run f.xls   # parse, diff, keep nothing
+php bin/import-roster.php --list            # what is staged, and until when
 ```
 
 ## Getting started

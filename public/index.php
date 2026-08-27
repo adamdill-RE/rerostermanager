@@ -250,6 +250,28 @@ function setup_state(Rerm\App $app): array
     return $state;
 }
 
+/**
+ * Teams, for the team-mode picker.
+ *
+ * Capped, and deliberately: 96 teams is a long <select> but it is one input,
+ * where a control per team would be 96 — and max_input_vars is 1000 with
+ * silent truncation past it.
+ *
+ * @return array<int, array<string, mixed>>
+ */
+function import_teams(Rerm\App $app): array
+{
+    try {
+        return $app->db()->query(
+            'SELECT t.id, t.name, COUNT(m.id) AS members '
+            . 'FROM team t LEFT JOIN member m ON m.team_id = t.id AND m.is_system = 0 AND m.purged_at IS NULL '
+            . 'WHERE t.is_active = 1 GROUP BY t.id, t.name ORDER BY t.name'
+        )->fetchAll();
+    } catch (Throwable $e) {
+        return [];
+    }
+}
+
 /** The master administrator's stored hash, or null when the row is not there yet. */
 function master_admin_hash(Rerm\App $app): ?string
 {
@@ -363,9 +385,268 @@ function setup_set_admin_password(Rerm\App $app): array
     }
 }
 
+// ---------------------------------------------------------------------------
+// Import (spec 6)
+// ---------------------------------------------------------------------------
+
+/**
+ * May the caller reach /import?
+ *
+ * PHASE 3: replace with Capability::IMPORT_ROSTER, which is Admin-only and
+ * everywhere-scoped. Two lines: this function becomes a level check against
+ * the signed-in user, and the key inputs come out of the form.
+ *
+ * Until then it is app.setup_key, the same credential /setup uses, because
+ * there is no login yet to put anything behind. That is not a placeholder for
+ * its own sake: this server has NO SSH and NO cPanel Terminal, so the CLI
+ * importer cannot be run on it at all, and a roster import that only works on
+ * a laptop is a roster import production does not have. A key-guarded screen
+ * is the only thing that can load 1,954 members onto the live site today.
+ *
+ * The key is a genuine administrative credential either way — anyone holding
+ * it can rewrite the whole roster — so it ships null and the route does not
+ * exist until somebody configures one.
+ */
+function import_permitted(Rerm\App $app): bool
+{
+    $configured = $app->config()->get('app.setup_key', null);
+    if (!is_string($configured) || $configured === '') {
+        return false;
+    }
+
+    return hash_equals($configured, import_key_supplied());
+}
+
+/**
+ * The import key, from the POST body if it survived and the query string if it
+ * did not.
+ *
+ * Separate from setup_key_supplied() because of one measured behaviour: when a
+ * request body exceeds post_max_size, PHP DISCARDS $_POST and $_FILES and
+ * carries on. The key goes with them. Read only from the body, an Admin
+ * uploading a roster over the limit gets a 404 — the screen simply
+ * disappears — which is the least diagnosable failure this page could produce,
+ * on the host with the tightest upload ceiling.
+ *
+ * The fallback costs nothing here that has not already been spent. The only
+ * way to reach this form at all is GET /rerm/import?key=…, so the key is
+ * already in the URL, already in the access log, and already in history. That
+ * is NOT true of /setup, whose POST carries no query string and whose key
+ * therefore never appears in a URL for a mutation — which is why that function
+ * is left exactly as it is rather than being widened to cover both.
+ */
+function import_key_supplied(): string
+{
+    $body = $_SERVER['REQUEST_METHOD'] === 'POST' ? ($_POST['key'] ?? '') : '';
+    if (is_string($body) && $body !== '') {
+        return $body;
+    }
+
+    $query = $_GET['key'] ?? '';
+
+    return is_string($query) ? $query : '';
+}
+
+/** Why an entire request body went missing, in words an Admin can act on. */
+function import_oversize_message(): string
+{
+    $sent = (int) ($_SERVER['CONTENT_LENGTH'] ?? 0);
+
+    return sprintf(
+        'The upload was larger than this server accepts (post_max_size is %s; you sent %s). '
+        . 'PHP discards the whole request body when that happens, including the form itself — '
+        . 'so this is a size problem, not a session problem, however it looks. A .csv of the '
+        . 'same roster is roughly a third the size of a .xls and imports identically.',
+        (string) ini_get('post_max_size'),
+        $sent > 0 ? number_format($sent / 1048576, 1) . 'M' : 'more'
+    );
+}
+
+/**
+ * The uploaded roster's temporary path, or a message saying what went wrong.
+ *
+ * Every branch exists because of a measured limit on this host
+ * (docs/hosting.md). The body-too-large case is handled earlier, in
+ * import_act(), because by the time execution reaches here $_POST has already
+ * had to survive.
+ *
+ * @return array{0: ?string, 1: string} path, error
+ */
+function import_uploaded_file(): array
+{
+    $limit = (string) ini_get('upload_max_filesize');
+
+    $file = $_FILES['roster'] ?? null;
+    if (!is_array($file) || ($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+        return [null, 'Choose a roster file first.'];
+    }
+
+    $error = (int) $file['error'];
+    if ($error !== UPLOAD_ERR_OK) {
+        return [null, match ($error) {
+            UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE => sprintf(
+                'That file is larger than %s, which is this server\'s upload ceiling. The sample '
+                . '.xls is 1.2M and its .csv equivalent is about 0.4M — re-saving as CSV is the '
+                . 'quickest way past this, and all three formats import identically.',
+                $limit
+            ),
+            UPLOAD_ERR_PARTIAL   => 'The upload was cut off part way. Try again.',
+            UPLOAD_ERR_NO_TMP_DIR, UPLOAD_ERR_CANT_WRITE => 'The server could not write the upload to disk.',
+            default              => 'The upload failed (error ' . $error . ').',
+        }];
+    }
+
+    $path = (string) ($file['tmp_name'] ?? '');
+    if ($path === '' || !is_uploaded_file($path)) {
+        return [null, 'That was not an uploaded file.'];
+    }
+
+    return [$path, ''];
+}
+
+/**
+ * Runs the import action, if the request is one.
+ *
+ * The roster is read straight from PHP's own temporary upload and never
+ * copied into var/imports. Nothing needs it after parsing — the staged rows
+ * are what the apply reads — and the file is ~1,950 people's home addresses,
+ * phone numbers and email addresses. The safest place for it is nowhere, and
+ * the sha256 on the batch still answers "have we imported this exact file
+ * before" without keeping a byte of it.
+ *
+ * @return array{notices: array<int, array{0: string, 1: string}>, batch: ?int}
+ */
+function import_act(Rerm\App $app): array
+{
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        return ['notices' => [], 'batch' => null];
+    }
+
+    // FIRST, before anything reads $_POST. When a request body exceeds
+    // post_max_size PHP discards $_POST and $_FILES entirely and carries on,
+    // so an oversized roster arrives looking like a form that was never
+    // submitted — and, one check later, like a CSRF failure. Saying so here is
+    // the difference between "your file is too big" and an Admin investigating
+    // their session for an afternoon.
+    if ($_POST === [] && $_FILES === [] && (int) ($_SERVER['CONTENT_LENGTH'] ?? 0) > 0) {
+        return ['notices' => [['danger', import_oversize_message()]], 'batch' => null];
+    }
+
+    $action = $_POST['action'] ?? '';
+    if ($action === '') {
+        return ['notices' => [], 'batch' => null];
+    }
+
+    // Reaching the route proves nothing. Every POST checks the token.
+    if (!Rerm\Csrf::check()) {
+        return ['notices' => [['danger', 'That form was stale or came from somewhere else. '
+            . 'Nothing was changed — reload this page and try again.']], 'batch' => null];
+    }
+
+    $importer = Rerm\Import\Importer::fromApp($app);
+
+    try {
+        if ($action === 'stage') {
+            [$path, $error] = import_uploaded_file();
+            if ($path === null) {
+                return ['notices' => [['danger', $error]], 'batch' => null];
+            }
+
+            $mode   = (string) ($_POST['mode'] ?? Rerm\Import\Importer::MODE_COMPLETE);
+            $teamId = $mode === Rerm\Import\Importer::MODE_TEAM && ($_POST['team_id'] ?? '') !== ''
+                ? (int) $_POST['team_id']
+                : null;
+
+            $name = (string) ($_FILES['roster']['name'] ?? 'roster');
+            // basename only: the browser sends whatever it likes here, and
+            // this string is stored and rendered.
+            $batchId = $importer->stage($path, basename($name), $mode, $teamId);
+
+            return [
+                'notices' => [['ok', 'Read and staged. NOTHING has been written to the roster yet — '
+                    . 'this is the diff, and the button at the bottom is what applies it.']],
+                'batch'   => $batchId,
+            ];
+        }
+
+        if ($action === 'apply') {
+            $batchId = (int) ($_POST['batch_id'] ?? 0);
+            $result  = $importer->apply($batchId);
+
+            return [
+                'notices' => [['ok', sprintf(
+                    'Applied. %s created, %s updated, %s unchanged, %s flagged absent, %s account(s) '
+                    . 'created or changed, %s metric(s) reset to Not started because they moved N to Y.',
+                    number_format($result['created']),
+                    number_format($result['updated']),
+                    number_format($result['unchanged']),
+                    number_format($result['absent']),
+                    number_format($result['accounts']),
+                    number_format($result['progress_reset'])
+                )]],
+                'batch'   => $batchId,
+            ];
+        }
+
+        if ($action === 'discard') {
+            $batchId = (int) ($_POST['batch_id'] ?? 0);
+            $importer->discard($batchId);
+
+            return ['notices' => [['warn', "Staged batch {$batchId} was discarded. Nothing was written."]], 'batch' => null];
+        }
+    } catch (Rerm\Import\ImportException $e) {
+        return ['notices' => [['danger', $e->getMessage()]], 'batch' => null];
+    } catch (Throwable $e) {
+        return ['notices' => [['danger', 'The import failed: ' . $e->getMessage()]], 'batch' => null];
+    }
+
+    return ['notices' => [], 'batch' => null];
+}
+
 switch ($app->requestPath()) {
     case '':
         render($app, 'home', 'Roster Management');
+        break;
+
+    case 'import':
+        if (!import_permitted($app)) {
+            render($app, 'not-found', 'Not found', [], 404);
+            break;
+        }
+
+        Rerm\Session::start($app);
+
+        $importer = Rerm\Import\Importer::fromApp($app);
+        // A stale preview was computed against a roster that has since
+        // changed, so applying it would write a diff nobody has read.
+        $importer->discardExpired();
+
+        $outcome = import_act($app);
+
+        $batchId = $outcome['batch'] ?? null;
+        if ($batchId === null && isset($_GET['batch'])) {
+            $batchId = (int) $_GET['batch'];
+        }
+
+        $preview = null;
+        if ($batchId !== null && $batchId > 0) {
+            try {
+                $preview = $importer->preview($batchId);
+            } catch (Rerm\Import\ImportException $e) {
+                $outcome['notices'][] = ['warn', $e->getMessage()];
+            }
+        }
+
+        render($app, 'import', 'Import Roster', [
+            // A 1,954-row diff is data, not a list of choices (spec 8.2).
+            'wide'    => true,
+            'notices' => $outcome['notices'],
+            'preview' => $preview,
+            'staged'  => $importer->stagedBatches(10),
+            'applied' => $importer->appliedBatches(5),
+            'teams'   => import_teams($app),
+            'key'     => import_key_supplied(),
+        ]);
         break;
 
     case 'status':
