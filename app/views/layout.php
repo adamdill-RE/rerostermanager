@@ -196,7 +196,8 @@ select, input[type="file"] {
 /* 56px minimum, one-handed, outdoors, in gloves. A radio the size of a full
    stop is a radio nobody hits. */
 .choice { display: flex; align-items: flex-start; gap: .75rem; min-height: 56px; padding: .5rem 0; font-weight: 400; }
-.choice input[type="radio"] { width: 1.4rem; height: 1.4rem; margin-top: .2rem; flex: 0 0 auto; accent-color: var(--action-orange); }
+.choice input[type="radio"],
+.choice input[type="checkbox"] { width: 1.4rem; height: 1.4rem; margin-top: .2rem; flex: 0 0 auto; accent-color: var(--action-orange); }
 .choice .what { font-weight: 700; }
 .choice .why { display: block; color: var(--muted); font-size: .88rem; }
 

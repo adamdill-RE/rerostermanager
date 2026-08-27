@@ -217,7 +217,7 @@ test('the front controller ships and the views it renders exist', function (): v
 
     assertTrue(is_file($root . '/public/index.php'), 'public/index.php is missing — the mount will 403');
 
-    foreach (['layout', 'home', 'status', 'setup', 'not-found'] as $view) {
+    foreach (['layout', 'menu', 'login', 'password', 'forgot', 'reset', 'import', 'status', 'setup', 'not-found'] as $view) {
         assertTrue(is_file($root . '/app/views/' . $view . '.php'), "app/views/{$view}.php is missing");
     }
 

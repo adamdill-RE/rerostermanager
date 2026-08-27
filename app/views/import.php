@@ -14,7 +14,7 @@ declare(strict_types=1);
  *
  *   * max_input_vars is 1000 and PHP truncates past it IN SILENCE, so a
  *     preview of 1,954 rows is 1,954 table rows and never 1,954 form fields.
- *     The apply form carries three inputs: the token, the key and a batch id.
+ *     The apply form carries two inputs: the CSRF token and a batch id.
  *   * upload_max_filesize is 2M and the sample .xls is 1.2M, which is why the
  *     lede says CSV is smaller rather than waiting for somebody to hit it.
  *   * There is no JavaScript anywhere in this application. The warning lists
@@ -28,7 +28,6 @@ declare(strict_types=1);
  * @var array<int, array<string, mixed>>     $applied
  * @var array<int, array<string, mixed>>     $failedBatches
  * @var array<int, array<string, mixed>>     $teams
- * @var string                               $key
  */
 
 use Rerm\Csrf;
@@ -71,10 +70,11 @@ $mode = (string) ($_POST['mode'] ?? Importer::MODE_COMPLETE);
         <?php foreach (explode("\n\n", $blocked) as $paragraph) { ?>
             <p><?= e($paragraph) ?></p>
         <?php } ?>
-        <form method="get" action="<?= e($app->url('setup')) ?>">
-            <input type="hidden" name="key" value="<?= e($key) ?>">
-            <button type="submit">Go to Setup and apply them</button>
-        </form>
+        <p>
+            Apply them from <code><?= e($app->url('setup')) ?></code> with
+            <code>app.setup_key</code> configured, or with
+            <code>php bin/migrate.php</code> where there is a shell.
+        </p>
     </div>
 <?php return; } ?>
 
@@ -88,17 +88,8 @@ $mode = (string) ($_POST['mode'] ?? Importer::MODE_COMPLETE);
 <?php if ($preview === null) { ?>
     <div class="card">
         <h2>1 &middot; Choose a file and a mode</h2>
-        <?php
-        // The key is in the action as well as in the body, and only on THIS
-        // form. A roster over post_max_size has its whole request body
-        // discarded by PHP before any of our code runs — the key with it — and
-        // a route guarded on the body alone would answer 404 to the one person
-        // who is allowed to be here. It costs nothing extra: reaching this
-        // page at all means the key has already been in a URL.
-        ?>
-        <form method="post" action="<?= e($app->url('import') . '?key=' . rawurlencode($key)) ?>" enctype="multipart/form-data">
+        <form method="post" action="<?= e($app->url('import')) ?>" enctype="multipart/form-data">
             <?= Csrf::field() ?>
-            <input type="hidden" name="key" value="<?= e($key) ?>">
             <input type="hidden" name="action" value="stage">
 
             <p>
@@ -179,7 +170,6 @@ $mode = (string) ($_POST['mode'] ?? Importer::MODE_COMPLETE);
                 <dd class="mono"><?= e((string) $preview['failure']['reason']) ?></dd>
             </dl>
             <form method="get" action="<?= e($app->url('import')) ?>">
-                <input type="hidden" name="key" value="<?= e($key) ?>">
                 <button type="submit">Upload the file again</button>
             </form>
         </div>
@@ -429,14 +419,12 @@ $mode = (string) ($_POST['mode'] ?? Importer::MODE_COMPLETE);
             </p>
             <form method="post" action="<?= e($app->url('import')) ?>">
                 <?= Csrf::field() ?>
-                <input type="hidden" name="key" value="<?= e($key) ?>">
                 <input type="hidden" name="action" value="apply">
                 <input type="hidden" name="batch_id" value="<?= e((string) $batch['id']) ?>">
                 <button type="submit">Apply <?= e($number($counts['create'] + $counts['update'])) ?> change(s) to the roster</button>
             </form>
             <form method="post" action="<?= e($app->url('import')) ?>">
                 <?= Csrf::field() ?>
-                <input type="hidden" name="key" value="<?= e($key) ?>">
                 <input type="hidden" name="action" value="discard">
                 <input type="hidden" name="batch_id" value="<?= e((string) $batch['id']) ?>">
                 <button type="submit" class="quiet">Discard this preview</button>
@@ -452,7 +440,6 @@ $mode = (string) ($_POST['mode'] ?? Importer::MODE_COMPLETE);
                 &ldquo;why did this member's dues flip back to N&rdquo; a year from now.
             </p>
             <form method="get" action="<?= e($app->url('import')) ?>">
-                <input type="hidden" name="key" value="<?= e($key) ?>">
                 <button type="submit" class="quiet">Import another file</button>
             </form>
         </div>
@@ -481,7 +468,7 @@ $mode = (string) ($_POST['mode'] ?? Importer::MODE_COMPLETE);
                     <td data-label="Update" class="num"><?= e($number((int) $row['rows_updated'])) ?></td>
                     <td data-label="Staged"><?= e($app->toDisplay((string) $row['started_at'])->format('j M H:i')) ?></td>
                     <td data-label="">
-                        <a href="<?= e($app->url('import') . '?key=' . rawurlencode($key) . '&batch=' . (int) $row['id']) ?>">Review</a>
+                        <a href="<?= e($app->url('import') . '?batch=' . (int) $row['id']) ?>">Review</a>
                     </td>
                 </tr>
             <?php } ?>

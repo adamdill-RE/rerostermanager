@@ -9,11 +9,11 @@ declare(strict_types=1);
  * rewrites every request that is not a real file to it, and everything it
  * needs lives outside public_html entirely (docs/hosting.md).
  *
- * Two routes for now. Phase 3 replaces the match below with real routing and
- * a session guard; until then the point of this file is that the mount point
- * SERVES. Without it, DirectoryIndex finds no index.php, Options -Indexes
- * refuses the listing, and the deploy answers 403 — which reads like a
- * permissions problem and is not one.
+ * Since Phase 3, dispatch is guarded: every route is declared in Rerm\Routes
+ * beside the guard it requires, and a path that table does not name is a 404
+ * before any handler runs. tests/auth_test.php enumerates both the table and
+ * the dispatch arms below, so a route cannot be added here without deciding,
+ * in writing, who may reach it.
  */
 
 $app = require locate_app_root() . '/app/bootstrap.php';
@@ -95,6 +95,340 @@ function render(Rerm\App $app, string $view, string $title, array $data = [], in
 }
 
 /**
+ * A See Other after a state change, or away from a screen the caller may not
+ * see. Always through $app->url(): a Location built by hand lands on the
+ * domain root, which is the landing page and RESM.
+ */
+function redirect(Rerm\App $app, string $path = ''): never
+{
+    header('Location: ' . $app->url($path), true, 303);
+    exit;
+}
+
+/** The requesting address, as every throttle, token and audit row records it. */
+function request_ip(): string
+{
+    return substr((string) ($_SERVER['REMOTE_ADDR'] ?? ''), 0, 45);
+}
+
+/** The one refusal every POST shares when its CSRF token is stale or absent. */
+function stale_form_notice(): array
+{
+    return ['danger', 'That form was stale or came from somewhere else. '
+        . 'Nothing was changed — reload this page and try again.'];
+}
+
+// ---------------------------------------------------------------------------
+// Identity (spec 3)
+// ---------------------------------------------------------------------------
+
+/**
+ * The login attempt, if this request is one.
+ *
+ * The refusal is one sentence and never says which half was wrong — or
+ * whether the member number has an account at all. An answer that varies is
+ * an oracle for walking a 6–7 digit number space that currently holds 196
+ * accounts. For the same reason a member number with no account still costs
+ * a bcrypt verification, so the two refusals take the same time.
+ *
+ * @return array{notices: array<int, array{0:string,1:string}>, member_number: string}
+ */
+function login_act(Rerm\App $app, Rerm\Auth\Auth $auth): array
+{
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        return ['notices' => [], 'member_number' => ''];
+    }
+
+    $number = trim((string) ($_POST['member_number'] ?? ''));
+
+    if (!Rerm\Csrf::check()) {
+        return ['notices' => [stale_form_notice()], 'member_number' => $number];
+    }
+
+    $password = (string) ($_POST['password'] ?? '');
+    $remember = ($_POST['remember'] ?? '') === '1';
+    $ip       = request_ip();
+
+    // Both limbs (spec 3.5): this IP, and this member number from anywhere.
+    // An attempt the throttle refuses is not recorded — it proved nothing
+    // about the password, and counting it would hold the lockout open for as
+    // long as anybody hammers.
+    $throttle = Rerm\Auth\LoginThrottle::fromApp($app);
+    $wait     = $throttle->retryAfter($ip, $number);
+    if ($wait !== null) {
+        return ['notices' => [['danger', sprintf(
+            'Too many failed attempts. Wait %d second%s and try again.',
+            $wait,
+            $wait === 1 ? '' : 's'
+        )]], 'member_number' => $number];
+    }
+
+    $passwords = Rerm\Auth\Password::fromApp($app);
+
+    $read = $app->db()->prepare(
+        'SELECT u.id, u.password_hash, u.must_change_password '
+        . 'FROM app_user u INNER JOIN member m ON m.id = u.member_id '
+        . 'WHERE m.member_number = :number AND u.is_active = 1'
+    );
+    $read->execute([':number' => $number]);
+    $account = $read->fetch();
+
+    if (!is_array($account)) {
+        // No account — verify against a throwaway hash so this branch costs
+        // what a wrong password costs. Derived at most once per process, and
+        // of a value nobody can know; no hash is committed anywhere.
+        static $decoy = null;
+        $decoy ??= $passwords->hash(bin2hex(random_bytes(16)));
+        $passwords->verify($password, $decoy);
+    }
+
+    if (!is_array($account) || !$passwords->verify($password, (string) $account['password_hash'])) {
+        $throttle->recordFailure($ip, $number);
+
+        return ['notices' => [['danger', 'That member number and password did not match.']],
+            'member_number' => $number];
+    }
+
+    $throttle->recordSuccess($ip, $number);
+
+    // The one moment the plaintext is legitimately in hand: bring the stored
+    // hash up to the configured cost if it lags.
+    if ($passwords->needsRehash((string) $account['password_hash'])) {
+        $app->db()->prepare('UPDATE app_user SET password_hash = :hash WHERE id = :id')
+            ->execute([':hash' => $passwords->hash($password), ':id' => (int) $account['id']]);
+    }
+
+    $auth->signIn((int) $account['id'], $remember);
+
+    // The forced first change (spec 3.2). The redirect is a convenience; the
+    // guard that actually pins every route to /password is in the dispatch
+    // below, so a typed URL changes nothing.
+    redirect($app, (int) $account['must_change_password'] === 1 ? 'password' : '');
+}
+
+/**
+ * The password change — voluntary, and the forced first one (spec 3.2).
+ *
+ * @return array<int, array{0:string,1:string}> notices
+ */
+function password_act(Rerm\App $app, Rerm\Auth\Auth $auth, Rerm\Auth\User $user): array
+{
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        return [];
+    }
+    if (!Rerm\Csrf::check()) {
+        return [stale_form_notice()];
+    }
+
+    $current = (string) ($_POST['current'] ?? '');
+    $new     = (string) ($_POST['password'] ?? '');
+    $confirm = (string) ($_POST['password_confirm'] ?? '');
+
+    $passwords = Rerm\Auth\Password::fromApp($app);
+
+    $read = $app->db()->prepare('SELECT password_hash FROM app_user WHERE id = :id');
+    $read->execute([':id' => $user->id]);
+    $hash = (string) $read->fetchColumn();
+
+    if (!$passwords->verify($current, $hash)) {
+        return [['danger', 'The current password did not match. Nothing was changed.']];
+    }
+    if ($new !== $confirm) {
+        return [['danger', 'The two new passwords did not match. Nothing was changed.']];
+    }
+    $problem = $passwords->problemWith($new);
+    if ($problem !== null) {
+        return [['danger', $problem . ' Nothing was changed.']];
+    }
+
+    $app->db()->prepare(
+        'UPDATE app_user SET password_hash = :hash, must_change_password = 0, '
+        . 'password_changed_at = UTC_TIMESTAMP() WHERE id = :id'
+    )->execute([':hash' => $passwords->hash($new), ':id' => $user->id]);
+
+    // Every OTHER session (spec 3.2): the device standing at this form keeps
+    // its login; a phone left on a bar loses its.
+    Rerm\Auth\TokenStore::fromApp($app)->revokeAllFor($user->id, $auth->currentTokenId());
+
+    $app->db()->prepare(
+        'INSERT INTO audit_log (actor_user_id, action, entity, entity_id, after_json, ip) '
+        . 'VALUES (:actor, :action, :entity, :entity_id, :after_json, :ip)'
+    )->execute([
+        ':actor'      => $user->id,
+        ':action'     => 'password_changed',
+        ':entity'     => 'app_user',
+        ':entity_id'  => (string) $user->id,
+        ':after_json' => '{"other_sessions":"revoked"}',
+        ':ip'         => request_ip(),
+    ]);
+
+    redirect($app);
+}
+
+/**
+ * The recovery request (spec 3.3).
+ *
+ * The response is ALWAYS the same sentence whether or not an account exists —
+ * with the spec's one deliberate exception: an account with no email on file
+ * is told so, because a silent success there strands an officer waiting on
+ * mail that can never arrive.
+ *
+ * @return array{notices: array<int, array{0:string,1:string}>, sent: bool, no_email: bool, member_number: string}
+ */
+function forgot_act(Rerm\App $app): array
+{
+    $none = ['notices' => [], 'sent' => false, 'no_email' => false, 'member_number' => ''];
+
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        return $none;
+    }
+
+    $number = trim((string) ($_POST['member_number'] ?? ''));
+
+    if (!Rerm\Csrf::check()) {
+        return ['notices' => [stale_form_notice()], 'sent' => false, 'no_email' => false,
+            'member_number' => $number];
+    }
+
+    $read = $app->db()->prepare(
+        'SELECT u.id, m.email, m.member_number FROM app_user u '
+        . 'INNER JOIN member m ON m.id = u.member_id '
+        . 'WHERE m.member_number = :number AND u.is_active = 1'
+    );
+    $read->execute([':number' => $number]);
+    $account = $read->fetch();
+
+    if (is_array($account)) {
+        $email = trim((string) ($account['email'] ?? ''));
+
+        if ($email === '') {
+            return ['notices' => [], 'sent' => false, 'no_email' => true, 'member_number' => $number];
+        }
+
+        $resets  = Rerm\Auth\PasswordReset::fromApp($app);
+        $ceiling = (int) $app->config()->get('auth.max_outstanding_resets', 3);
+
+        // Silently stop issuing past the ceiling: the screen's answer never
+        // changes, but a replayed form must not fill a household inbox.
+        if ($resets->outstandingFor((int) $account['id']) < $ceiling) {
+            $token   = $resets->issue((int) $account['id'], request_ip());
+            $minutes = (int) $app->config()->get('auth.reset_token_minutes', 60);
+
+            // Absolute, from configuration — never from the Host header,
+            // which whoever sent the request controls.
+            $host = rtrim((string) $app->config()->get('app.canonical_url', ''), '/');
+            $link = $host . $app->url('reset') . '?token=' . rawurlencode($token);
+
+            // The subject and first line NAME the member number: two inboxes
+            // in this roster serve two members each, holding different
+            // titles, and an unqualified email hands the wrong account to
+            // whoever opens it first (docs/data-findings.md 5).
+            Rerm\Mail\Mailer::fromApp($app)->send(
+                $email,
+                Rerm\Auth\PasswordReset::emailSubject((string) $account['member_number']),
+                Rerm\Auth\PasswordReset::emailBody((string) $account['member_number'], $link, $minutes)
+            );
+
+            $app->db()->prepare(
+                'INSERT INTO audit_log (actor_user_id, action, entity, entity_id, after_json, ip) '
+                . 'VALUES (NULL, :action, :entity, :entity_id, :after_json, :ip)'
+            )->execute([
+                ':action'     => 'password_reset_requested',
+                ':entity'     => 'app_user',
+                ':entity_id'  => (string) (int) $account['id'],
+                ':after_json' => '{"delivery":"per mail interlocks"}',
+                ':ip'         => request_ip(),
+            ]);
+        }
+    }
+
+    return ['notices' => [], 'sent' => true, 'no_email' => false, 'member_number' => $number];
+}
+
+/**
+ * The emailed link (spec 3.3): render the form on GET, spend the token on
+ * POST. Spending is a compare-and-swap in PasswordReset::consume(), so the
+ * same link submitted twice changes exactly one password.
+ *
+ * @return array{notices: array<int, array{0:string,1:string}>, token: ?string, member_number: string, done: bool}
+ */
+function reset_act(Rerm\App $app): array
+{
+    $resets = Rerm\Auth\PasswordReset::fromApp($app);
+
+    $supplied = $_SERVER['REQUEST_METHOD'] === 'POST'
+        ? ($_POST['token'] ?? '')
+        : ($_GET['token'] ?? '');
+    $supplied = is_string($supplied) ? $supplied : '';
+
+    $row = $supplied === '' ? null : $resets->validate($supplied);
+    if ($row === null) {
+        return ['notices' => [], 'token' => null, 'member_number' => '', 'done' => false];
+    }
+
+    $read = $app->db()->prepare(
+        'SELECT m.member_number FROM app_user u INNER JOIN member m ON m.id = u.member_id '
+        . 'WHERE u.id = :id'
+    );
+    $read->execute([':id' => (int) $row['user_id']]);
+    $memberNumber = (string) $read->fetchColumn();
+
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        return ['notices' => [], 'token' => $supplied, 'member_number' => $memberNumber, 'done' => false];
+    }
+
+    if (!Rerm\Csrf::check()) {
+        return ['notices' => [stale_form_notice()], 'token' => $supplied,
+            'member_number' => $memberNumber, 'done' => false];
+    }
+
+    $new     = (string) ($_POST['password'] ?? '');
+    $confirm = (string) ($_POST['password_confirm'] ?? '');
+
+    $passwords = Rerm\Auth\Password::fromApp($app);
+    if ($new !== $confirm) {
+        return ['notices' => [['danger', 'The two passwords did not match. Nothing was changed.']],
+            'token' => $supplied, 'member_number' => $memberNumber, 'done' => false];
+    }
+    $problem = $passwords->problemWith($new);
+    if ($problem !== null) {
+        return ['notices' => [['danger', $problem . ' Nothing was changed.']],
+            'token' => $supplied, 'member_number' => $memberNumber, 'done' => false];
+    }
+
+    if (!$resets->consume((int) $row['id'])) {
+        // Lost a race with another submission of the same link.
+        return ['notices' => [], 'token' => null, 'member_number' => '', 'done' => false];
+    }
+
+    $app->db()->prepare(
+        'UPDATE app_user SET password_hash = :hash, must_change_password = 0, '
+        . 'password_changed_at = UTC_TIMESTAMP() WHERE id = :id'
+    )->execute([':hash' => $passwords->hash($new), ':id' => (int) $row['user_id']]);
+
+    // ALL sessions, not all-but-one: none of them is the person standing at
+    // this form, and if the reset was hostile they are exactly what must die.
+    Rerm\Auth\TokenStore::fromApp($app)->revokeAllFor((int) $row['user_id']);
+
+    $app->db()->prepare(
+        'INSERT INTO audit_log (actor_user_id, action, entity, entity_id, after_json, ip) '
+        . 'VALUES (NULL, :action, :entity, :entity_id, :after_json, :ip)'
+    )->execute([
+        ':action'     => 'password_reset_completed',
+        ':entity'     => 'app_user',
+        ':entity_id'  => (string) (int) $row['user_id'],
+        ':after_json' => '{"all_sessions":"revoked"}',
+        ':ip'         => request_ip(),
+    ]);
+
+    return ['notices' => [], 'token' => $supplied, 'member_number' => $memberNumber, 'done' => true];
+}
+
+// ---------------------------------------------------------------------------
+// /status
+// ---------------------------------------------------------------------------
+
+/**
  * Is the caller allowed to see /status?
  *
  * Constant-time, and a missing key means the route does not exist rather than
@@ -169,6 +503,10 @@ function status_checks(Rerm\App $app): array
 
     return $checks;
 }
+
+// ---------------------------------------------------------------------------
+// /setup
+// ---------------------------------------------------------------------------
 
 /**
  * The bootstrap credential, from the POST body when there is one.
@@ -248,68 +586,6 @@ function setup_state(Rerm\App $app): array
     }
 
     return $state;
-}
-
-/**
- * Is the database actually carrying the schema this code expects?
- *
- * Deploying is a file copy and applying a migration is a separate, deliberate
- * act — correctly, because a deploy that migrated itself would change the live
- * roster's schema the moment a file landed, with nobody watching. The gap
- * between the two is real, and this is what an Admin walks into during it.
- *
- * Without this check they walk into a BLANK 500: /import queries a column that
- * migration 005 adds, display_errors is Off on the server, and the page comes
- * back zero bytes long. There is no shell on this host to read a log with, so
- * a blank page is the end of the road. It is the same failure Phase 0 shipped
- * — a mount point answering 403 that read like a permissions problem — and it
- * costs four lines to turn into a sentence naming the fix.
- *
- * @return ?string null when the schema is current, else what to do about it
- */
-function import_schema_blocker(Rerm\App $app): ?string
-{
-    try {
-        $pending = $app->migrator()->pending();
-    } catch (Throwable $e) {
-        return 'The database could not be reached, so this screen cannot tell whether the schema '
-            . 'is up to date. Check /status for the connection.' . "\n\n" . $e->getMessage();
-    }
-
-    if ($pending === []) {
-        return null;
-    }
-
-    return sprintf(
-        "The code on this server is newer than its database: %d migration(s) have never been "
-        . "applied (%s).\n\nThis screen reads columns those migrations add, so it would fail "
-        . "with a blank page rather than an error you could read. Apply them first, from /setup "
-        . "with the same key — migrations are never applied by a deploy, deliberately.",
-        count($pending),
-        implode(', ', $pending)
-    );
-}
-
-/**
- * Teams, for the team-mode picker.
- *
- * Capped, and deliberately: 96 teams is a long <select> but it is one input,
- * where a control per team would be 96 — and max_input_vars is 1000 with
- * silent truncation past it.
- *
- * @return array<int, array<string, mixed>>
- */
-function import_teams(Rerm\App $app): array
-{
-    try {
-        return $app->db()->query(
-            'SELECT t.id, t.name, COUNT(m.id) AS members '
-            . 'FROM team t LEFT JOIN member m ON m.team_id = t.id AND m.is_system = 0 AND m.purged_at IS NULL '
-            . 'WHERE t.is_active = 1 GROUP BY t.id, t.name ORDER BY t.name'
-        )->fetchAll();
-    } catch (Throwable $e) {
-        return [];
-    }
 }
 
 /** The master administrator's stored hash, or null when the row is not there yet. */
@@ -416,7 +692,7 @@ function setup_set_admin_password(Rerm\App $app): array
             ':entity'     => 'app_user',
             ':entity_id'  => Rerm\App::MASTER_ADMIN_NUMBER,
             ':after_json' => '{"source":"setup route","password":"set by an operator holding app.setup_key"}',
-            ':ip'         => substr((string) ($_SERVER['REMOTE_ADDR'] ?? ''), 0, 45),
+            ':ip'         => request_ip(),
         ]);
 
         return ['ok', 'The master administrator password is set. Remove setup_key from config.local.php now.'];
@@ -426,65 +702,69 @@ function setup_set_admin_password(Rerm\App $app): array
 }
 
 // ---------------------------------------------------------------------------
-// Import (spec 6)
+// Import (spec 6) — Admin only since Phase 3, through Capability::ImportRoster
 // ---------------------------------------------------------------------------
 
 /**
- * May the caller reach /import?
+ * Is the database actually carrying the schema this code expects?
  *
- * PHASE 3: replace with Capability::IMPORT_ROSTER, which is Admin-only and
- * everywhere-scoped. Two lines: this function becomes a level check against
- * the signed-in user, and the key inputs come out of the form.
+ * Deploying is a file copy and applying a migration is a separate, deliberate
+ * act — correctly, because a deploy that migrated itself would change the live
+ * roster's schema the moment a file landed, with nobody watching. The gap
+ * between the two is real, and this is what an Admin walks into during it.
  *
- * Until then it is app.setup_key, the same credential /setup uses, because
- * there is no login yet to put anything behind. That is not a placeholder for
- * its own sake: this server has NO SSH and NO cPanel Terminal, so the CLI
- * importer cannot be run on it at all, and a roster import that only works on
- * a laptop is a roster import production does not have. A key-guarded screen
- * is the only thing that can load 1,954 members onto the live site today.
+ * Without this check they walk into a BLANK 500: /import queries a column that
+ * migration 005 adds, display_errors is Off on the server, and the page comes
+ * back zero bytes long. There is no shell on this host to read a log with, so
+ * a blank page is the end of the road. It is the same failure Phase 0 shipped
+ * — a mount point answering 403 that read like a permissions problem — and it
+ * costs four lines to turn into a sentence naming the fix.
  *
- * The key is a genuine administrative credential either way — anyone holding
- * it can rewrite the whole roster — so it ships null and the route does not
- * exist until somebody configures one.
+ * @return ?string null when the schema is current, else what to do about it
  */
-function import_permitted(Rerm\App $app): bool
+function import_schema_blocker(Rerm\App $app): ?string
 {
-    $configured = $app->config()->get('app.setup_key', null);
-    if (!is_string($configured) || $configured === '') {
-        return false;
+    try {
+        $pending = $app->migrator()->pending();
+    } catch (Throwable $e) {
+        return 'The database could not be reached, so this screen cannot tell whether the schema '
+            . 'is up to date. Check /status for the connection.' . "\n\n" . $e->getMessage();
     }
 
-    return hash_equals($configured, import_key_supplied());
+    if ($pending === []) {
+        return null;
+    }
+
+    return sprintf(
+        "The code on this server is newer than its database: %d migration(s) have never been "
+        . "applied (%s).\n\nThis screen reads columns those migrations add, so it would fail "
+        . "with a blank page rather than an error you could read. Apply them first, from /setup "
+        . "with the same key — migrations are never applied by a deploy, deliberately.",
+        count($pending),
+        implode(', ', $pending)
+    );
 }
 
 /**
- * The import key, from the POST body if it survived and the query string if it
- * did not.
+ * Teams, for the team-mode picker.
  *
- * Separate from setup_key_supplied() because of one measured behaviour: when a
- * request body exceeds post_max_size, PHP DISCARDS $_POST and $_FILES and
- * carries on. The key goes with them. Read only from the body, an Admin
- * uploading a roster over the limit gets a 404 — the screen simply
- * disappears — which is the least diagnosable failure this page could produce,
- * on the host with the tightest upload ceiling.
+ * Capped, and deliberately: 96 teams is a long <select> but it is one input,
+ * where a control per team would be 96 — and max_input_vars is 1000 with
+ * silent truncation past it.
  *
- * The fallback costs nothing here that has not already been spent. The only
- * way to reach this form at all is GET /rerm/import?key=…, so the key is
- * already in the URL, already in the access log, and already in history. That
- * is NOT true of /setup, whose POST carries no query string and whose key
- * therefore never appears in a URL for a mutation — which is why that function
- * is left exactly as it is rather than being widened to cover both.
+ * @return array<int, array<string, mixed>>
  */
-function import_key_supplied(): string
+function import_teams(Rerm\App $app): array
 {
-    $body = $_SERVER['REQUEST_METHOD'] === 'POST' ? ($_POST['key'] ?? '') : '';
-    if (is_string($body) && $body !== '') {
-        return $body;
+    try {
+        return $app->db()->query(
+            'SELECT t.id, t.name, COUNT(m.id) AS members '
+            . 'FROM team t LEFT JOIN member m ON m.team_id = t.id AND m.is_system = 0 AND m.purged_at IS NULL '
+            . 'WHERE t.is_active = 1 GROUP BY t.id, t.name ORDER BY t.name'
+        )->fetchAll();
+    } catch (Throwable $e) {
+        return [];
     }
-
-    $query = $_GET['key'] ?? '';
-
-    return is_string($query) ? $query : '';
 }
 
 /** Why an entire request body went missing, in words an Admin can act on. */
@@ -554,9 +834,14 @@ function import_uploaded_file(): array
  * the sha256 on the batch still answers "have we imported this exact file
  * before" without keeping a byte of it.
  *
+ * $actor is the signed-in Admin. Since Phase 3 there always is one — the
+ * route guard saw to it — and they are recorded on the batch
+ * (import_batch.uploaded_by) and on every audit row the apply writes, so
+ * "who ran this" has an answer batch 1 never got.
+ *
  * @return array{notices: array<int, array{0: string, 1: string}>, batch: ?int}
  */
-function import_act(Rerm\App $app): array
+function import_act(Rerm\App $app, Rerm\Auth\User $actor): array
 {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
         return ['notices' => [], 'batch' => null];
@@ -579,8 +864,7 @@ function import_act(Rerm\App $app): array
 
     // Reaching the route proves nothing. Every POST checks the token.
     if (!Rerm\Csrf::check()) {
-        return ['notices' => [['danger', 'That form was stale or came from somewhere else. '
-            . 'Nothing was changed — reload this page and try again.']], 'batch' => null];
+        return ['notices' => [stale_form_notice()], 'batch' => null];
     }
 
     $importer = Rerm\Import\Importer::fromApp($app);
@@ -600,7 +884,7 @@ function import_act(Rerm\App $app): array
             $name = (string) ($_FILES['roster']['name'] ?? 'roster');
             // basename only: the browser sends whatever it likes here, and
             // this string is stored and rendered.
-            $batchId = $importer->stage($path, basename($name), $mode, $teamId);
+            $batchId = $importer->stage($path, basename($name), $mode, $teamId, $actor->id);
 
             return [
                 'notices' => [['ok', 'Read and staged. NOTHING has been written to the roster yet — '
@@ -611,7 +895,7 @@ function import_act(Rerm\App $app): array
 
         if ($action === 'apply') {
             $batchId = (int) ($_POST['batch_id'] ?? 0);
-            $result  = $importer->apply($batchId);
+            $result  = $importer->apply($batchId, $actor->id);
 
             return [
                 'notices' => [['ok', sprintf(
@@ -643,19 +927,116 @@ function import_act(Rerm\App $app): array
     return ['notices' => [], 'batch' => null];
 }
 
-switch ($app->requestPath()) {
+// ---------------------------------------------------------------------------
+// Dispatch. The guard first — Rerm\Routes names every route and what it
+// requires, and a path it does not name is a 404 before any handler runs.
+// ---------------------------------------------------------------------------
+
+$path  = $app->requestPath();
+$guard = Rerm\Routes::guard($path);
+
+if ($guard === null) {
+    render($app, 'not-found', 'Not found', [], 404);
+    exit;
+}
+
+// Every route gets a session: the public ones render forms whose CSRF tokens
+// live in it, and the guarded ones hold the auth_token id in it (spec 3.4).
+Rerm\Session::start($app);
+
+$auth = Rerm\Auth\Auth::fromApp($app);
+$user = null;
+
+if ($guard !== Rerm\Routes::PUBLIC
+    && $guard !== Rerm\Routes::STATUS_KEY
+    && $guard !== Rerm\Routes::SETUP_KEY
+) {
+    $user = $auth->currentUser();
+
+    if ($user === null) {
+        redirect($app, 'login');
+    }
+
+    // The forced first change blocks EVERY other screen, direct URLs
+    // included (spec 3.2). /password is where it is satisfied and /logout is
+    // the one other thing a person half signed-in may do.
+    if ($user->mustChangePassword && $path !== 'password' && $path !== 'logout') {
+        redirect($app, 'password');
+    }
+
+    // A capability guard on top of being signed in. mayUse() is the level
+    // check — no subject exists at routing time; anything a screen does TO a
+    // member re-checks Access::allows() with one. The refusal is a 404, not
+    // a 403: this application does not discuss what exists with people who
+    // cannot see it.
+    if ($guard !== Rerm\Routes::SIGNED_IN
+        && !Rerm\Auth\Access::mayUse($user, Rerm\Auth\Capability::from($guard))
+    ) {
+        render($app, 'not-found', 'Not found', [], 404);
+        exit;
+    }
+}
+
+switch ($path) {
     case '':
-        render($app, 'home', 'Roster Management');
+        render($app, 'menu', 'Menu', ['user' => $user]);
+        break;
+
+    case 'login':
+        // Already signed in: the menu, not a second login. The link in a
+        // recovery email lands here too, which is why this is a redirect
+        // rather than an error.
+        if ($auth->currentUser() !== null) {
+            redirect($app);
+        }
+
+        $outcome = login_act($app, $auth);
+        render($app, 'login', 'Sign in', [
+            'notices'      => $outcome['notices'],
+            'memberNumber' => $outcome['member_number'],
+        ]);
+        break;
+
+    case 'logout':
+        // POST only, with a token: a GET that signs somebody out is a GET an
+        // <img src> can send.
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && Rerm\Csrf::check()) {
+            $auth->signOut();
+        }
+        redirect($app, 'login');
+
+    case 'password':
+        $notices = password_act($app, $auth, $user);
+        render($app, 'password', 'Change password', [
+            'notices'   => $notices,
+            'user'      => $user,
+            'forced'    => $user->mustChangePassword,
+            'minLength' => (int) $app->config()->get('auth.min_password_length'),
+        ]);
+        break;
+
+    case 'forgot':
+        $outcome = forgot_act($app);
+        render($app, 'forgot', 'Forgot password', [
+            'notices'      => $outcome['notices'],
+            'sent'         => $outcome['sent'],
+            'noEmail'      => $outcome['no_email'],
+            'memberNumber' => $outcome['member_number'],
+        ]);
+        break;
+
+    case 'reset':
+        $outcome = reset_act($app);
+        render($app, 'reset', 'Reset password', [
+            'notices'      => $outcome['notices'],
+            'token'        => $outcome['token'],
+            'memberNumber' => $outcome['member_number'],
+            'done'         => $outcome['done'],
+            'minLength'    => (int) $app->config()->get('auth.min_password_length'),
+        ]);
         break;
 
     case 'import':
-        if (!import_permitted($app)) {
-            render($app, 'not-found', 'Not found', [], 404);
-            break;
-        }
-
-        Rerm\Session::start($app);
-
         // BEFORE anything touches the importer, which reads columns a pending
         // migration may not have added yet.
         $blocker = import_schema_blocker($app);
@@ -669,7 +1050,6 @@ switch ($app->requestPath()) {
                 'applied' => [],
                 'failedBatches' => [],
                 'teams'   => [],
-                'key'     => import_key_supplied(),
             ]);
             break;
         }
@@ -679,7 +1059,7 @@ switch ($app->requestPath()) {
         // changed, so applying it would write a diff nobody has read.
         $importer->discardExpired();
 
-        $outcome = import_act($app);
+        $outcome = import_act($app, $user);
 
         $batchId = $outcome['batch'] ?? null;
         if ($batchId === null && isset($_GET['batch'])) {
@@ -708,7 +1088,6 @@ switch ($app->requestPath()) {
             // import says it did.
             'failedBatches' => $importer->failedBatches(5),
             'teams'   => import_teams($app),
-            'key'     => import_key_supplied(),
         ]);
         break;
 
@@ -736,5 +1115,7 @@ switch ($app->requestPath()) {
         break;
 
     default:
+        // Unreachable while the guard table and this switch agree; the test
+        // that compares them is what keeps this arm dead.
         render($app, 'not-found', 'Not found', [], 404);
 }

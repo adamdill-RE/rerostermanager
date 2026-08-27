@@ -1,0 +1,60 @@
+<?php
+
+declare(strict_types=1);
+
+use Rerm\Auth\Access;
+use Rerm\Auth\Capability;
+
+/**
+ * The menu (spec 7.0) — the signed-in landing page until Phase 5 puts
+ * My Roster Status here.
+ *
+ * Tiles are FILTERED by capability, and that is presentation only: every
+ * target re-checks server-side through the same Access call, and a screen
+ * that has not shipped yet is simply not a route, so its tile carries no
+ * link. Hiding a tile hides nothing.
+ *
+ * @var Rerm\App       $app
+ * @var Rerm\Auth\User $user
+ */
+
+/** @var array<int, array{cap: Capability, label: string, route: ?string, phase: string}> $tiles */
+$tiles = [
+    ['cap' => Capability::ViewStatusDashboard,   'label' => 'My Roster Status',    'route' => null,     'phase' => 'Phase 5'],
+    ['cap' => Capability::ViewRoster,            'label' => 'View My Roster',      'route' => null,     'phase' => 'Phase 4'],
+    ['cap' => Capability::AssignOfficers,        'label' => 'Assign Officers',     'route' => null,     'phase' => 'Phase 6'],
+    ['cap' => Capability::ViewCommitteeDashboard, 'label' => 'Committee Dashboard', 'route' => null,    'phase' => 'Phase 7'],
+    ['cap' => Capability::ImportRoster,          'label' => 'Import Roster',       'route' => 'import', 'phase' => ''],
+    ['cap' => Capability::ExportRoster,          'label' => 'Export Roster',       'route' => null,     'phase' => 'Phase 8'],
+    ['cap' => Capability::ManageShowYear,        'label' => 'Show Year',           'route' => null,     'phase' => 'Phase 8'],
+    ['cap' => Capability::DesignateAllowedUser,  'label' => 'Designate Users',     'route' => null,     'phase' => 'Phase 8'],
+    ['cap' => Capability::ImportRoster,          'label' => 'Flagged for Purge',   'route' => null,     'phase' => 'Phase 8'],
+    ['cap' => Capability::ViewAuditLog,          'label' => 'Audit Log',           'route' => null,     'phase' => 'Phase 8'],
+];
+?>
+<h1>Menu</h1>
+<p class="lede">
+    Signed in as <?= e($user->displayName) ?> —
+    <?= e($user->level->label()) ?>, member number <?= e($user->memberNumber) ?>.
+</p>
+
+<?php foreach ($tiles as $tile) { ?>
+    <?php if (!Access::mayUse($user, $tile['cap'])) { continue; } ?>
+    <div class="card">
+        <?php if ($tile['route'] !== null) { ?>
+            <h2><a href="<?= e($app->url($tile['route'])) ?>"><?= e($tile['label']) ?></a></h2>
+        <?php } else { ?>
+            <h2><?= e($tile['label']) ?></h2>
+            <span class="why">Arrives with <?= e($tile['phase']) ?>.</span>
+        <?php } ?>
+    </div>
+<?php } ?>
+
+<div class="card">
+    <h2><a href="<?= e($app->url('password')) ?>">Change password</a></h2>
+</div>
+
+<form method="post" action="<?= e($app->url('logout')) ?>">
+    <?= Rerm\Csrf::field() ?>
+    <button type="submit" class="quiet">Sign out</button>
+</form>

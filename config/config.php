@@ -28,6 +28,13 @@ return [
         // Everything is stored and compared in UTC; this is display only.
         'display_timezone' => 'America/Chicago',
 
+        // Scheme and host for the one place a link leaves the browser: the
+        // password recovery email. Configured rather than read from the Host
+        // header, because a header-derived link is a link an attacker can
+        // point at their own host. No trailing slash; app.base_path is
+        // appended by $app->url().
+        'canonical_url' => 'https://www.reshiftmanager.com',
+
         // Verbose errors on screen. Never true on the server.
         'debug' => false,
 
@@ -95,6 +102,22 @@ return [
         // used in bursts weeks apart, and a session that expires between them
         // is the entire friction budget.
         'remember_days' => 90,
+
+        // A login WITHOUT "keep me signed in" still lives in auth_token —
+        // the PHP session cannot outlast this host's 1440s gc_maxlifetime —
+        // but its row expires after a day rather than 90, rolling while it
+        // is used.
+        'session_token_hours' => 24,
+
+        // The selector.verifier cookie (spec 3.4). Distinct from the PHP
+        // session cookie RERMSESS; scoped to the same path, for the same
+        // coexistence reason.
+        'cookie_name' => 'RERMAUTH',
+
+        // Unspent, unexpired reset tokens one account may hold at once. The
+        // /forgot response never varies (no enumeration), but replaying the
+        // form must not fill a shared household inbox on our behalf.
+        'max_outstanding_resets' => 3,
 
         // Deliberately loose (spec 3.5): a locked-out Captain is a worse
         // outcome than a guessing attempt on an internal roster tool.
