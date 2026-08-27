@@ -43,9 +43,29 @@ final class Routes
      * @var array<string, string>
      */
     public const GUARDS = [
-        // The signed-in landing page — the 7.0 menu. Anonymous requests are
-        // redirected to /login rather than shown anything.
+        // The signed-in landing page. Since Phase 5 the handler renders My
+        // Roster Status for anyone who may use it — an officer signing in to
+        // chase people should already be looking at who to chase (spec 7.0)
+        // — and the menu for anyone who may not (a future Member-level
+        // Allowed User has no dashboard). Anonymous requests are redirected
+        // to /login rather than shown anything.
         ''         => self::SIGNED_IN,
+
+        // My Roster Status (spec 7.1), by its own name. NOT 'status' — that
+        // is the Phase 0 ops health check. The level check is here; the rows
+        // come through ScopedQuery::forUser(), and the mutation below
+        // re-checks Access::allows() with a Subject per member.
+        'dashboard' => Capability::ViewStatusDashboard->value,
+
+        // The 7.0 menu, moved off the landing path by Phase 5. Linked from
+        // the dashboard; every redirect($app) back to '' keeps working.
+        'menu'     => self::SIGNED_IN,
+
+        // The dashboard's write: a contact_log insert plus optional metric
+        // progress, POST-only, CSRF-checked, and refused per member by
+        // Access::allows() with a Subject — the route guard alone proves
+        // only the level.
+        'log-contact' => Capability::LogContact->value,
 
         // Identity (spec 3). login/forgot/reset are public because they are
         // how a session comes to exist; logout and password are for whoever

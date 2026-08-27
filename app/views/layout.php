@@ -223,7 +223,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
     /* Call / Text / Email as a row of real touch targets — 56px minimum,
        gloves in February. Absent actions leave no gap: only what works
        is rendered. */
-    .roster td.actions { display: flex; gap: .5rem; margin-top: .5rem; }
+    .roster td.actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .5rem; }
     .roster td.actions::before { content: none; }
     .roster td.actions a {
         flex: 1;
@@ -238,10 +238,135 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 @media (min-width: 720px) {
     .roster td.actions a { margin-right: .75rem; min-height: 44px; padding: 0 .25rem; }
     /* The expansion row reads as part of the row above it: the member's own
-       row keeps a light rule, the expansion carries the section one. */
-    .roster tr.detail td { border-bottom: 1px solid var(--border); padding-top: 0; }
+       row keeps a light rule, the expansion carries the section one. On the
+       dashboard a tbody may hold only the entry row (the sheet renders for
+       one member at a time), so the LAST row carries the rule, whichever
+       row that is. */
+    .roster tr.detail td { padding-top: 0; }
     .roster tr.entry td { border-bottom: 0; }
+    .roster tbody.member tr:last-child td { border-bottom: 1px solid var(--border); }
 }
+
+/* --- My Roster Status (spec 7.1, decided 4) ------------------------------
+   The overall banner and the four nested metric cards: a 2x2 grid on a
+   phone, one row on a desktop. Every number pairs with a word; the bars
+   carry their numbers in title attributes and the legend spells them out. */
+.toggle { display: flex; gap: .5rem; margin: 0 0 1rem; }
+.toggle a {
+    flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 56px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-weight: 700;
+    text-decoration: none;
+}
+.toggle a.current { background: var(--action-orange); border-color: var(--action-orange); color: #FFFFFF; }
+
+.overall, .mcard {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: .85rem 1rem;
+}
+.overall { margin-bottom: .75rem; }
+.overall h2, .mcard h2 { font-size: .95rem; margin: 0 0 .15rem; }
+.headline { font-variant-numeric: tabular-nums; margin: 0 0 .5rem; }
+.overall .headline strong { font-size: 1.6rem; }
+.mcard .headline strong { font-size: 1.3rem; }
+.headline .out { color: var(--muted); font-size: .85rem; display: block; }
+
+.cards { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; margin-bottom: 1.5rem; }
+@media (min-width: 720px) { .cards { grid-template-columns: repeat(4, 1fr); } }
+
+/* The stacked proportion bar: one span per non-zero status, ladder order. */
+.bar {
+    display: flex;
+    height: 14px;
+    border-radius: 7px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    background: var(--page);
+}
+.bar span { display: block; height: 100%; }
+.s-complete { background: var(--ok); }
+.s-reported { background: var(--info); }
+.s-handling { background: var(--warn); }
+/* Contacted is the OUTLINE amber state: hatched, so it reads apart from
+   Member Handling inside a bar even before the legend is read. */
+.s-contacted { background: repeating-linear-gradient(135deg, var(--warn) 0 3px, var(--page) 3px 6px); }
+.s-open { background: var(--danger); }
+.s-notrep { background: var(--muted); }
+
+.legend { list-style: none; margin: .5rem 0 0; padding: 0; font-size: .8rem; color: var(--muted); }
+.legend li { display: flex; align-items: center; gap: .35rem; padding: .05rem 0; font-variant-numeric: tabular-nums; }
+.legend .dot { width: .65rem; height: .65rem; border-radius: 3px; border: 1px solid var(--border); flex: 0 0 auto; }
+.legend .n { margin-left: auto; color: var(--text); font-weight: 600; }
+
+/* Every status word is a button that opens its definition — the native HTML
+   popover attribute, declarative, no JavaScript, CSP untouched (decided 6). */
+button.deflink {
+    all: unset;
+    cursor: pointer;
+    color: inherit;
+    font: inherit;
+    text-decoration: underline dotted;
+    text-underline-offset: 2px;
+}
+button.deflink:focus-visible { outline: 3px solid var(--rodeo-orange); outline-offset: 2px; }
+
+[popover] {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+    color: var(--text);
+    padding: .85rem 1rem;
+    max-width: 22rem;
+    margin: auto;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, .25);
+}
+[popover] h3 { margin: 0 0 .25rem; font-size: 1rem; }
+[popover] p { margin: 0; font-size: .9rem; }
+[popover]::backdrop { background: rgba(0, 0, 0, .35); }
+[popover] button.close {
+    all: unset;
+    cursor: pointer;
+    color: var(--action-orange);
+    font-weight: 700;
+    min-height: 44px;
+    margin-top: .5rem;
+    display: inline-flex;
+    align-items: center;
+}
+
+/* The same definitions, always reachable, for a browser without popover
+   support — there the deflink buttons are inert. */
+details.defs { margin-top: 1.5rem; }
+details.defs summary { color: var(--muted); }
+details.defs dt { font-weight: 700; margin-top: .5rem; }
+details.defs dd { margin: 0; color: var(--muted); font-size: .9rem; }
+
+/* The per-row log-contact sheet: a compact form inside the row's details. */
+.roster form { margin: .5rem 0 0; }
+.roster p.lc { display: grid; gap: .5rem; margin: .5rem 0; }
+.roster .pgh { margin: .35rem 0 .15rem; font-size: .9rem; }
+.roster label.pg { display: flex; align-items: center; gap: .6rem; margin: .35rem 0; font-weight: 700; }
+.roster label.pg select { flex: 1; width: auto; }
+.roster button[type="submit"] { margin: .5rem 0 .75rem; }
+
+textarea {
+    width: 100%;
+    min-height: 56px;
+    padding: .5rem .75rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text);
+    font: inherit;
+}
+textarea:focus-visible { outline: 3px solid var(--rodeo-orange); outline-offset: 1px; }
 
 select, input[type="file"] {
     width: 100%;

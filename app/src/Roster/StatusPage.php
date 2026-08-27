@@ -1,0 +1,341 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Rerm\Roster;
+
+use PDO;
+use Rerm\App;
+use Rerm\Auth\User;
+
+/**
+ * The My Roster Status read (spec 7.1, as revised at Phase 4 close): the
+ * dashboard roll-up and the working list, computed together from ONE
+ * derivation pass so they cannot disagree.
+ *
+ * The roll-up derives in PHP, never in SQL (Phase 5 decided 3): the 5.4
+ * table lives in MetricStatus::derive() and nowhere else, and a SQL
+ * `CASE WHEN imported = 'Y' …` would be a second copy of it. So this class
+ * fetches the scope's members, metric rows and last-contact times — three
+ * queries of a few columns each, ~2,000 + ~9,800 + ~2,000 rows at the
+ * biggest scope — runs the one function over them, and gets the banner, the
+ * four cards AND the list's membership and order out of the same pass. Every
+ * card figure provably equals the list filtered to that status, because both
+ * are the same array.
+ *
+ * Every row comes through ScopedQuery::forUser() — this class never writes
+ * its own visibility or scope conditions. The My members / My team toggle
+ * NARROWS the scope (an assignment can only subtract, never add a member the
+ * scope predicate would refuse), and the mode is resolved here, server-side:
+ * default is My members if the officer holds any assignments this show year,
+ * else My team (spec 7.1) — which at launch, before Phase 6 writes the first
+ * assignment, lands everyone on My team.
+ */
+final class StatusPage
+{
+    /** The list filter values the URL may spell. Anything else is the default. */
+    private const SHOWS = ['outstanding', 'all'];
+
+    /** The toggle values the URL may spell. Anything else is the default. */
+    private const MODES = ['mine', 'team'];
+
+    public function __construct(
+        private readonly PDO $pdo,
+        private readonly int $pageSizeDefault,
+        private readonly int $pageSizeLarge,
+    ) {
+    }
+
+    public static function fromApp(App $app): self
+    {
+        return new self(
+            $app->db(),
+            (int) $app->config()->get('roster.page_size_mobile', 50),
+            (int) $app->config()->get('roster.page_size_desktop', 100),
+        );
+    }
+
+    /**
+     * Everything the screen needs: the dashboard tallies, one page of the
+     * working list, and the state of every control as it was actually
+     * applied. $input is the raw query string ($_GET), untrusted and
+     * normalised here.
+     *
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    public function page(User $user, int $showYearId, array $input): array
+    {
+        $scoped = ScopedQuery::forUser($user);
+        $where  = $scoped->predicate();
+        $bind   = $scoped->bindings();
+
+        // The toggle (spec 7.1). "Assigned to me" keys on the user's MEMBER
+        // row — assignments outlive accounts — and only counts members the
+        // scope predicate would show anyway.
+        $assigned = $this->pdo->prepare(
+            'SELECT COUNT(*) FROM assignment a INNER JOIN member m ON m.id = a.member_id'
+            . " WHERE {$where} AND a.officer_member_id = :mine_officer"
+            . ' AND a.show_year_id = :mine_year AND a.removed_at IS NULL'
+        );
+        $assigned->execute($bind + [':mine_officer' => $user->memberId, ':mine_year' => $showYearId]);
+        $hasAssignments = (int) $assigned->fetchColumn() > 0;
+
+        $requestedMode = is_string($input['mode'] ?? null) && in_array($input['mode'], self::MODES, true)
+            ? $input['mode']
+            : null;
+        $mode = $requestedMode ?? ($hasAssignments ? 'mine' : 'team');
+
+        // My members narrows the scoped WHERE; every read below shares it so
+        // the dashboard and the list describe the same people.
+        if ($mode === 'mine') {
+            $where .= ' AND EXISTS (SELECT 1 FROM assignment ax WHERE ax.member_id = m.id'
+                . ' AND ax.officer_member_id = :toggle_officer'
+                . ' AND ax.show_year_id = :toggle_year AND ax.removed_at IS NULL)';
+            $bind[':toggle_officer'] = $user->memberId;
+            $bind[':toggle_year']    = $showYearId;
+        }
+
+        // The three reads of decided 3. Names come along so the list can be
+        // ordered here without a second trip.
+        $read = $this->pdo->prepare(
+            'SELECT m.id, m.member_number, m.first_name, m.last_name, m.preferred_name'
+            . " FROM member m WHERE {$where}"
+        );
+        $read->execute($bind);
+        $members = $read->fetchAll();
+
+        $read = $this->pdo->prepare(
+            'SELECT mm.member_id, mm.metric, mm.imported_value, mm.progress'
+            . ' FROM member_metric mm INNER JOIN member m ON m.id = mm.member_id'
+            . " WHERE {$where} AND mm.show_year_id = :metric_year"
+        );
+        $read->execute($bind + [':metric_year' => $showYearId]);
+        $metrics = [];
+        foreach ($read->fetchAll() as $row) {
+            $metrics[(int) $row['member_id']][(string) $row['metric']] = [
+                'imported_value' => (string) $row['imported_value'],
+                'progress'       => (string) $row['progress'],
+            ];
+        }
+
+        $read = $this->pdo->prepare(
+            'SELECT c.member_id, MAX(c.occurred_at) AS last_contact_at'
+            . ' FROM contact_log c INNER JOIN member m ON m.id = c.member_id'
+            . " WHERE {$where} AND c.show_year_id = :contact_year GROUP BY c.member_id"
+        );
+        $read->execute($bind + [':contact_year' => $showYearId]);
+        $lastContact = [];
+        foreach ($read->fetchAll() as $row) {
+            $lastContact[(int) $row['member_id']] = (string) $row['last_contact_at'];
+        }
+
+        // ------------------------------------------------------------------
+        // The one derivation pass. Cards and list both come out of it.
+        // ------------------------------------------------------------------
+
+        $cards = [];
+        foreach (Metric::scored() as $metric) {
+            $counts = [];
+            foreach (MetricStatus::cases() as $status) {
+                $counts[$status->value] = 0;
+            }
+            $cards[$metric->value] = ['label' => $metric->label(), 'statuses' => $counts];
+        }
+
+        $total         = count($members);
+        $fullyComplete = 0;
+        $candidates    = [];
+
+        foreach ($members as $member) {
+            $id        = (int) $member['id'];
+            $contacted = isset($lastContact[$id]);
+
+            $statuses = [];
+            $complete = 0;
+            foreach (Metric::scored() as $metric) {
+                $values = $metrics[$id][$metric->value] ?? null;
+                // No metric row means no import has covered this member here:
+                // 'unknown', not a failure — and outstanding, so nobody
+                // vanishes from the working set (decided 4).
+                $status = MetricStatus::derive(
+                    $values['imported_value'] ?? 'unknown',
+                    $values['progress'] ?? 'not_started',
+                    $contacted
+                );
+                $statuses[$metric->value] = $status;
+                $cards[$metric->value]['statuses'][$status->value]++;
+                if ($status === MetricStatus::Complete) {
+                    $complete++;
+                }
+            }
+
+            $isFully = $complete === count(Metric::scored());
+            if ($isFully) {
+                $fullyComplete++;
+            }
+
+            $candidates[] = [
+                'id'            => $id,
+                'member'        => $member,
+                'statuses'      => $statuses,
+                'fully'         => $isFully,
+                'last_contact'  => $lastContact[$id] ?? null,
+            ];
+        }
+
+        foreach ($cards as $metricKey => $card) {
+            $completeCount = $card['statuses'][MetricStatus::Complete->value];
+            $cards[$metricKey]['complete']    = $completeCount;
+            // Outstanding is EVERY effective status except Complete
+            // (decided 4): Reported Complete and Member Handling still count
+            // until Rodeo Houston's roster confirms Y, and Not reported
+            // counts so nobody vanishes.
+            $cards[$metricKey]['outstanding'] = $total - $completeCount;
+        }
+
+        // ------------------------------------------------------------------
+        // The list: default filter outstanding-on-any, ordered so the top is
+        // always the next call to make — never contacted first (their sort
+        // key is the empty string, before every datetime), then oldest
+        // contact first, with a stable name-and-id tiebreak.
+        // ------------------------------------------------------------------
+
+        $show = is_string($input['show'] ?? null) && in_array($input['show'], self::SHOWS, true)
+            ? $input['show']
+            : 'outstanding';
+
+        if ($show === 'outstanding') {
+            $candidates = array_values(array_filter(
+                $candidates,
+                static fn (array $c): bool => !$c['fully']
+            ));
+        }
+
+        usort($candidates, static function (array $a, array $b): int {
+            return [
+                $a['last_contact'] ?? '',
+                (string) $a['member']['last_name'],
+                (string) $a['member']['first_name'],
+                $a['id'],
+            ] <=> [
+                $b['last_contact'] ?? '',
+                (string) $b['member']['last_name'],
+                (string) $b['member']['first_name'],
+                $b['id'],
+            ];
+        });
+
+        $listTotal = count($candidates);
+
+        // Page size is one of exactly two configured values, as everywhere.
+        $size = (int) ($input['size'] ?? $this->pageSizeDefault);
+        if ($size !== $this->pageSizeDefault && $size !== $this->pageSizeLarge) {
+            $size = $this->pageSizeDefault;
+        }
+
+        $pages  = max(1, (int) ceil($listTotal / $size));
+        $page   = min(max(1, (int) ($input['page'] ?? 1)), $pages);
+        $offset = ($page - 1) * $size;
+
+        $pageCandidates = array_slice($candidates, $offset, $size);
+
+        return [
+            'mode'            => $mode,
+            'has_assignments' => $hasAssignments,
+            'show'            => $show,
+            'dashboard'       => [
+                'total'          => $total,
+                'fully_complete' => $fullyComplete,
+                'cards'          => $cards,
+            ],
+            'rows'         => $this->detailRows($pageCandidates, $showYearId),
+            'total'        => $listTotal,
+            'page'         => $page,
+            'pages'        => $pages,
+            'size'         => $size,
+            'size_default' => $this->pageSizeDefault,
+            'size_large'   => $this->pageSizeLarge,
+            'from'         => $listTotal === 0 ? 0 : $offset + 1,
+            'to'           => $offset + count($pageCandidates),
+
+            // Which row's log-contact sheet is open with its per-metric
+            // progress selects rendered (?log=id). One row per page: the
+            // selects are ~1KB of repeated <option> text, and fifty copies
+            // is half the spec 10 first-paint budget by themselves.
+            'log_open'     => (int) ($input['log'] ?? 0),
+        ];
+    }
+
+    /**
+     * The full rows for the one page being shown: contact details, history
+     * and assigned officers, batched — the derivation pass above carried
+     * only ids and names, so the heavy columns are fetched for these members
+     * alone.
+     *
+     * @param array<int, array<string, mixed>> $candidates
+     * @return array<int, array<string, mixed>>
+     */
+    private function detailRows(array $candidates, int $showYearId): array
+    {
+        if ($candidates === []) {
+            return [];
+        }
+
+        $ids = array_map(static fn (array $c): int => (int) $c['id'], $candidates);
+
+        [$places, $bind] = MemberReads::idList($ids, 'detail_member');
+
+        $read = $this->pdo->prepare(
+            'SELECT m.id, m.phone, m.phone_e164, m.phone_type, m.email, t.name AS team_name'
+            . ' FROM member m LEFT JOIN team t ON t.id = m.team_id'
+            . " WHERE m.id IN ({$places})"
+        );
+        $read->execute($bind);
+        $details = [];
+        foreach ($read->fetchAll() as $row) {
+            $details[(int) $row['id']] = $row;
+        }
+
+        $reads    = new MemberReads($this->pdo);
+        $contacts = $reads->contactsFor($ids, $showYearId);
+        $officers = $reads->assignmentsFor($ids, $showYearId);
+
+        $rows = [];
+        foreach ($candidates as $candidate) {
+            $id     = (int) $candidate['id'];
+            $member = $candidate['member'];
+            $detail = $details[$id] ?? [];
+
+            $rows[] = [
+                'id'            => $id,
+                'member_number' => (string) $member['member_number'],
+                'display_name'  => RosterPage::displayName(
+                    (string) $member['preferred_name'],
+                    (string) $member['first_name'],
+                    (string) $member['last_name'],
+                    (string) $member['member_number']
+                ),
+                'team_name'  => (string) ($detail['team_name'] ?? ''),
+                'statuses'   => $candidate['statuses'],
+                'fully'      => $candidate['fully'],
+                'phone'      => (string) ($detail['phone'] ?? ''),
+                'phone_e164' => (string) ($detail['phone_e164'] ?? ''),
+                'email'      => trim((string) ($detail['email'] ?? '')),
+
+                // The suppression flags, decided in PHP so they are testable
+                // without rendering — the same rules as View My Roster: sms:
+                // only for CELL PHONE, mailto: only when an address exists.
+                'can_call'  => (string) ($detail['phone_e164'] ?? '') !== '',
+                'can_text'  => (string) ($detail['phone_e164'] ?? '') !== ''
+                    && (string) ($detail['phone_type'] ?? '') === 'CELL PHONE',
+                'can_email' => trim((string) ($detail['email'] ?? '')) !== '',
+
+                'last_contact' => ($contacts[$id] ?? [])[0] ?? null,
+                'officers'     => $officers[$id] ?? [],
+            ];
+        }
+
+        return $rows;
+    }
+}

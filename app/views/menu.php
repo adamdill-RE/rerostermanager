@@ -6,8 +6,9 @@ use Rerm\Auth\Access;
 use Rerm\Auth\Capability;
 
 /**
- * The menu (spec 7.0) — the signed-in landing page until Phase 5 puts
- * My Roster Status here.
+ * The menu (spec 7.0) — its own route since Phase 5 moved the landing page
+ * to My Roster Status. It still lands here for a signed-in user whose level
+ * has no dashboard (a future Member-level Allowed User).
  *
  * Tiles are FILTERED by capability, and that is presentation only: every
  * target re-checks server-side through the same Access call, and a screen
@@ -20,7 +21,7 @@ use Rerm\Auth\Capability;
 
 /** @var array<int, array{cap: Capability, label: string, route: ?string, phase: string}> $tiles */
 $tiles = [
-    ['cap' => Capability::ViewStatusDashboard,   'label' => 'My Roster Status',    'route' => null,     'phase' => 'Phase 5'],
+    ['cap' => Capability::ViewStatusDashboard,   'label' => 'My Roster Status',    'route' => 'dashboard', 'phase' => ''],
     ['cap' => Capability::ViewRoster,            'label' => 'View My Roster',      'route' => 'roster', 'phase' => ''],
     ['cap' => Capability::AssignOfficers,        'label' => 'Assign Officers',     'route' => null,     'phase' => 'Phase 6'],
     ['cap' => Capability::ViewCommitteeDashboard, 'label' => 'Committee Dashboard', 'route' => null,    'phase' => 'Phase 7'],

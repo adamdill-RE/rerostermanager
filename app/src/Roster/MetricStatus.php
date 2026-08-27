@@ -68,16 +68,47 @@ enum MetricStatus: string
         };
     }
 
-    /** The word the chip carries. Never rendered without it. */
+    /**
+     * The word the chip carries. Never rendered without it.
+     *
+     * The display names are the owner's (renamed 2026-08-27, Phase 5
+     * decided 5): Reported Complete, Member Handling and Open/No Contact
+     * replaced the original words. This is the ONLY place they are spelled —
+     * the enum case names, backing values and database enums are internal
+     * identifiers and did not move.
+     */
     public function label(): string
     {
         return match ($this) {
             self::Complete    => 'Complete',
-            self::Reported    => 'Reported',
-            self::InProgress  => 'In Progress',
+            self::Reported    => 'Reported Complete',
+            self::InProgress  => 'Member Handling',
             self::Contacted   => 'Contacted',
-            self::Outstanding => 'Outstanding',
+            self::Outstanding => 'Open/No Contact',
             self::NotReported => 'Not reported',
+        };
+    }
+
+    /**
+     * What the status word MEANS, in the owner's exact wording (Phase 5
+     * decided 6). Rendered twice on the dashboard — a popover per status and
+     * the plain <details> fallback at the foot — from this one source.
+     */
+    public function definition(): string
+    {
+        return match ($this) {
+            self::Complete    => 'The official Rodeo Houston roster shows this requirement met. '
+                . 'Nothing left to do.',
+            self::Reported    => 'The roster still shows this unmet, but the member told an officer '
+                . 'it is done. Waiting for the next roster import to confirm.',
+            self::InProgress  => 'The roster shows this unmet; the member told an officer they are '
+                . 'taking care of it.',
+            self::Contacted   => 'The roster shows this unmet. An officer has reached the member '
+                . 'this show year, but the member has not committed to anything yet.',
+            self::Outstanding => 'The roster shows this unmet and nobody has contacted the member '
+                . 'this show year. These are the next calls to make.',
+            self::NotReported => 'No roster import has covered this member for this item. '
+                . 'Unknown, never a failure.',
         };
     }
 

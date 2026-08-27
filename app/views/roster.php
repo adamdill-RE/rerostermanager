@@ -27,21 +27,11 @@ declare(strict_types=1);
 
 use Rerm\Roster\Metric;
 use Rerm\Roster\MetricStatus;
+use Rerm\View;
 
-/**
- * A chip: always a word plus a colour, never a colour alone (spec 8.3). The
- * inner span exists only on the filled variant, where the word has to take
- * the page colour; everywhere else the word rides directly in the chip —
- * this markup repeats up to 500 times a page against a 100KB budget.
- */
-$chip = static function (MetricStatus $status): string {
-    $class = $status->chipClass();
-    $word  = str_contains($class, 'chip-fill')
-        ? '<span class="chip-word">' . e($status->label()) . '</span>'
-        : e($status->label());
-
-    return '<span class="chip ' . e($class) . '">' . $word . '</span>';
-};
+// The chip and the relative timestamp are Rerm\View — shared with the
+// dashboard, so one status renders one way everywhere.
+$chip = static fn (MetricStatus $status): string => View::chip($status);
 
 /**
  * A roster URL carrying the current search, filter, sort and size, with the
@@ -96,29 +86,7 @@ $sortHeader = static function (string $key, string $word) use ($roster, $href): 
         . e($word) . '</a>' . e($marker);
 };
 
-/**
- * A UTC DATETIME as relative words with the absolute (America/Chicago via
- * $app->toDisplay) riding in the title.
- *
- * @return array{0: string, 1: string} words, absolute
- */
-$when = static function (string $utc) use ($app): array {
-    $seconds  = max(0, time() - (new DateTimeImmutable($utc, new DateTimeZone('UTC')))->getTimestamp());
-    $display  = $app->toDisplay($utc);
-    $absolute = $display->format('j M Y, g:i a');
-
-    $ago = static fn (int $n, string $unit): string => $n . ' ' . $unit . ($n === 1 ? '' : 's') . ' ago';
-
-    $words = match (true) {
-        $seconds < 90       => 'just now',
-        $seconds < 3600     => $ago(max(1, intdiv($seconds, 60)), 'minute'),
-        $seconds < 86400    => $ago(intdiv($seconds, 3600), 'hour'),
-        $seconds < 45 * 86400 => $ago(intdiv($seconds, 86400), 'day'),
-        default             => $display->format('j M Y'),
-    };
-
-    return [$words, $absolute];
-};
+$when = static fn (string $utc): array => View::when($app, $utc);
 
 $contactTypes = [
     'call'      => 'Call',
@@ -362,4 +330,4 @@ $number = static fn (int $n): string => number_format($n);
 
 <?php } ?>
 
-<p><a href="<?= e($app->url()) ?>">&larr; Menu</a></p>
+<p><a href="<?= e($app->url('dashboard')) ?>">&larr; My Roster Status</a> &middot; <a href="<?= e($app->url('menu')) ?>">Menu</a></p>
