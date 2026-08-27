@@ -7,6 +7,7 @@ namespace Rerm\Roster;
 use PDO;
 use Rerm\App;
 use Rerm\Auth\Level;
+use Rerm\Auth\TitleMap;
 use Rerm\Auth\User;
 
 /**
@@ -243,12 +244,31 @@ final class AssignPage
      * One page of one bucket, with the chips, the last contact and the
      * current officers each row needs.
      *
-     * Ordering is decided 5: inside Unassigned, never contacted first, then
-     * oldest contact first, then name — the members most invisible today
-     * surface first, the same ordering the Phase 5 list uses and from the
-     * same contact aggregate. NULL sorts before every datetime in an ASC
-     * MySQL sort, which is what puts "never" at the top. The other buckets
-     * order by name: they are review, not triage.
+     * Ordering is BY TITLE, then by name, in every bucket (owner decision at
+     * Phase 6 close). A team reads as its own hierarchy — the Captain and
+     * the Assistant Captains at the top, the committee members under them —
+     * which is how the people using this screen already think about the
+     * people on it, and it makes a 85-row page scannable by role.
+     *
+     * Two sort keys carry it, and the split is deliberate:
+     *
+     *   title_level DESC   the coarse rank, from the column an import wrote
+     *                      through TitleMap, so a title spelled with a stray
+     *                      space still lands in the right group. Level's own
+     *                      rule allows exactly this: the ENUM is declared low
+     *                      to high so ORDER BY sorts correctly, and it is
+     *                      comparison in a WHERE clause that is forbidden.
+     *   title position     the fine order WITHIN a level, from
+     *                      TitleMap::titles(), because Vice Chairman, Captain
+     *                      and Assistant Captain are all 'officer' and a team
+     *                      that lists them alphabetically is not a hierarchy.
+     *
+     * **This supersedes decided 5 for the Unassigned bucket.** That ordering
+     * — never contacted first, then oldest contact — now lives only on My
+     * Roster Status (spec 7.1), which is the screen for deciding who to call.
+     * This one is for deciding who is responsible, and the owner asked for
+     * the roles to lead. The last-contact column stays, so the triage signal
+     * is still readable; it just no longer sorts.
      *
      * @param array<string, string|int> $bind
      * @return array<int, array<string, mixed>>
@@ -275,15 +295,17 @@ final class AssignPage
             $bind  += $bindHas;
         }
 
-        $orderBy = $bucket === 'unassigned'
-            ? 'lc.last_contact_at ASC, m.last_name ASC, m.first_name ASC, m.id ASC'
-            : 'm.last_name ASC, m.first_name ASC, m.id ASC';
+        [$titleRank, $bindTitle] = self::titleRank('m', 'ord');
+        $bind += $bindTitle;
+
+        $orderBy = "m.title_level DESC, {$titleRank} ASC,"
+            . ' m.last_name ASC, m.first_name ASC, m.id ASC';
 
         // LIMIT and OFFSET are integers cast in PHP and interpolated: a
         // string-bound LIMIT fails on the native protocol.
         $read = $this->pdo->prepare(
             'SELECT m.id, m.member_number, m.first_name, m.last_name, m.preferred_name,'
-            . ' m.division_id, m.team_id, lc.last_contact_at'
+            . ' m.title, m.division_id, m.team_id, lc.last_contact_at'
             . ' FROM member m'
             . ' LEFT JOIN (SELECT member_id, MAX(occurred_at) AS last_contact_at'
             . '   FROM contact_log WHERE show_year_id = :row_contact_year GROUP BY member_id) lc'
@@ -332,6 +354,9 @@ final class AssignPage
                     (string) $member['last_name'],
                     (string) $member['member_number']
                 ),
+                // What the export calls them. Shown as its own column and
+                // sorted on, so a team reads as its own hierarchy.
+                'title'        => (string) $member['title'],
                 'statuses'     => $statuses,
                 // What "Select all outstanding" means, decided here rather
                 // than in the view: outstanding on at least one of the four.
@@ -344,6 +369,33 @@ final class AssignPage
         }
 
         return $rows;
+    }
+
+    /**
+     * A member's position within TitleMap's seniority order, as SQL — the
+     * fine sort key that separates the three titles which all map to Officer.
+     *
+     * FIELD() answers 0 for a title the map does not know, which would sort
+     * it FIRST; NULLIF turns that 0 into NULL and COALESCE sends it to the
+     * end instead. An unrecognised title imports as Member with a warning
+     * (spec 6.4) and it sorts last among Members — never silently above a
+     * Captain, which is the same direction the title map itself errs in.
+     *
+     * @return array{0: string, 1: array<string, string>}
+     */
+    private static function titleRank(string $alias, string $prefix): array
+    {
+        $places = [];
+        $bind   = [];
+        foreach (TitleMap::titles() as $i => $title) {
+            $places[]              = ":{$prefix}_title_{$i}";
+            $bind[":{$prefix}_title_{$i}"] = $title;
+        }
+
+        return [
+            'COALESCE(NULLIF(FIELD(' . $alias . '.title, ' . implode(', ', $places) . '), 0), 999)',
+            $bind,
+        ];
     }
 
     /**

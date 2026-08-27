@@ -381,6 +381,9 @@ details.defs dd { margin: 0; color: var(--muted); font-size: .9rem; }
 }
 .assign td.who label { display: block; min-height: 44px; padding: .3rem 0; cursor: pointer; }
 .assign td .off { display: block; font-size: .9rem; }
+/* The title reads as supporting detail beside the name, not as a heading
+   competing with it. */
+.assign td.title { color: var(--muted); font-size: .9rem; }
 
 .actionbar {
     position: sticky;
