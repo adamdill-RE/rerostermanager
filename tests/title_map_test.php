@@ -45,8 +45,14 @@ function title_map_expected(): array
         'Coordinator'              => 'senior_officer',     // 5 — OI-2, closed: the higher reading
         'Ambassador'               => 'senior_officer',     // 7 — OI-2, closed
 
-        // Officer — their own team. 169 people.
-        'Vice Chairman'            => 'officer',            // 21
+        // Senior Officer, narrowed to their own team by default. 21 people.
+        // Moved here from Officer by Phase 8.5 so a Vice Chairman gets the
+        // level's capabilities without the level's usual visibility — see
+        // the breadth transcription below, which is the half that keeps
+        // those 21 seeing exactly what they saw before.
+        'Vice Chairman'            => 'senior_officer',     // 21
+
+        // Officer — their own team. 148 people.
         'Captain'                  => 'officer',            // 82
         'Assistant Captain'        => 'officer',            // 66
 
@@ -58,6 +64,37 @@ function title_map_expected(): array
         'Past Committee Chairman'  => 'member',             // 4
     ];
 }
+
+test('the default scope breadth is transcribed, and the existing 20 do not move', function (): void {
+    // Phase 8.5. TRANSCRIBED from the decision, not read out of TitleMap:
+    // only Vice Chairman defaults to a single team. The other three Senior
+    // Officer titles keep the whole division they have always had, and this
+    // is the assertion that catches a change which promotes 21 people by
+    // quietly demoting 20 others.
+    $breadth = [
+        'Vice Chairman'          => TitleMap::BREADTH_TEAM,      // 21 — new
+        'Division Vice Chairman' => TitleMap::BREADTH_DIVISION,  // 8  — unchanged
+        'Coordinator'            => TitleMap::BREADTH_DIVISION,  // 5  — unchanged
+        'Ambassador'             => TitleMap::BREADTH_DIVISION,  // 7  — unchanged
+    ];
+
+    foreach ($breadth as $title => $expected) {
+        assertSame($expected, TitleMap::breadth($title), "breadth of {$title}");
+    }
+
+    // Exactly one title narrows. A second one appearing here is a decision
+    // somebody has to make on purpose.
+    assertSame(['Vice Chairman'], array_keys(TitleMap::BREADTH));
+
+    // A title nobody mapped takes the wide default, and so does a level for
+    // which breadth is meaningless.
+    assertSame(TitleMap::BREADTH_DIVISION, TitleMap::breadth('Captain'));
+    assertSame(TitleMap::BREADTH_DIVISION, TitleMap::breadth('Grand Marshal of Nothing'));
+
+    // Normalised like every other lookup here: the export's trailing space is
+    // a spreadsheet artefact, not a different job.
+    assertSame(TitleMap::BREADTH_TEAM, TitleMap::breadth('  vice   chairman '));
+});
 
 test('every title in the map confers the level spec 4.2 gives it', function (): void {
     foreach (title_map_expected() as $title => $expected) {

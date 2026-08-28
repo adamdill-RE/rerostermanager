@@ -20,7 +20,7 @@ use Rerm\Auth\User;
  *
  *   1. Unassigned          no current assignment at all
  *   2. Officer no longer   at least one current assignment whose officer was
- *      eligible            demoted, moved team, purged or flagged absent by an
+ *      eligible            demoted, moved team, purged or dropped by an
  *                          import (spec 6.6). Above bucket 3 because it is
  *                          invisible work an import created
  *   3. No officer on this  a TEAM-level fact, not a member-level one: teams in

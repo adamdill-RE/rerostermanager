@@ -91,6 +91,13 @@ final class Routes
         // reaching the screen never means seeing past one's scope.
         'roster'   => Capability::ViewRoster->value,
 
+        // Dropped Members (Phase 8.5) — Officer and above, SCOPED, and it
+        // shares view_roster rather than inventing a capability: it is the
+        // roster, filtered to the people who fell off it, and an officer
+        // noticing that one of their own is gone is the same job. Read-only
+        // — purge and restore stay Admin, on /purge.
+        'dropped'  => Capability::ViewRoster->value,
+
         // The Committee Dashboard (spec 7.3) — Senior Officer and above, and
         // the first route whose capability floor is above Officer. Read-only:
         // there is no write path on it at all, so no POST and no CSRF check —

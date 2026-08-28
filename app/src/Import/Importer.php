@@ -69,11 +69,11 @@ final class Importer
     {
         return match ($mode) {
             self::MODE_COMPLETE => 'Every field and every metric on every row. '
-                . 'New members are created; members not in the file are flagged absent.',
+                . 'New members are created; members not in the file are dropped.',
             self::MODE_UPDATE   => 'Metrics, phone and email only, on members that already exist. '
-                . 'A member not already in the roster is reported and ignored. Nobody is flagged absent.',
+                . 'A member not already in the roster is reported and ignored. Nobody is dropped.',
             self::MODE_TEAM     => 'Every field and every metric, for one team. Rows belonging to any '
-                . 'other team are reported and skipped. Members of that team missing from the file are flagged absent.',
+                . 'other team are reported and skipped. Members of that team missing from the file are dropped.',
             default             => $mode,
         };
     }
@@ -443,11 +443,11 @@ final class Importer
 
         // Absence: flag, never delete (spec 6.5). Update mode flags nobody —
         // it is not a statement about who is on the committee.
-        $absent = $mode === self::MODE_UPDATE
+        $dropped = $mode === self::MODE_UPDATE
             ? []
-            : $this->absentMembers($existing, $seen, $mode, $teamId);
+            : $this->droppedMembers($existing, $seen, $mode, $teamId);
 
-        $this->stageAbsent($batchId, $absent);
+        $this->stageDropped($batchId, $dropped);
 
         $warnings->flush();
 
@@ -455,10 +455,10 @@ final class Importer
             'metric_flips'    => $this->summariseFlips($flips),
             'new_teams'       => $this->newTeamNames($teamsInFile, $existingTeams),
             'warning_counts'  => $warnings->counts(),
-            'absent_examples' => array_slice(array_column($absent, 'member_number'), 0, 20),
+            'dropped_examples' => array_slice(array_column($dropped, 'member_number'), 0, 20),
         ];
 
-        $this->finishBatch($batchId, $counts, count($absent), $warnings->total(), $summary);
+        $this->finishBatch($batchId, $counts, count($dropped), $warnings->total(), $summary);
 
         return $batchId;
     }
@@ -686,10 +686,10 @@ final class Importer
             }
         }
 
-        // A member flagged absent by an earlier import who is back in the file
+        // A member dropped by an earlier import who is back in the file
         // is a change, even when every field matches: the flag is coming off.
-        if (($current['absent_since_import_id'] ?? null) !== null) {
-            $changes['absent_since_import_id'] = ['flagged', 'seen again'];
+        if (($current['dropped_since_import_id'] ?? null) !== null) {
+            $changes['dropped_since_import_id'] = ['flagged', 'seen again'];
         }
 
         return $changes;
@@ -752,9 +752,9 @@ final class Importer
      *
      * @return array<int, array{id: int, member_number: string}>
      */
-    private function absentMembers(array $existing, array $seen, string $mode, ?int $teamId): array
+    private function droppedMembers(array $existing, array $seen, string $mode, ?int $teamId): array
     {
-        $absent = [];
+        $dropped = [];
 
         foreach ($existing as $number => $member) {
             if (isset($seen[$number])) {
@@ -764,30 +764,30 @@ final class Importer
                 continue;
             }
             // A team import is a statement about one team only. Flagging
-            // everybody else absent because they were not in a 40-row file is
+            // everybody else dropped because they were not in a 40-row file is
             // how a whole committee lands on the purge screen.
             if ($mode === self::MODE_TEAM && (int) ($member['team_id'] ?? 0) !== (int) $teamId) {
                 continue;
             }
-            if ($member['absent_since_import_id'] !== null) {
+            if ($member['dropped_since_import_id'] !== null) {
                 // Already flagged by an earlier import; re-flagging would
                 // rewrite which batch first noticed, which is the one fact the
                 // purge screen needs.
                 continue;
             }
 
-            $absent[] = ['id' => (int) $member['id'], 'member_number' => (string) $number];
+            $dropped[] = ['id' => (int) $member['id'], 'member_number' => (string) $number];
         }
 
-        return $absent;
+        return $dropped;
     }
 
-    /** @param array<int, array{id: int, member_number: string}> $absent */
-    private function stageAbsent(int $batchId, array $absent): void
+    /** @param array<int, array{id: int, member_number: string}> $dropped */
+    private function stageDropped(int $batchId, array $dropped): void
     {
         $rows = [];
-        foreach ($absent as $member) {
-            $rows[] = $this->stagedRow($batchId, 0, $member['member_number'], 'absent', $member['id'], null, null);
+        foreach ($dropped as $member) {
+            $rows[] = $this->stagedRow($batchId, 0, $member['member_number'], 'dropped', $member['id'], null, null);
             $rows   = $this->flushStaged($rows);
         }
         $this->flushStaged($rows, true);
@@ -815,7 +815,7 @@ final class Importer
                 'create'    => (int) $batch['rows_created'],
                 'update'    => (int) $batch['rows_updated'],
                 'unchanged' => (int) $batch['rows_unchanged'],
-                'absent'    => (int) $batch['rows_absent'],
+                'dropped'    => (int) $batch['rows_dropped'],
                 'skipped'   => $this->countAction($batchId, 'skip'),
             ],
             'metric_flips'   => $batch['summary']['metric_flips'] ?? [],
@@ -825,7 +825,7 @@ final class Importer
             // max_input_vars is 1000 and PHP truncates past it in silence.
             'largest'        => $this->largestChanges($batchId, $sampleSize),
             'sample_creates' => $this->sampleByAction($batchId, 'create', $sampleSize),
-            'sample_absent'  => $this->sampleByAction($batchId, 'absent', $sampleSize),
+            'sample_dropped'  => $this->sampleByAction($batchId, 'dropped', $sampleSize),
             'expires_at'     => $this->expiryOf($batch),
             'applied'        => $batch['applied_at'] !== null,
             // A failed batch is neither applied nor appliable, and the screen
@@ -874,9 +874,18 @@ final class Importer
     /** @return array<int, array<string, mixed>> */
     private function sampleByAction(int $batchId, string $action, int $limit): array
     {
+        // The team joins through the member, which is what makes it available
+        // on a DROPPED row at all: a dropped row is not a file row, so it has
+        // no payload to read a team out of — it is staged with the member id
+        // and nothing else. Before this join the dropped list could only show
+        // a number and a name, which is not enough to know whether losing
+        // somebody matters.
         $read = $this->pdo->prepare(
-            'SELECT s.`row_number`, s.member_number, s.payload, m.first_name, m.last_name, m.preferred_name '
-            . 'FROM import_staged_row s LEFT JOIN member m ON m.id = s.member_id '
+            'SELECT s.`row_number`, s.member_number, s.payload, '
+            . 'm.first_name, m.last_name, m.preferred_name, t.name AS stored_team '
+            . 'FROM import_staged_row s '
+            . 'LEFT JOIN member m ON m.id = s.member_id '
+            . 'LEFT JOIN team t ON t.id = m.team_id '
             . 'WHERE s.import_batch_id = :batch AND s.action = :action ORDER BY s.id LIMIT ' . max(1, $limit)
         );
         $read->execute([':batch' => $batchId, ':action' => $action]);
@@ -894,7 +903,18 @@ final class Importer
                 // A create has no member row to join to, so the name comes
                 // from what was parsed rather than from what is stored.
                 'name'          => $name !== '' ? $name : $this->displayName($payload),
-                'team'          => (string) ($payload['team_name'] ?? ''),
+
+                // The team we ALREADY hold wins, and the payload's is the
+                // fallback. That reads correctly for all three kinds of row:
+                // a create has no member yet so the file's team is the only
+                // one there is; an update shows where the member sits today,
+                // with any move to another team appearing in the Changes
+                // column beside it rather than silently replacing this; and a
+                // dropped row has no payload at all, so the stored team is
+                // the whole answer.
+                'team'          => (string) ($row['stored_team'] ?? '') !== ''
+                    ? (string) $row['stored_team']
+                    : (string) ($payload['team_name'] ?? ''),
                 'title'         => (string) ($payload['title'] ?? ''),
             ];
         }
@@ -978,7 +998,7 @@ final class Importer
         $divisions = $mode === self::MODE_UPDATE ? [] : $this->resolveDivisions($batchId);
         $teams     = $mode === self::MODE_UPDATE ? [] : $this->resolveTeams($batchId, $divisions);
 
-        $applied = ['created' => 0, 'updated' => 0, 'unchanged' => 0, 'absent' => 0, 'accounts' => 0, 'progress_reset' => 0];
+        $applied = ['created' => 0, 'updated' => 0, 'unchanged' => 0, 'dropped' => 0, 'accounts' => 0, 'progress_reset' => 0];
 
         // ONE TRANSACTION PER CHUNK, AND THAT IS THE WHOLE PROBLEM THIS CATCH
         // EXISTS FOR. A single transaction around 1,954 members plus 9,770
@@ -1013,10 +1033,10 @@ final class Importer
             // Absence last: a member seen in this file has already had their
             // flag cleared above, so nothing here can flag somebody the file
             // contained.
-            foreach ($this->stagedChunks($batchId, 'absent') as $chunk) {
+            foreach ($this->stagedChunks($batchId, 'dropped') as $chunk) {
                 $this->pdo->beginTransaction();
                 try {
-                    $applied['absent'] += $this->applyAbsent($chunk, $batchId);
+                    $applied['dropped'] += $this->applyDropped($chunk, $batchId);
                     $this->pdo->commit();
                 } catch (Throwable $e) {
                     $this->pdo->rollBack();
@@ -1236,7 +1256,7 @@ final class Importer
         }
         $assignments[] = '`last_seen_import_id` = :batch';
         // A member who reappears is un-flagged automatically (spec 6.5).
-        $assignments[] = '`absent_since_import_id` = NULL';
+        $assignments[] = '`dropped_since_import_id` = NULL';
 
         if ($mode !== self::MODE_UPDATE) {
             $assignments[] = '`division_id` = :division_id';
@@ -1277,7 +1297,7 @@ final class Importer
         $bind[':batch'] = $batchId;
 
         $this->pdo->prepare(
-            'UPDATE `member` SET `last_seen_import_id` = :batch, `absent_since_import_id` = NULL '
+            'UPDATE `member` SET `last_seen_import_id` = :batch, `dropped_since_import_id` = NULL '
             . "WHERE `id` IN ({$placeholders}) AND `is_system` = 0"
         )->execute($bind);
 
@@ -1508,7 +1528,7 @@ final class Importer
     }
 
     /** @param array<int, array<string, mixed>> $chunk */
-    private function applyAbsent(array $chunk, int $batchId): int
+    private function applyDropped(array $chunk, int $batchId): int
     {
         $ids = [];
         foreach ($chunk as $row) {
@@ -1527,11 +1547,11 @@ final class Importer
         // Flag, never delete. An Admin confirms the purge as a separate,
         // logged action, and a member who reappears is un-flagged
         // automatically. is_system = 0 is belt and braces: a system row is
-        // never staged as absent in the first place.
+        // never staged as dropped in the first place.
         $flag = $this->pdo->prepare(
-            'UPDATE `member` SET `absent_since_import_id` = :batch '
+            'UPDATE `member` SET `dropped_since_import_id` = :batch '
             . "WHERE `id` IN ({$placeholders}) AND `is_system` = 0 AND `purged_at` IS NULL "
-            . 'AND `absent_since_import_id` IS NULL'
+            . 'AND `dropped_since_import_id` IS NULL'
         );
         $flag->execute($bind);
 
@@ -1707,18 +1727,18 @@ final class Importer
      * @param array<string, int>   $counts
      * @param array<string, mixed> $summary
      */
-    private function finishBatch(int $batchId, array $counts, int $absent, int $warnings, array $summary): void
+    private function finishBatch(int $batchId, array $counts, int $dropped, int $warnings, array $summary): void
     {
         $this->pdo->prepare(
             'UPDATE import_batch SET rows_read = :read, rows_created = :created, rows_updated = :updated, '
-            . 'rows_unchanged = :unchanged, rows_absent = :absent, warnings_count = :warnings, '
+            . 'rows_unchanged = :unchanged, rows_dropped = :dropped, warnings_count = :warnings, '
             . 'summary_json = :summary WHERE id = :id'
         )->execute([
             ':read'      => $counts['read'],
             ':created'   => $counts['create'],
             ':updated'   => $counts['update'],
             ':unchanged' => $counts['unchanged'],
-            ':absent'    => $absent,
+            ':dropped'   => $dropped,
             ':warnings'  => $warnings,
             ':summary'   => self::json($summary),
             ':id'        => $batchId,
@@ -1953,7 +1973,7 @@ final class Importer
      *
      * `is_system = 1` rows are NOT returned, and that absence is what makes
      * them invisible to the import: never matched, never updated, never
-     * flagged absent. Without it the first complete import would flag the
+     * dropped. Without it the first complete import would drop the
      * master administrator for not appearing in a file they will never appear
      * in, and invite an Admin to purge the only account that can sign in.
      *
@@ -1971,7 +1991,7 @@ final class Importer
 
         $rows = $this->pdo->query(
             "SELECT m.id, m.member_number, {$columns}, m.division_id, m.team_id, "
-            . 'm.purged_at, m.absent_since_import_id, '
+            . 'm.purged_at, m.dropped_since_import_id, '
             . 'd.name AS division_name, t.name AS team_name '
             . 'FROM member m '
             . 'INNER JOIN division d ON d.id = m.division_id '

@@ -25,7 +25,7 @@ use Rerm\Roster\RosterPage;
  * asserts that by reading its source.
  *
  * **Restore exists because an import does not clear `purged_at`.** A member
- * who reappears in a later roster is un-flagged as absent automatically, but
+ * who reappears in a later roster is un-dropped automatically, but
  * stays purged: without a control here, a mistaken purge is invisible forever
  * and needs somebody at the database. Restoring clears `purged_at` and
  * nothing else — the member returns to the roster with their history, their
@@ -249,7 +249,7 @@ final class Purge
         }
 
         $population = $action === 'purge'
-            ? 'm.purged_at IS NULL AND m.absent_since_import_id IS NOT NULL'
+            ? 'm.purged_at IS NULL AND m.dropped_since_import_id IS NOT NULL'
             : 'm.purged_at IS NOT NULL';
 
         $read = $this->pdo->prepare(

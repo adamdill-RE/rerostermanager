@@ -189,6 +189,13 @@ $levelWord = static function (array $row): string {
                 <?php } else { ?>
                     &mdash;
                 <?php } ?>
+                <?php if ($row['team_scope'] !== []) { ?>
+                    <span class="sub">
+                        Sees
+                        <?php $names = array_map(static fn (array $t): string => (string) $t['name'], $row['team_scope']); ?>
+                        <?= e(implode(', ', $names)) ?>
+                    </span>
+                <?php } ?>
                 <?php if ($row['scope_division_id'] !== null || $row['scope_team_id'] !== null) { ?>
                     <span class="sub">
                         Scope override:
@@ -278,6 +285,59 @@ $levelWord = static function (array $row): string {
                                     <?= e($row['granted_level']->label()) ?> may revoke it.
                                 </p>
                             <?php } ?>
+                        </form>
+                    <?php } ?>
+
+                    <?php if ($row['has_account']) { ?>
+                        <form method="post" action="<?= e($app->url('designate')) ?>">
+                            <?= Csrf::field() ?>
+                            <input type="hidden" name="action" value="reset_password">
+                            <input type="hidden" name="member_id" value="<?= e((string) $row['id']) ?>">
+                            <input type="hidden" name="return" value="<?= e($returnState) ?>">
+                            <p class="hint">
+                                Sets their password back to <code>1234</code> and signs them out
+                                everywhere. They must choose a new one the next time they sign in.
+                                <strong>Nothing is emailed</strong> &mdash; tell them yourself.
+                            </p>
+                            <button type="submit" class="quiet"
+                                <?= $row['may_reset'] ? '' : ' disabled' ?>>
+                                Reset password
+                            </button>
+                            <?php if (!$row['may_reset']) { ?>
+                                <p class="hint">
+                                    You cannot reset the password of somebody at
+                                    <?= e($row['effective_level']->label()) ?> level.
+                                </p>
+                            <?php } ?>
+                        </form>
+                    <?php } ?>
+
+                    <?php if ($designate['may_override'] && $row['may_team_scope']) { ?>
+                        <form method="post" action="<?= e($app->url('designate')) ?>">
+                            <?= Csrf::field() ?>
+                            <input type="hidden" name="action" value="team_scope">
+                            <input type="hidden" name="member_id" value="<?= e((string) $row['id']) ?>">
+                            <input type="hidden" name="return" value="<?= e($returnState) ?>">
+
+                            <fieldset>
+                                <legend>Teams this Senior Officer covers</legend>
+                                <p class="hint">
+                                    Tick the teams they are responsible for. Leave every box clear
+                                    and they fall back to their whole division &mdash; or, for a
+                                    Vice Chairman, to their own team.
+                                </p>
+                                <?php $held = array_column($row['team_scope'], 'id'); ?>
+                                <?php foreach ($designate['teams'] as $team) { ?>
+                                    <label class="choice" for="ts<?= e((string) $row['id']) ?>-<?= e((string) $team['id']) ?>">
+                                        <input type="checkbox"
+                                               id="ts<?= e((string) $row['id']) ?>-<?= e((string) $team['id']) ?>"
+                                               name="team_scope[]" value="<?= e((string) $team['id']) ?>"
+                                            <?= in_array((int) $team['id'], $held, true) ? ' checked' : '' ?>>
+                                        <span class="what"><?= e((string) $team['name']) ?></span>
+                                    </label>
+                                <?php } ?>
+                            </fieldset>
+                            <button type="submit" class="quiet">Save teams</button>
                         </form>
                     <?php } ?>
 

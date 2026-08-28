@@ -100,6 +100,15 @@ final class Access
         }
 
         if ($user->level === Level::SeniorOfficer) {
+            // The same narrowing ScopedQuery applies (Phase 8.5), read from
+            // the same resolved field. These two answers must agree exactly:
+            // a scope the query narrows but this does not is a member an
+            // officer can act on and cannot see.
+            if ($user->scopeTeamIds !== []) {
+                return $subject->teamId !== null
+                    && in_array($subject->teamId, $user->scopeTeamIds, true);
+            }
+
             return $user->scopeDivisionId !== null
                 && $subject->divisionId === $user->scopeDivisionId;
         }

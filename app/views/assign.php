@@ -246,7 +246,7 @@ $href = static function (array $overrides = []) use ($app, $assign): string {
     <?php if ($bucket === 'ineligible' && (int) $counts['ineligible'] > 0) { ?>
         <p class="lede">
             An import demoted these officers, moved them to another team, or flagged
-            them absent (spec 6.6). The assignments still exist and still say who was
+            them dropped (spec 6.6). The assignments still exist and still say who was
             responsible &mdash; assigning a replacement below clears the broken one in
             the same action, and leaves any officer who is still valid alone.
         </p>

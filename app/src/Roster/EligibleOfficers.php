@@ -23,7 +23,7 @@ use Rerm\Auth\Level;
  *     the request arrived
  *
  * Eligible means, exactly: a member row that is visible (not the system
- * account, not purged, not absent-flagged — ScopedQuery::visible(), the same
+ * account, not purged, not dropped — ScopedQuery::visible(), the same
  * three columns every roster read uses), who is ON the member's team, and
  * whose EFFECTIVE level is Officer or above.
  *
@@ -112,7 +112,7 @@ final class EligibleOfficers
      * points at" — decided 3, as one SQL predicate.
      *
      * Written as NOT EXISTS over the officer's own row rather than as three
-     * separate tests, so demoted, moved-team, purged and absent are one
+     * separate tests, so demoted, moved-team, purged and dropped are one
      * question with one answer: can this officer still be found, on this
      * member's team, at Officer level or above?
      *
@@ -272,7 +272,7 @@ final class EligibleOfficers
      * row display and the re-point write all read.
      *
      * The officer's row is joined WITHOUT the visibility filter on purpose: a
-     * purged or absent officer still holds these people, and hiding the row is
+     * purged or dropped officer still holds these people, and hiding the row is
      * how twenty members stop being chased with nobody noticing (spec 6.6).
      * The flag says the assignment is broken; the name is still there so
      * somebody can re-point it.

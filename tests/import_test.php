@@ -258,7 +258,7 @@ function import_reset(): void
     $pdo->exec('DELETE FROM member_metric');
     $pdo->exec('DELETE FROM import_staged_row');
     $pdo->exec('DELETE FROM import_warning');
-    $pdo->exec('UPDATE member SET last_seen_import_id = NULL, absent_since_import_id = NULL, purged_at = NULL');
+    $pdo->exec('UPDATE member SET last_seen_import_id = NULL, dropped_since_import_id = NULL, purged_at = NULL');
     $pdo->exec('DELETE FROM import_batch');
 
     $pdo->exec("DELETE FROM app_user WHERE member_id NOT IN ({$members})");
@@ -879,16 +879,16 @@ test('a complete import flags who it did not see, and un-flags them when they re
     import_apply([import_member('8000001'), import_member('8000002')]);
 
     $second = import_apply([import_member('8000001')]);
-    assertSame(1, $second['absent']);
+    assertSame(1, $second['dropped']);
 
     $gone = import_member_row('8000002');
     assertTrue($gone !== null, 'flagging is not deleting');
-    assertTrue($gone['absent_since_import_id'] !== null, 'and the batch that noticed is recorded');
+    assertTrue($gone['dropped_since_import_id'] !== null, 'and the batch that noticed is recorded');
 
     // A member who reappears is un-flagged automatically. Lapsing for a
     // season and returning is the ordinary case, not the exception.
     import_apply([import_member('8000001'), import_member('8000002')]);
-    assertSame(null, import_member_row('8000002')['absent_since_import_id']);
+    assertSame(null, import_member_row('8000002')['dropped_since_import_id']);
 });
 
 test('an update import flags nobody', function (): void {
@@ -900,8 +900,8 @@ test('an update import flags nobody', function (): void {
     // roster, not a statement about who is on the committee.
     $result = import_apply([import_member('8100001')], Importer::MODE_UPDATE);
 
-    assertSame(0, $result['absent']);
-    assertSame(null, import_member_row('8100002')['absent_since_import_id']);
+    assertSame(0, $result['dropped']);
+    assertSame(null, import_member_row('8100002')['dropped_since_import_id']);
 });
 
 test('a purged member is not re-flagged, and their history survives', function (): void {
@@ -917,7 +917,7 @@ test('a purged member is not re-flagged, and their history survives', function (
 
     $purged = import_member_row('8200002');
     assertTrue($purged !== null, 'a purge is a SOFT delete and this is not negotiable');
-    assertSame(null, $purged['absent_since_import_id'], 'already gone; flagging again says nothing');
+    assertSame(null, $purged['dropped_since_import_id'], 'already gone; flagging again says nothing');
     assertSame(5, (int) $pdo->query(
         "SELECT COUNT(*) FROM member_metric mm INNER JOIN member m ON m.id = mm.member_id "
         . "WHERE m.member_number = '8200002'"
@@ -934,7 +934,7 @@ test('the master administrator is invisible to the import', function (): void {
 
     $master = import_member_row(App::MASTER_ADMIN_NUMBER);
     assertTrue($master !== null);
-    assertSame(null, $master['absent_since_import_id'], 'never absented');
+    assertSame(null, $master['dropped_since_import_id'], 'never absented');
     assertSame(null, $master['last_seen_import_id'], 'never seen');
     assertSame('admin', (string) import_account(App::MASTER_ADMIN_NUMBER)['effective_level'], 'never demoted');
 
@@ -1050,9 +1050,9 @@ test('team mode flags absentees within its own team only', function (): void {
 
     // Flagging the whole committee absent because they were not in a 40-row
     // team file is how a roster lands on the purge screen.
-    assertSame(1, $result['absent']);
-    assertTrue(import_member_row('9300002')['absent_since_import_id'] !== null);
-    assertSame(null, import_member_row('9300003')['absent_since_import_id']);
+    assertSame(1, $result['dropped']);
+    assertTrue(import_member_row('9300002')['dropped_since_import_id'] !== null);
+    assertSame(null, import_member_row('9300003')['dropped_since_import_id']);
 });
 
 test('team mode without a team, and the other modes with one, are refused', function (): void {

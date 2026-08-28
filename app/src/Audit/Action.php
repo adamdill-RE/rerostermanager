@@ -55,6 +55,23 @@ enum Action: string
     case RevokeLevel             = 'revoke_level';
     case SetScopeOverride        = 'set_scope_override';
 
+    /**
+     * The teams a Senior Officer is narrowed to (Phase 8.5). Distinct from
+     * set_scope_override because it answers a different question — "which
+     * teams", not "which division" — and because widening somebody from one
+     * team to five is the change most worth being able to find later.
+     */
+    case SetTeamScope            = 'set_team_scope';
+
+    /**
+     * An Admin resetting somebody ELSE's password (Phase 8.5). Distinct from
+     * password_reset_completed, which is the person themselves finishing an
+     * emailed recovery: this one has an actor who is not the account holder,
+     * and that difference is the whole reason it is worth being able to
+     * filter for.
+     */
+    case PasswordResetByAdmin    = 'password_reset_by_admin';
+
     // Purge and restore (spec 6.5). Both soft: purge stamps `purged_at`,
     // restore clears it, and neither deletes anything.
     case PurgeMember             = 'purge_member';
@@ -100,6 +117,8 @@ enum Action: string
             self::GrantLevel             => 'Level granted',
             self::RevokeLevel            => 'Level revoked',
             self::SetScopeOverride       => 'Scope override set',
+            self::SetTeamScope           => 'Team scope set',
+            self::PasswordResetByAdmin   => 'Password reset by an administrator',
 
             self::PurgeMember            => 'Member purged',
             self::RestoreMember          => 'Member restored',

@@ -43,7 +43,7 @@ const USAGE = <<<TEXT
            php bin/import-roster.php --apply=<batch id>
 
       --dry-run           parse and show the diff, then discard the batch
-      --mode=complete     every field, every metric; creates; flags absentees   (default)
+      --mode=complete     every field, every metric; creates; drops the missing (default)
       --mode=update       metrics, phone and email only; creates nobody; flags nobody
       --mode=team         one team, verified against every row's Subcommittee 1
       --team=<name|id>    which team, for --mode=team
@@ -116,7 +116,7 @@ function print_preview(Rerm\App $app, array $preview): void
     out('  would create   ' . num($counts['create']));
     out('  would update   ' . num($counts['update']));
     out('  unchanged      ' . num($counts['unchanged']));
-    out('  would flag     ' . num($counts['absent']) . '  absent — flagged, never deleted');
+    out('  would flag     ' . num($counts['dropped']) . '  dropped — flagged, never deleted');
     out('  skipped        ' . num($counts['skipped']) . '  see the warnings below');
 
     if ($preview['metric_flips'] !== []) {
@@ -184,10 +184,10 @@ function print_preview(Rerm\App $app, array $preview): void
         }
     }
 
-    if ($preview['sample_absent'] !== []) {
+    if ($preview['sample_dropped'] !== []) {
         out();
-        out('Would be flagged absent (first ' . count($preview['sample_absent']) . ')');
-        foreach ($preview['sample_absent'] as $row) {
+        out('Would be dropped (first ' . count($preview['sample_dropped']) . ')');
+        foreach ($preview['sample_dropped'] as $row) {
             out(sprintf('  %-10s %s', $row['member_number'], $row['name']));
         }
         out('  Flagged only. Purging is a separate, confirmed, logged action.');
@@ -232,7 +232,7 @@ try {
         if ($staged === []) {
             out('Nothing is staged.');
         } else {
-            out(sprintf('%-6s %-9s %-22s %8s %8s %8s %8s  %s', 'id', 'mode', 'file', 'read', 'create', 'update', 'absent', 'staged at'));
+            out(sprintf('%-6s %-9s %-22s %8s %8s %8s %8s  %s', 'id', 'mode', 'file', 'read', 'create', 'update', 'dropped', 'staged at'));
             foreach ($staged as $batch) {
                 out(sprintf(
                     '%-6d %-9s %-22s %8d %8d %8d %8d  %s UTC',
@@ -242,7 +242,7 @@ try {
                     (int) $batch['rows_read'],
                     (int) $batch['rows_created'],
                     (int) $batch['rows_updated'],
-                    (int) $batch['rows_absent'],
+                    (int) $batch['rows_dropped'],
                     (string) $batch['started_at']
                 ));
             }
@@ -317,7 +317,7 @@ try {
         out('  created         ' . num($result['created']));
         out('  updated         ' . num($result['updated']));
         out('  unchanged       ' . num($result['unchanged']));
-        out('  flagged absent  ' . num($result['absent']));
+        out('  dropped         ' . num($result['dropped']));
         out('  accounts        ' . num($result['accounts']) . '  created, activated or deactivated');
         out('  progress reset  ' . num($result['progress_reset']) . '  metrics that moved N -> Y (logged to audit_log)');
         out();

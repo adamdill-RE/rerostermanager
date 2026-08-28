@@ -242,18 +242,22 @@ Five, ordered. Each includes everything below it.
 
 Applied on import, matching the export's exact strings.
 
-| Title | Level |
-| --- | --- |
-| `Chairman` | Executive Officer |
-| `Vice President` | Executive Officer |
-| `Officer in Charge` | Executive Officer |
-| `Division Chairman` | Executive Officer |
-| `Division Vice Chairman` | Senior Officer |
-| `Coordinator` | Senior Officer |
-| `Ambassador` | Senior Officer |
-| `Vice Chairman` | Officer |
-| `Captain` | Officer |
-| `Assistant Captain` | Officer |
+A title confers a **level** — what its holder may do — and a **default scope
+breadth**: how much they see before anybody records anything about them. The
+two are separate questions, and only one title answers the second differently.
+
+| Title | Level | Default breadth | People |
+| --- | --- | --- | ---: |
+| `Chairman` | Executive Officer | everything | 1 |
+| `Vice President` | Executive Officer | everything | — |
+| `Officer in Charge` | Executive Officer | everything | — |
+| `Division Chairman` | Executive Officer | everything | 4 |
+| `Division Vice Chairman` | Senior Officer | division | 8 |
+| `Coordinator` | Senior Officer | division | 5 |
+| `Ambassador` | Senior Officer | division | 7 |
+| `Vice Chairman` | Senior Officer | **their own team** | 21 |
+| `Captain` | Officer | own team | 82 |
+| `Assistant Captain` | Officer | own team | 66 |
 | `Committee Member` | Member |
 | `Lifetime Committeemen` | Member |
 | `Lifetime Vice Presidents` | Member |
@@ -261,11 +265,27 @@ Applied on import, matching the export's exact strings.
 | `Past Committee Chairman` | Member |
 | *anything else* | **Member, with an import warning naming the title** |
 
-The map lives in one place, `Rerm\Auth\TitleMap`, and is transcribed a second
-time in `tests/title_map_test.php` so a change has to be made twice on purpose.
+The map lives in one place, `Rerm\Auth\TitleMap` — both halves of it, the
+level and the breadth — and is transcribed a second time in
+`tests/title_map_test.php` so a change has to be made twice on purpose.
 
-Three notes:
+Four notes:
 
+- **`Vice Chairman` is a Senior Officer who sees one team** (Phase 8.5). The 21
+  of them need the Committee Dashboard and the ability to designate, which are
+  Senior Officer capabilities — but promoting them with the level's usual
+  whole-division visibility would have widened 21 people from one team to
+  several hundred members on the next import, with nobody doing anything. So
+  the breadth is part of the map, and an Admin widens each of them
+  deliberately to the teams they really cover (§4.3).
+
+  Two other ways of arranging that are wrong, and both are tempting. An
+  **import must not seed the team set** — an import never writes a scope
+  override (§6.6), and that boundary is what makes a designation durable. And
+  an empty team set **must not mean "own team" generally**, or it silently
+  narrows the 20 Senior Officers who already exist. A change that promotes 21
+  people must not demote 20 others; `tests/title_map_test.php` asserts it does
+  not.
 - **`Division Chairman` is Executive, not division-scoped.** All four are filed
   under Logistics Division in the export, so their placement cannot name what
   they run. Executive scope makes the question moot.
@@ -279,16 +299,36 @@ Three notes:
 
 ```
 Admin, Executive Officer  ->  every member
-Senior Officer            ->  members whose division = the officer's division
+Senior Officer            ->  members whose division = the officer's division,
+                              OR, when narrowed, the teams they are scoped to
 Officer                   ->  members whose team = the officer's team
 ```
 
-**A Senior Officer sees their whole division, and that is deliberate.** The
-export files all eight Division Vice Chairmen under an area rather than a
-division (`docs/data-findings.md` §4d), so an area-scoped reading was
-considered and rejected: Senior Officers help across the division, and a
-Coordinator covering two areas that week would be locked out of one of them.
-The breadth is the job, not an over-grant.
+**A Senior Officer may be narrowed to a SET of teams** (Phase 8.5). Some Vice
+Chairmen cover three teams and some cover one, and neither "a whole division"
+nor "a single team" describes the first. The set lives in `app_user_team`, is
+set by an Admin on Designate Users, and applies to Senior Officer and above
+only — an Officer already has a working single-team scope, and anyone above
+sees everything.
+
+Scope resolves in one place, `Rerm\Auth\User::fromRow`, so `ScopedQuery` and
+`Access` cannot disagree about it. Explicit always beats implicit:
+
+1. an explicit team set;
+2. an explicit division override on `app_user`;
+3. the title's own default breadth (§4.2).
+
+**A Senior Officer sees their whole division by default, and that is
+deliberate.** The export files all eight Division Vice Chairmen under an area
+rather than a division (`docs/data-findings.md` §4d), so an area-scoped
+reading was considered and rejected: Senior Officers help across the division,
+and a Coordinator covering two areas that week would be locked out of one of
+them. The breadth is the job, not an over-grant.
+
+Phase 8.5 does not overturn that. The division remains the default for the 20
+Senior Officers who already existed — 8 Division Vice Chairmen, 7 Ambassadors,
+5 Coordinators — and the team set is an *optional narrowing* an Admin applies
+where the committee's real shape needs one.
 
 Scope comes from the **member record of the signed-in user**, not from the
 team table — teams span divisions (`docs/data-findings.md` §4b), so division is
@@ -703,14 +743,30 @@ Never fatal, always listed, always attributed to a row number and member number:
 The preview groups warnings by kind with counts, expandable to rows. A 72-row
 `no_division` list must not bury a single `duplicate_member_number`.
 
-### 6.5 Absence and purge
+### 6.5 Dropped members, and purge
 
-A complete or team import **flags** members it did not see. It never deletes.
+A complete or team import **drops** members it did not see. It never deletes.
 
-Flagged members appear on an Admin "Flagged for purge" screen with the batch
-that flagged them, and are excluded from dashboards and rosters by default.
-Purging is a separate, explicitly confirmed, logged action. A member who
-reappears in a later import is un-flagged automatically.
+"Dropped" is the word throughout, in the schema as well as on the screens
+(Phase 8.5, migration 007): `member.dropped_since_import_id`,
+`import_batch.rows_dropped`, and `dropped` in `import_staged_row.action`.
+
+**Dropped is not purged, and the two must not blur:**
+
+| | Set by | Cleared by | Means |
+| --- | --- | --- | --- |
+| **Dropped** | an import, automatically | the next import that lists them | "find out whether this person left" |
+| **Purged** | an Admin, with a typed word | Restore, by an Admin | "we have decided" |
+
+Both are soft; neither deletes anything.
+
+Dropped members appear on the Admin **Flagged for Purge** screen with the batch
+that dropped them, and — since Phase 8.5 — on a read-only **Dropped Members**
+screen scoped to whoever is looking, so an officer can see that somebody on
+their own team has fallen off the roster and ring them. They are excluded from
+dashboards and rosters by default. Purging is a separate, explicitly confirmed,
+logged action. A member who reappears in a later import is picked back up
+automatically.
 
 **Purging is a soft delete, and this is not negotiable.** It sets
 `member.purged_at` and drops the member out of every roster and roll-up. It
@@ -1312,6 +1368,15 @@ made editable. Widens `export_roster` to Officer / Scoped (§4.5) and changes
 what a rollover carries (§5.1).
 **Done when** a full round trip works: import → chase → export.
 
+### Phase 8.5 — Fit and finish
+Six features from real use of Phase 8: an Admin password reset (§4.4), the
+"absent" → "dropped" rename in the schema as well as the screens (§6.5), a
+Team column on the import's dropped and changed tables, a sticky nav strip
+back to the menu, a scoped read-only Dropped Members screen, and Vice Chairmen
+promoted to Senior Officer with the team-set scope that makes it safe (§4.2,
+§4.3). Ships migrations 007 and 008.
+**Done when** nobody's visibility changed who did not need it to.
+
 ### Phase 9 — v2
 Create Forms. Recruiting and retention automation. Out of scope for v1.
 
@@ -1328,7 +1393,6 @@ stays findable.
 
 | # | Question | Assumed for v1 |
 | --- | --- | --- |
-| ~~OI-1~~ | Senior Officer scope: area rather than division? | **Closed: the whole division.** Senior Officers work across it; the breadth is the point |
 | ~~OI-2~~ | Are `Coordinator` and `Ambassador` Senior or Officer? | **Resolved: Senior Officer.** 12 people |
 | OI-3 | Is harassment training a fifth scored metric? | No — shown, not scored |
 | OI-4 | Retention rule for members flagged absent | Flag only; Admin confirms purge |
@@ -1344,6 +1408,9 @@ stays findable.
 | ~~OI-14~~ | Is `team.area` worth populating for the middle roll-up level? | **Closed: yes.** Seeded by migration 006 in Phase 7, Admin-editable from Phase 8's Manage Teams (§7.5), longest-prefix rule over the seven bare-area team names (§7.3) |
 | ~~OI-18~~ | Does the Designate Users search read through `ScopedQuery`? | **Decided: yes** (§7.5). "The whole roster" means regardless of title, not regardless of scope: `designate_allowed_user` is Scoped (§4.5), so an unscoped list would show a Senior Officer names their own roster refuses them and then offer a control the write path must refuse. For an Admin it is the whole roster either way |
 | ~~OI-19~~ | Does the scope override get a UI in v1? | **Decided: yes, in Phase 8**, on Designate Users, Admin only (§4.4, §7.5). It is the only mechanism that can point a Senior Officer at a division other than their own, which is what gives the 72 members of `(No Division)` an owner — so deferring it would have left §5.1a's central claim unimplementable |
+| ~~OI-1~~ | Senior Officer scope: area rather than division? | **Closed by Phase 8.5, and not as an area.** A Senior Officer may now be narrowed to an explicit SET of teams (§4.3), which is what the committee's real shape needed — some Vice Chairmen cover three teams, some one. The division stays the default and the 20 Senior Officers who predate the change keep it |
+| ~~OI-21~~ | Can an Admin reset somebody else's password? | **Added by Phase 8.5.** On Designate Users, capped by `Access::mayGrant()` against the target's EFFECTIVE level — a reset sets the password to a value the actor knows, so it is equivalent to taking the account and nobody may reach upward. Sets `must_change_password`, revokes every session, refuses `is_system`, emails nothing |
+| ~~OI-22~~ | Should "absent" be renamed? | **Yes, everywhere, Phase 8.5** (§6.5). The owner's word is "dropped"; migration 007 renames the column, the batch counter and the ENUM value so the schema and the screens say the same thing |
 | ~~OI-20~~ | Does the audit vocabulary become a type? | **Decided: yes** — `Rerm\Audit\Action` (§7.5). The Audit Log filters by action, and a filter over free text silently matches nothing the first time somebody misspells a verb. Reading stays tolerant: an unknown historical string renders as itself and is still filterable |
 | ~~OI-15~~ | How does drill-down interact with §7.1's My members default? | **Decided: the link carries `mode=team` explicitly** (§7.3). Phase 6 made the default real, and it would otherwise hide the very people the drill-down counted |
 | ~~OI-16~~ | Does assignment coverage belong on the Committee Dashboard? | **Decided: beside the compliance numbers**, not in a panel of its own (§7.3). Unassigned changes what you do about a team's bad numbers |

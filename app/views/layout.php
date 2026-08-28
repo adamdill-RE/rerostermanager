@@ -101,6 +101,55 @@ h2 { font-size: 1.05rem; margin: 2rem 0 .5rem; }
     color: var(--action-orange);
 }
 
+/* The way back to the menu, on every signed-in screen (Phase 8.5).
+   Sticky, because the screen it matters on is a 100-row roster: the whole
+   point is not having to scroll to the bottom to leave. It bleeds through
+   body's padding so it meets the edges of the phone and nothing shows
+   beside it as the page scrolls under. */
+.topbar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    margin: -2rem -1rem 1.5rem;
+    padding: 0 1rem;
+    background: var(--page);
+    border-bottom: 1px solid var(--border);
+}
+.topbar .inner {
+    max-width: var(--page-max);
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0 1rem;
+    /* Minimum touch target is 56px — this is used one-handed, outdoors, by
+       somebody wearing gloves in February. */
+    min-height: 56px;
+}
+.topbar.wide .inner { max-width: var(--page-wide); }
+.topbar .brand { margin: 0; }
+.topbar a.back {
+    display: inline-flex;
+    align-items: center;
+    min-height: 56px;
+    padding: 0 .25rem;
+    font-weight: 700;
+    text-decoration: none;
+}
+.topbar a.back:hover { text-decoration: underline; }
+.topbar a.back:focus-visible { outline: 3px solid var(--rodeo-orange); outline-offset: 2px; }
+.topbar .who {
+    margin-left: auto;
+    color: var(--muted);
+    font-size: .85rem;
+    /* Last on a phone, where the name would otherwise push the link off. */
+    flex: 1 0 100%;
+    padding-bottom: .4rem;
+}
+@media (min-width: 40rem) {
+    .topbar .who { flex: 0 1 auto; padding-bottom: 0; }
+}
+
 .lede { color: var(--muted); margin: 0 0 1.5rem; }
 
 .card {
@@ -533,8 +582,27 @@ a { color: var(--action-orange); }
 </style>
 </head>
 <body>
+<?php /*
+    The nav strip renders for a signed-in user and for nobody else, and it
+    needs no change to any view to do it: render() extracts the view's data
+    into ITS OWN scope and then requires this file from there, so $user is
+    already here for the thirteen screens that pass one. Login, forgot,
+    reset and an anonymous not-found pass none, and get the plain brand
+    below instead.
+*/ ?>
+<?php if (isset($user) && $user instanceof Rerm\Auth\User) { ?>
+    <header class="topbar<?= ($wide ?? false) ? ' wide' : '' ?>">
+        <div class="inner">
+            <span class="brand"><?= e((string) $app->config()->get('app.name')) ?></span>
+            <a class="back" href="<?= e($app->url('menu')) ?>">&larr; Menu</a>
+            <span class="who"><?= e($user->displayName) ?> &middot; <?= e($user->level->label()) ?></span>
+        </div>
+    </header>
+<?php } ?>
 <main<?= ($wide ?? false) ? ' class="wide"' : '' ?>>
-<span class="brand"><?= e((string) $app->config()->get('app.name')) ?></span>
+<?php if (!isset($user) || !$user instanceof Rerm\Auth\User) { ?>
+    <span class="brand"><?= e((string) $app->config()->get('app.name')) ?></span>
+<?php } ?>
 <?= $body ?>
 </main>
 </body>

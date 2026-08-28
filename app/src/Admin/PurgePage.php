@@ -13,7 +13,7 @@ use Rerm\Roster\RosterPage;
  *
  * This is the one screen in the application whose whole subject is the
  * members every other screen hides. `ScopedQuery::visible()` filters out
- * `purged_at IS NOT NULL` and `absent_since_import_id IS NOT NULL`, which is
+ * `purged_at IS NOT NULL` and `dropped_since_import_id IS NOT NULL`, which is
  * exactly the population here, so this class deliberately does NOT use it —
  * and asserts the two columns it does read in their place. It keeps
  * `is_system = 0` unconditionally: the seeded master administrator is an
@@ -72,7 +72,7 @@ final class PurgePage
         // never offered.
         $where = $list === 'purged'
             ? 'm.is_system = 0 AND m.purged_at IS NOT NULL'
-            : 'm.is_system = 0 AND m.purged_at IS NULL AND m.absent_since_import_id IS NOT NULL';
+            : 'm.is_system = 0 AND m.purged_at IS NULL AND m.dropped_since_import_id IS NOT NULL';
 
         $count = (int) $this->pdo->query("SELECT COUNT(*) FROM member m WHERE {$where}")->fetchColumn();
 
@@ -91,7 +91,7 @@ final class PurgePage
 
         $read = $this->pdo->prepare(
             'SELECT m.id, m.member_number, m.first_name, m.last_name, m.preferred_name,'
-            . ' m.title, m.purged_at, m.absent_since_import_id,'
+            . ' m.title, m.purged_at, m.dropped_since_import_id,'
             . ' t.name AS team_name, d.name AS division_name,'
             . ' b.started_at AS batch_started_at, b.filename AS batch_filename, b.mode AS batch_mode,'
             . ' (SELECT COUNT(*) FROM contact_log c WHERE c.member_id = m.id) AS contact_count,'
@@ -100,7 +100,7 @@ final class PurgePage
             . ' FROM member m'
             . ' LEFT JOIN team t ON t.id = m.team_id'
             . ' INNER JOIN division d ON d.id = m.division_id'
-            . ' LEFT JOIN import_batch b ON b.id = m.absent_since_import_id'
+            . ' LEFT JOIN import_batch b ON b.id = m.dropped_since_import_id'
             . " WHERE {$where}"
             . ' ORDER BY m.last_name ASC, m.first_name ASC, m.id ASC'
             . " LIMIT {$size} OFFSET {$offset}"
@@ -122,8 +122,8 @@ final class PurgePage
                 'team_name'     => (string) ($row['team_name'] ?? ''),
                 'division_name' => (string) $row['division_name'],
                 'purged_at'     => $row['purged_at'] !== null ? (string) $row['purged_at'] : null,
-                'batch_id'      => $row['absent_since_import_id'] !== null
-                    ? (int) $row['absent_since_import_id']
+                'batch_id'      => $row['dropped_since_import_id'] !== null
+                    ? (int) $row['dropped_since_import_id']
                     : null,
                 'batch_started_at' => $row['batch_started_at'] !== null
                     ? (string) $row['batch_started_at']
@@ -142,7 +142,7 @@ final class PurgePage
         // The other list's size, so the toggle can say how much is over there
         // without a second page load.
         $otherWhere = $list === 'purged'
-            ? 'm.is_system = 0 AND m.purged_at IS NULL AND m.absent_since_import_id IS NOT NULL'
+            ? 'm.is_system = 0 AND m.purged_at IS NULL AND m.dropped_since_import_id IS NOT NULL'
             : 'm.is_system = 0 AND m.purged_at IS NOT NULL';
         $otherCount = (int) $this->pdo->query("SELECT COUNT(*) FROM member m WHERE {$otherWhere}")
             ->fetchColumn();

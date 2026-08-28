@@ -141,11 +141,28 @@ test('team.area appears nowhere in Access, ScopedQuery or the eligibility rule',
     }
 });
 
-test('nothing in Phase 8 can delete a member, a contact or an assignment', function (): void {
+test('nothing in the admin screens can delete a member, a contact or a record', function (): void {
     // The single most important rule in the application (CLAUDE.md, spec 5.5,
     // 6.5), asserted by reading the source of every file that writes. A purge
     // is purged_at, a revoke deactivates, closing freezes and a rollover
-    // copies — so a DELETE anywhere in here is a bug by definition.
+    // copies.
+    //
+    // Stated as the tables that must never lose a row, rather than as "no
+    // DELETE anywhere". Phase 8.5 is why: `app_user_team` is CURRENT STATE,
+    // not a record — it says which teams somebody is narrowed to today, its
+    // history lives in audit_log like every other scope change, and replacing
+    // a scope wholesale is the honest way to write it. Banning the keyword
+    // outright would have forced a soft-delete flag onto a configuration
+    // table for no gain, which is the kind of thing a rule stated too broadly
+    // makes people do.
+    //
+    // These are the tables the rule is actually about — the roster and
+    // everything that must outlive it.
+    $protected = [
+        'member', 'contact_log', 'assignment', 'member_metric',
+        'audit_log', 'import_batch', 'import_warning', 'show_year',
+    ];
+
     foreach ([
         'Admin/Purge.php',
         'Admin/PurgePage.php',
@@ -156,20 +173,38 @@ test('nothing in Phase 8 can delete a member, a contact or an assignment', funct
         'Admin/AuditPage.php',
         'Admin/ExportPage.php',
         'Export/RosterExport.php',
+        'Roster/DroppedPage.php',
     ] as $file) {
         $source = (string) file_get_contents(__DIR__ . '/../app/src/' . $file);
         assertTrue($source !== '', $file . ' is readable');
-        assertSame(
-            0,
-            preg_match('/\bDELETE\s+FROM\b/i', $source),
-            $file . ' must contain no DELETE'
-        );
+
+        foreach ($protected as $table) {
+            assertSame(
+                0,
+                preg_match('/\bDELETE\s+FROM\s+`?' . $table . '`?\b/i', $source),
+                $file . ' must never DELETE FROM ' . $table
+            );
+        }
+
         assertSame(
             0,
             preg_match('/\bTRUNCATE\b|\bDROP\s+TABLE\b/i', $source),
             $file . ' must contain no TRUNCATE or DROP'
         );
     }
+
+    // And the one DELETE that does exist is the one described above, so a
+    // second one cannot appear without this line failing.
+    $designate = (string) file_get_contents(__DIR__ . '/../app/src/Admin/Designate.php');
+    assertSame(
+        1,
+        preg_match_all('/\bDELETE\s+FROM\b/i', $designate),
+        'Designate has exactly one DELETE, and it is the team scope being replaced'
+    );
+    assertTrue(
+        preg_match('/DELETE FROM app_user_team WHERE app_user_id/i', $designate) === 1,
+        'and that is the statement it is'
+    );
 });
 
 test('the Audit Log screen has no write path at all', function (): void {
@@ -211,6 +246,17 @@ test('the audit vocabulary is a type, and every writer uses it', function (): vo
         'import_applied', 'import_failed', 'import_reset_progress',
         'assign_officer', 'remove_assignment',
         'grant_level', 'revoke_level', 'set_scope_override',
+        // Phase 8.5: an Admin resetting somebody else's password. Distinct
+        // from password_reset_completed, which is the account holder
+        // finishing their own emailed recovery — this one has an actor who is
+        // not the account holder, which is exactly what makes it worth
+        // filtering for.
+        'password_reset_by_admin',
+        // Phase 8.5: the teams a Senior Officer is narrowed to. Separate from
+        // set_scope_override because it answers "which teams", not "which
+        // division" — and widening somebody from one team to five is the
+        // change most worth being able to find later.
+        'set_team_scope',
         'purge_member', 'restore_member',
         'create_show_year', 'set_active_show_year', 'open_show_year',
         'close_show_year', 'carry_assignments',
@@ -607,7 +653,7 @@ function ad_teardown(PDO $pdo): void
  *   AD (No Division)       Beta Team AD       n1   n2                 <- the
  *                                             placeholder, exported as BLANK
  *
- *   flagged   absent_since_import_id set, purged_at NULL
+ *   flagged   dropped_since_import_id set, purged_at NULL
  *   purged    purged_at set already, so Restore has something to restore
  *
  * `cap` is a Captain on Alpha Team and the only eligible officer; `m1` is
@@ -659,7 +705,7 @@ function ad_fixture(): array
         'INSERT INTO member (member_number, first_name, last_name, preferred_name, full_name, prefix,'
         . ' address, city, state, zip, phone, phone_e164, phone_type, email,'
         . ' title, title_level, division_id, team_id, is_rookie, legal_name_verified,'
-        . ' absent_since_import_id, purged_at, last_seen_import_id)'
+        . ' dropped_since_import_id, purged_at, last_seen_import_id)'
         . ' VALUES (:n, :f, :l, :p, :fn, :px, :a, :c, :s, :z, :ph, :pe, :pt, :em,'
         . '  :t, :tl, :d, :tm, :rk, :lv, :absent, :purged, :seen)'
     );
@@ -1873,7 +1919,7 @@ test('Flagged for Purge renders both lists, with the typed confirmation', functi
     // Both lists have to have something in them for this to prove anything,
     // and by now the fixture's own flagged member has been purged and
     // restored. Re-flag one, so the flagged list is not empty.
-    $pdo->prepare('UPDATE member SET absent_since_import_id = :b WHERE id = :id')
+    $pdo->prepare('UPDATE member SET dropped_since_import_id = :b WHERE id = :id')
         ->execute([':b' => $f['batch'], ':id' => $f['ids']['flagged']]);
 
     try {
@@ -1910,7 +1956,7 @@ test('Flagged for Purge renders both lists, with the typed confirmation', functi
         $purge->apply(ad_user('adm'), [
             'action' => 'restore', 'member_id' => [(string) $f['ids']['flagged']],
         ]);
-        $pdo->prepare('UPDATE member SET absent_since_import_id = NULL WHERE id = :id')
+        $pdo->prepare('UPDATE member SET dropped_since_import_id = NULL WHERE id = :id')
             ->execute([':id' => $f['ids']['flagged']]);
     }
 });
