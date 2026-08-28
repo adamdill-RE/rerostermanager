@@ -291,13 +291,22 @@ final class DesignatePage
                 : null,
 
             // The teams this account is narrowed to, and whether the shape
-            // applies to them at all. Only a Senior Officer may hold one
-            // (settled with the owner): an Officer has a single-team scope
-            // already, and anyone above sees everything.
+            // applies to them at all. An Officer or a Senior Officer may hold
+            // one (Phase 8.6) — an Officer to cover their own team plus one
+            // they help with; anyone above already sees everything.
             'team_scope'      => $row['user_id'] !== null
                 ? ($teamScopes[(int) $row['user_id']] ?? [])
                 : [],
-            'may_team_scope'  => $effective === Level::SeniorOfficer,
+            'may_team_scope'  => $effective === Level::SeniorOfficer
+                || $effective === Level::Officer,
+
+            // The DIVISION override is read by nothing below Senior Officer:
+            // ScopedQuery's and Access's Officer branches consult the team
+            // and never the division. Offering the control anyway let an
+            // Admin set it, be told it saved, and see no change — so the view
+            // asks this before rendering it (Phase 8.6).
+            'may_division_scope' => $effective !== null
+                && $effective->atLeast(Level::SeniorOfficer),
 
             'scope_division_id'   => $row['scope_division_id'] !== null ? (int) $row['scope_division_id'] : null,
             'scope_team_id'       => $row['scope_team_id'] !== null ? (int) $row['scope_team_id'] : null,

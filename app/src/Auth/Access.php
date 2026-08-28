@@ -99,16 +99,18 @@ final class Access
             return true;
         }
 
-        if ($user->level === Level::SeniorOfficer) {
-            // The same narrowing ScopedQuery applies (Phase 8.5), read from
-            // the same resolved field. These two answers must agree exactly:
-            // a scope the query narrows but this does not is a member an
-            // officer can act on and cannot see.
-            if ($user->scopeTeamIds !== []) {
-                return $subject->teamId !== null
-                    && in_array($subject->teamId, $user->scopeTeamIds, true);
-            }
+        // The same narrowing ScopedQuery applies (Phase 8.5, widened to
+        // Officers in 8.6), read from the same resolved field. These two
+        // answers must agree exactly: a scope the query narrows but this does
+        // not is a member an officer can act on and cannot see.
+        if ($user->scopeTeamIds !== []
+            && ($user->level === Level::SeniorOfficer || $user->level === Level::Officer)
+        ) {
+            return $subject->teamId !== null
+                && in_array($subject->teamId, $user->scopeTeamIds, true);
+        }
 
+        if ($user->level === Level::SeniorOfficer) {
             return $user->scopeDivisionId !== null
                 && $subject->divisionId === $user->scopeDivisionId;
         }

@@ -1309,9 +1309,10 @@ function designate_act(Rerm\App $app, Rerm\Auth\User $user): never
         redirect($app, $return);
     }
 
-    if ($outcome === 'not_senior') {
-        flash_set('warn', 'Only a Senior Officer can be narrowed to a set of teams.'
-            . ' An Officer already sees one team, and anyone above sees everything.');
+    if ($outcome === 'not_scopable') {
+        flash_set('warn', 'Only an Officer or a Senior Officer can be narrowed to a set'
+            . ' of teams. Anyone above them already sees everything, and a Member has no'
+            . ' roster to narrow.');
         redirect($app, $return);
     }
 

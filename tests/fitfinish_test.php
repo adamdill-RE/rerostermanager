@@ -36,6 +36,7 @@ use Rerm\Auth\Password;
 use Rerm\Auth\Subject;
 use Rerm\Auth\TitleMap;
 use Rerm\Auth\User;
+use Rerm\Roster\EligibleOfficers;
 use Rerm\Roster\DroppedPage;
 use Rerm\Roster\ScopedQuery;
 use Rerm\Routes;
@@ -557,22 +558,224 @@ test('clearing the team set puts them back where their title says', function ():
     assertSame([], json_decode((string) $row['after_json'], true)['teams']);
 });
 
-test('nobody below Senior Officer can hold a team set', function (): void {
+test('an Officer can be given a second team, and it widens sight only', function (): void {
     $f = ff_fixture();
 
-    // An Officer already has a single-team scope; a second shape at that
-    // level is surface nobody asked for (settled with the owner).
+    // Phase 8.6 reverses the Senior-Officer-only rule of 8.5. The case that
+    // reversed it: a Captain runs their own team and helps with another,
+    // which a single scope_team_id cannot say.
+    $cap = ff_user('cap');
+    assertSame([], $cap->scopeTeamIds, 'no set to begin with');
+    assertSame(['FF000004', 'FF000007'], ff_visible($cap), 'their own team');
+
     $result = Designate::fromApp($GLOBALS['rerm_app'])->apply(ff_user('exec'), [
         'action' => 'team_scope', 'member_id' => (string) $f['ids']['cap'],
-        'team_scope' => [(string) $f['teams']['FF Alpha']],
+        'team_scope' => [
+            (string) $f['teams']['FF Beta'],
+            (string) $f['teams']['FF Alpha'],
+        ],
     ]);
-    assertSame('not_senior', $result['outcome']);
+    assertSame('team_scope_set', $result['outcome']);
 
-    // And the Officer's own scope is untouched by any of this.
+    // Both readers move together, which is the whole point of resolving the
+    // scope once: a member the query shows and Access refuses is a bug that
+    // only surfaces when somebody tries to act.
+    $widened = ff_user('cap');
+    assertSame(2, count($widened->scopeTeamIds));
+    assertSame(
+        ['FF000001', 'FF000002', 'FF000003', 'FF000004', 'FF000005', 'FF000006', 'FF000007'],
+        ff_visible($widened),
+        'now both teams'
+    );
+    assertTrue(ff_allows($widened, 'a1'), 'and they may act on the team they were given');
+    assertTrue(!ff_allows($widened, 'g1'), 'but not on a team nobody ticked');
+
+    // Restore. The fixture is shared, so a test that widens this Officer and
+    // walks away makes every later reader of their scope pass or fail by
+    // ordering rather than by rule — which is exactly what happened.
+    Designate::fromApp($GLOBALS['rerm_app'])->apply(ff_user('exec'), [
+        'action' => 'team_scope', 'member_id' => (string) $f['ids']['cap'],
+        'team_scope' => [],
+    ]);
+    assertSame([], ff_user('cap')->scopeTeamIds, 'and the widening is put back');
+});
+
+test('a team set widens sight without making them an assignable officer', function (): void {
+    $f = ff_fixture();
+
+    // Settled with the owner, 28 August: assignment stays same-team, decided
+    // by the officer's OWN member row in EligibleOfficers, which never reads
+    // scope. Somebody helping chase a team is not thereby its officer of
+    // record, and the Assign screen must not start naming them as one.
+    Designate::fromApp($GLOBALS['rerm_app'])->apply(ff_user('exec'), [
+        'action' => 'team_scope', 'member_id' => (string) $f['ids']['cap'],
+        'team_scope' => [
+            (string) $f['teams']['FF Beta'],
+            (string) $f['teams']['FF Alpha'],
+        ],
+    ]);
+
+    $officers = (new EligibleOfficers(ff_pdo()))
+        ->forTeam($f['teams']['FF Alpha'], $f['year']);
+    $numbers = array_map(static fn (array $o): string => (string) $o['member_number'], $officers);
+
+    assertTrue(
+        !in_array('FF000004', $numbers, true),
+        'the widened Officer is not offered as an FF Alpha officer'
+    );
+
+    // Restore. The fixture is shared, so a test that widens this Officer and
+    // walks away makes every later reader of their scope pass or fail by
+    // ordering rather than by rule — which is exactly what happened.
+    Designate::fromApp($GLOBALS['rerm_app'])->apply(ff_user('exec'), [
+        'action' => 'team_scope', 'member_id' => (string) $f['ids']['cap'],
+        'team_scope' => [],
+    ]);
+    assertSame([], ff_user('cap')->scopeTeamIds, 'and the widening is put back');
+});
+
+test('an Officer with no set still sees exactly their own team', function (): void {
+    // The reversal above must not widen anybody by default: an empty set
+    // means "not narrowed by this mechanism", never "every team".
+    $f   = ff_fixture();
     $cap = ff_user('cap');
+
     assertSame([], $cap->scopeTeamIds);
     assertSame($f['teams']['FF Beta'], $cap->scopeTeamId);
     assertSame(['FF000004', 'FF000007'], ff_visible($cap));
+});
+
+test('the level select opens on what is in force, never on Member', function (): void {
+    // The bug: the option was marked selected by comparing to granted_level,
+    // which is NULL for every title-derived officer. Nothing matched, so the
+    // browser fell back to the first option — Member, the first enum case —
+    // and an Admin who opened a row for some other reason and pressed Grant
+    // durably demoted an Officer while the row still read "Officer".
+    $view = (string) file_get_contents(__DIR__ . '/../app/views/designate.php');
+
+    assertTrue(
+        str_contains($view, '$current = $row[\'granted_level\'] ?? $row[\'effective_level\'];'),
+        'the selected option is decided by the effective level'
+    );
+    assertSame(
+        0,
+        substr_count($view, '$row[\'granted_level\'] === $level ? \' selected\' : \'\''),
+        'and no longer by the grant alone'
+    );
+});
+
+test('a title-derived Officer opens on Officer, and Member is not preselected', function (): void {
+    $f    = ff_fixture();
+    $page = DesignatePage::fromApp($GLOBALS['rerm_app']);
+
+    // The Captain's level comes from their TITLE, so granted_level is NULL.
+    // This is the exact row the bug fired on: nothing matched, the browser
+    // fell back to the first option, and pressing Grant wrote member.
+    $view = $page->page(ff_user('exec'), ['q' => 'FF000004', 'member' => (string) $f['ids']['cap']]);
+    $html = ff_render('designate', 'Designate Users', [
+        'user' => ff_user('exec'), 'notices' => [], 'designate' => $view,
+    ]);
+
+    assertSame(
+        1,
+        preg_match('/<option value="officer"\s+selected>/', $html),
+        'the control opens on the level in force'
+    );
+    assertSame(
+        0,
+        preg_match('/<option value="member"\s+selected>/', $html),
+        'and Member is not the silent default'
+    );
+});
+
+test('the division override is offered only to the levels that read it', function (): void {
+    // ScopedQuery and Access both consult team_id and never division_id below
+    // Senior Officer, so the control did nothing for an Officer: an Admin
+    // could set it, be told it saved, and see no change.
+    $view = (string) file_get_contents(__DIR__ . '/../app/views/designate.php');
+    assertTrue(
+        str_contains($view, '$row[\'may_division_scope\']'),
+        'the division form is gated on the flag'
+    );
+
+    // And the flag means what it says.
+    $page = (string) file_get_contents(__DIR__ . '/../app/src/Admin/DesignatePage.php');
+    assertTrue(
+        str_contains($page, '\'may_division_scope\' => $effective !== null'),
+        'set from the effective level'
+    );
+    assertTrue(
+        str_contains($page, 'atLeast(Level::SeniorOfficer)'),
+        'at Senior Officer and above'
+    );
+
+    // The single-team select is gone with it: two controls for one idea is
+    // how the two come to disagree.
+    assertSame(
+        0,
+        substr_count($view, 'name="scope_team_id"'),
+        'no single-team select beside the checkbox set'
+    );
+});
+
+test('the scope form cannot clear a team override it does not render', function (): void {
+    $f = ff_fixture();
+
+    // The division form no longer posts scope_team_id, so scope() must read
+    // ABSENT as "leave alone" and only an empty string as "clear". Without
+    // that, saving a division would silently drop a single-team override.
+    $designate = Designate::fromApp($GLOBALS['rerm_app']);
+
+    $designate->apply(ff_user('exec'), [
+        'action' => 'scope', 'member_id' => (string) $f['ids']['coord'],
+        'scope_division_id' => '', 'scope_team_id' => (string) $f['teams']['FF Beta'],
+    ]);
+    assertSame($f['teams']['FF Beta'], ff_user('coord')->scopeTeamId, 'override is set');
+
+    // A division-only POST, exactly as the form now sends it.
+    $designate->apply(ff_user('exec'), [
+        'action' => 'scope', 'member_id' => (string) $f['ids']['coord'],
+        'scope_division_id' => (string) $f['divisions']['FF Division'],
+    ]);
+    assertSame(
+        $f['teams']['FF Beta'],
+        ff_user('coord')->scopeTeamId,
+        'and survives a division save that never mentioned it'
+    );
+});
+
+test('controls stop being full-width slabs above 720px', function (): void {
+    // RESM is one screen used one-handed outdoors in February and every
+    // control is sized for that. RERM is also a desk tool — the tables
+    // already transform at this width and the controls never did, so Search
+    // sat as a 64px slab across a 1300px page.
+    $layout = (string) file_get_contents(__DIR__ . '/../app/views/layout.php');
+
+    assertTrue(str_contains($layout, 'button {'), 'the phone rule still exists');
+    assertTrue(
+        str_contains($layout, 'min-height: 64px'),
+        'and still gives a phone its 64px target'
+    );
+
+    $desktop = strpos($layout, '@media (min-width: 720px) {', strpos($layout, 'button:focus-visible'));
+    assertTrue($desktop !== false, 'a desktop counterpart exists');
+
+    $block = substr($layout, (int) $desktop, 900);
+    assertTrue(str_contains($block, 'width: auto'), 'buttons size to content');
+    assertTrue(str_contains($block, 'min-width: 12rem'), 'with a floor so they stay tappable');
+});
+
+test('the gate widened to Officer, not to everybody', function (): void {
+    $f = ff_fixture();
+
+    // An Executive Officer already sees the whole committee, so narrowing one
+    // would put a WHERE clause on a query that should have none. Refused by
+    // name rather than silently ignored, so the Admin finds out.
+    $result = Designate::fromApp($GLOBALS['rerm_app'])->apply(ff_user('exec'), [
+        'action' => 'team_scope', 'member_id' => (string) $f['ids']['exec'],
+        'team_scope' => [(string) $f['teams']['FF Alpha']],
+    ]);
+    assertSame('not_scopable', $result['outcome']);
 });
 
 test('an explicit division override beats the title default', function (): void {
@@ -869,24 +1072,36 @@ test('the dropped screen renders, escaped, inside the byte budget', function ():
     );
 });
 
-test('the team-scope picker appears for a Senior Officer only', function (): void {
+test('the team-scope picker is offered to Officers and Senior Officers alike', function (): void {
     $f    = ff_fixture();
     $page = DesignatePage::fromApp($GLOBALS['rerm_app']);
 
-    // The Coordinator is a Senior Officer, so the picker is offered.
+    // The Coordinator is a Senior Officer.
     $senior = $page->page(ff_user('exec'), ['q' => 'FF000002', 'member' => (string) $f['ids']['coord']]);
     $html   = ff_render('designate', 'Designate Users', [
         'user' => ff_user('exec'), 'notices' => [], 'designate' => $senior,
     ]);
     assertTrue(str_contains($html, 'name="team_scope[]"'), 'the picker is there');
-    assertTrue(str_contains($html, 'Teams this Senior Officer covers'));
+    assertTrue(str_contains($html, 'Teams they cover'), 'under a level-neutral legend');
+    assertTrue(
+        str_contains($html, 'name="scope_division_id"'),
+        'and a Senior Officer is offered the division override'
+    );
 
-    // The Captain is an Officer, so it is not.
+    // The Captain is an Officer, and since Phase 8.6 gets the picker too —
+    // their own team plus any they help with.
     $officer = $page->page(ff_user('exec'), ['q' => 'FF000004', 'member' => (string) $f['ids']['cap']]);
     $html    = ff_render('designate', 'Designate Users', [
         'user' => ff_user('exec'), 'notices' => [], 'designate' => $officer,
     ]);
-    assertTrue(!str_contains($html, 'name="team_scope[]"'), 'and not for an Officer');
+    assertTrue(str_contains($html, 'name="team_scope[]"'), 'the picker is there for an Officer');
+
+    // But NOT the division override: nothing below Senior Officer reads it,
+    // so offering it would be a control that saves and changes nothing.
+    assertTrue(
+        !str_contains($html, 'name="scope_division_id"'),
+        'and the division override is withheld from an Officer'
+    );
 
     // The reset control is offered for both, because both have accounts.
     assertTrue(str_contains($html, 'value="reset_password"'), 'the reset is offered');

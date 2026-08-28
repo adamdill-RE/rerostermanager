@@ -75,7 +75,7 @@ final class Designate
         'granted', 'revoked', 'scope_set', 'scope_cleared', 'unchanged',
         'bad_level', 'bad_action', 'refused', 'not_found', 'nothing_to_revoke',
         'bad_scope', 'password_reset', 'no_account',
-        'team_scope_set', 'team_scope_cleared', 'not_senior',
+        'team_scope_set', 'team_scope_cleared', 'not_scopable',
     ];
 
     public function __construct(
@@ -456,7 +456,16 @@ final class Designate
         }
 
         $divisionId = self::optionalId($input['scope_division_id'] ?? '');
-        $teamId     = self::optionalId($input['scope_team_id'] ?? '');
+
+        // ABSENT and EMPTY mean different things here, which is why this is
+        // array_key_exists and not ??. Since Phase 8.6 the form renders the
+        // division select alone — team scope is the checkbox set beside it —
+        // so a POST that never mentions scope_team_id must LEAVE the existing
+        // single-team override alone. An empty string still clears it, which
+        // is what a form that does render the field sends.
+        $teamId = array_key_exists('scope_team_id', $input)
+            ? self::optionalId($input['scope_team_id'])
+            : $member['scope_team_id'];
 
         // An id that names nothing is refused rather than stored: a dangling
         // override would be a scope that silently resolves to nobody, and the
@@ -507,12 +516,18 @@ final class Designate
      * puts them back on whatever their title and any division override say —
      * for a Vice Chairman, their own team; for everybody else, their division.
      *
-     * **Senior Officer only** (settled with the owner, 28 August). An Officer
-     * already has a working single-team scope and a second shape at that
-     * level is untested surface nobody asked for; an Executive Officer and an
-     * Admin see everything, so a narrowing would be a WHERE clause on a query
-     * that should have none. Both are refused as `not_senior` rather than
+     * **Officer and Senior Officer** (widened from Senior-only, Phase 8.6).
+     * An Officer may cover their own team plus one they are helping with,
+     * which the single `scope_team_id` could not express. An Executive
+     * Officer and an Admin see everything, so a narrowing would be a WHERE
+     * clause on a query that should have none, and a Member holds no roster
+     * capability to narrow; both are refused as `not_scopable` rather than
      * silently ignored, so the Admin finds out.
+     *
+     * This widens VISIBILITY only. Assignment eligibility is still decided by
+     * the officer's own `member.team_id` in `EligibleOfficers` — an officer
+     * scoped to a second team can see and chase it, and does not become one
+     * of its assignable officers (settled with the owner, 28 August).
      *
      * Admin-only, like the division override beside it, and for the same
      * reason: spec 4.4 says an Admin sets a scope.
@@ -542,8 +557,13 @@ final class Designate
             ? Level::from((string) $member['effective_level'])
             : null;
 
-        if ($effective !== Level::SeniorOfficer) {
-            $result['outcome'] = 'not_senior';
+        // Officer and Senior Officer both hold sets (Phase 8.6): an Officer
+        // may cover their own team plus one they are helping with, which a
+        // single scope_team_id could not say. Above them the whole committee
+        // is already visible and a narrowing would be meaningless; below,
+        // Member holds no roster capability to narrow.
+        if ($effective !== Level::SeniorOfficer && $effective !== Level::Officer) {
+            $result['outcome'] = 'not_scopable';
 
             return $result;
         }
