@@ -671,7 +671,7 @@ function ad_fixture(): array
         $insertMember->execute([
             ':n' => $number, ':f' => $first, ':l' => $last,
             ':p' => '', ':fn' => $first . ' ' . $last, ':px' => '',
-            ':a' => '1 Example Street', ':c' => 'Houston', ':s' => 'TX', ':z' => '77001',
+            ':a' => '1 Example Way', ':c' => 'Houston', ':s' => 'TX', ':z' => '77001',
             ':ph' => '(555) 555-0100', ':pe' => '+15555550100', ':pt' => 'CELL PHONE',
             ':em' => strtolower($key) . '@example.com',
             ':t' => $title, ':tl' => $level, ':d' => $division, ':tm' => $team,
