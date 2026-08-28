@@ -83,6 +83,13 @@ final class FormSheet
 
     private bool $closed = false;
 
+    /**
+     * The finished archive, remembered so the destructor can remove it too.
+     * A caller that throws between `finish()` and `close()` would otherwise
+     * leave a form naming members sitting in `var/exports`.
+     */
+    private ?string $builtPath = null;
+
     private function __construct(
         private readonly string $directory,
         private readonly string $styles,
@@ -280,6 +287,8 @@ final class FormSheet
             throw new RuntimeException('The form archive could not be written.');
         }
 
+        $this->builtPath = $path;
+
         return $path;
     }
 
@@ -292,9 +301,13 @@ final class FormSheet
     {
         $this->closed = true;
 
-        if ($path !== null && is_file($path)) {
-            @unlink($path);
+        foreach ([$path, $this->builtPath] as $candidate) {
+            if ($candidate !== null && is_file($candidate)) {
+                @unlink($candidate);
+            }
         }
+
+        $this->builtPath = null;
     }
 
     public function __destruct()
