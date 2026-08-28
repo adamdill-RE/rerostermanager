@@ -42,6 +42,7 @@ use Rerm\Csrf;
 use Rerm\Roster\LogContact;
 use Rerm\Roster\Metric;
 use Rerm\Roster\MetricStatus;
+use Rerm\Roster\TeamFilter;
 use Rerm\View;
 
 $number = static fn (int $n): string => number_format($n);
@@ -95,6 +96,14 @@ $defaultMode = $statusPage['has_assignments'] ? 'mine' : 'team';
 $filters = $statusPage['filters'];
 
 /**
+ * The team picker's state (Phase 10) — the options, the caller's own team,
+ * and whether the selection was chosen or defaulted to their own.
+ *
+ * @var array<string, mixed> $teams
+ */
+$teams = $statusPage['team_choice'];
+
+/**
  * A dashboard URL carrying the toggle, filter and size with the caller's
  * overrides. Defaults stay out of the URL so the plain screen has a plain
  * address; a changed toggle or filter resets to page 1 unless told otherwise.
@@ -106,7 +115,7 @@ $filters = $statusPage['filters'];
  *
  * @param array<string, mixed> $overrides
  */
-$href = static function (array $overrides = []) use ($app, $statusPage, $defaultMode, $filters): string {
+$href = static function (array $overrides = []) use ($app, $statusPage, $defaultMode, $filters, $teams): string {
     $params = [
         'mode' => $statusPage['mode'],
         'show' => $statusPage['show'],
@@ -118,8 +127,16 @@ $href = static function (array $overrides = []) use ($app, $statusPage, $default
     if ($filters['division'] !== null) {
         $params['division'] = $filters['division'];
     }
-    if ($filters['teams'] !== []) {
-        $params['team'] = $filters['teams'];
+
+    // The team selection rides on EVERY link, in whichever of its three
+    // shapes is in force — `team[]=12`, `team=all`, or nothing at all for a
+    // caller with one team who was never offered the choice. Explicit even
+    // when it is the default, because a link that leaves it out is a link
+    // that re-derives it at the other end: turn a page with `team` missing
+    // and the default comes back, which for somebody who asked for all teams
+    // is their roster silently shrinking to twenty-five people.
+    if ($teams['may_choose'] || $filters['teams'] !== []) {
+        $params['team'] = TeamFilter::param($teams);
     }
     if ($filters['contact'] !== null) {
         $params['contact'] = $filters['contact'];
@@ -180,7 +197,9 @@ $fully = (int) $dash['fully_complete'];
 <h1>My Roster Status</h1>
 <p class="lede">
     Show year <?= e((string) $year['label']) ?> &middot;
-    <?= $statusPage['mode'] === 'mine' ? 'members assigned to you' : 'everyone in your scope' ?>.
+    <?= $statusPage['mode'] === 'mine'
+        ? 'members assigned to you'
+        : ($teams['all'] ? 'everyone in your scope' : 'everyone on the team below') ?>.
     The list below is <?= $statusPage['show'] === 'outstanding'
         ? 'the working set: outstanding on at least one requirement, next call first'
         : 'everyone in this view, next call first' ?>.
@@ -197,7 +216,7 @@ $fully = (int) $dash['fully_complete'];
             : implode(' · ', $filterWords)) ?></span>
         <p class="hint">
             <a href="<?= e($href([
-                'division' => null, 'team' => null, 'contact' => null, 'assigned' => null,
+                'division' => null, 'team' => TeamFilter::ALL, 'contact' => null, 'assigned' => null,
             ])) ?>">Show my whole roster</a>
             &middot;
             <a href="<?= e($app->url('committee')) ?>">Back to the Committee Dashboard</a>
@@ -229,6 +248,109 @@ $fully = (int) $dash['fully_complete'];
         <?= $statusPage['mode'] === 'team' ? 'class="current" aria-current="page"' : '' ?>>My team</a>
 </nav>
 
+<?php if ($teams['may_choose'] && !$filters['drilled']) {
+    /*
+     * WHICH TEAM (Phase 10) — for a caller whose scope holds more than one:
+     * Senior Officer and above, and an Officer an Admin has given a team set.
+     * An Officer's team IS their scope, so they are never offered a control
+     * that could only re-select what they already have.
+     *
+     * A GET form, like every other filter in this application: the choice
+     * lands in the URL, so it survives a bookmark, a page turn and the back
+     * button, and the server decides what it means. There is no JavaScript
+     * here, so the button is not decoration — it is how the select is
+     * submitted.
+     *
+     * It is NOT drawn while a Committee Dashboard drill-down is in force.
+     * That screen's own rule is that every figure on it equals this list
+     * filtered to it, and a control that could quietly widen or narrow the
+     * group would break that for exactly the people the figure counted. The
+     * banner above offers the one way out; this appears once it is taken.
+     *
+     * Everything else on screen travels with it in hidden fields. Losing the
+     * toggle or a drill-down filter by choosing a team would be the same
+     * quiet subtraction the links above are careful to avoid.
+     */
+    $carry = [];
+    if ($statusPage['mode'] !== $defaultMode) {
+        $carry['mode'] = (string) $statusPage['mode'];
+    }
+    if ($statusPage['show'] !== 'outstanding') {
+        $carry['show'] = (string) $statusPage['show'];
+    }
+    if ((int) $statusPage['size'] !== (int) $statusPage['size_default']) {
+        $carry['size'] = (string) $statusPage['size'];
+    }
+    if ($filters['division'] !== null) {
+        $carry['division'] = (string) $filters['division'];
+    }
+    if ($filters['contact'] !== null) {
+        $carry['contact'] = (string) $filters['contact'];
+    }
+    if ($filters['assigned'] !== null) {
+        $carry['assigned'] = (string) $filters['assigned'];
+    }
+
+    $selectedTeams = $teams['selected'];
+    $inScope       = 0;
+    foreach ($teams['options'] as $option) {
+        $inScope += (int) $option['members'];
+    }
+?>
+    <form class="quick teams" method="get" action="<?= e($app->url('dashboard')) ?>">
+        <?php foreach ($carry as $name => $value) { ?>
+            <input type="hidden" name="<?= e($name) ?>" value="<?= e($value) ?>">
+        <?php } ?>
+
+        <label for="teampick">Which team</label>
+        <select id="teampick" name="team">
+            <?php if (count($selectedTeams) > 1) { ?>
+                <?php /* A drill-down named several teams at once, and a select
+                         can only show one. Saying so is better than showing
+                         the first of them as though it were the whole
+                         selection. */ ?>
+                <option value="" selected>
+                    <?= e($number(count($selectedTeams))) ?> teams from the Committee Dashboard
+                </option>
+            <?php } ?>
+            <option value="<?= e(TeamFilter::ALL) ?>"<?= $teams['all'] ? ' selected' : '' ?>>
+                All teams you can see &mdash; <?= e($number($inScope)) ?> members in
+                <?= e($number(count($teams['options']))) ?> teams
+            </option>
+            <?php foreach ($teams['options'] as $option) {
+                $id = (int) $option['id'];
+            ?>
+                <option value="<?= e((string) $id) ?>"
+                    <?= count($selectedTeams) === 1 && $selectedTeams[0] === $id ? ' selected' : '' ?>>
+                    <?= e((string) $option['name']) ?> &mdash;
+                    <?= e($number((int) $option['members'])) ?> members<?php
+                        if ($teams['own'] === $id) { ?> (your team)<?php } ?>
+                </option>
+            <?php } ?>
+        </select>
+        <button type="submit" class="quiet">Show this team</button>
+
+        <p class="hint">
+            <?php if ($teams['all']) { ?>
+                Showing every team you can see.
+            <?php } elseif ($teams['defaulted']) { ?>
+                Showing <strong><?= e((string) $teams['own_name']) ?></strong>, the team you are
+                on. This screen starts there; it is not a filter somebody left on.
+            <?php } elseif (count($selectedTeams) === 1) { ?>
+                Showing <strong><?= e($filters['team_names'][$selectedTeams[0]] ?? 'one team') ?></strong>.
+            <?php } else { ?>
+                Showing <?= e($number(count($selectedTeams))) ?> teams.
+            <?php } ?>
+            <?php if (!$teams['all']) { ?>
+                &middot; <a href="<?= e($href(['team' => TeamFilter::ALL])) ?>">Show all teams</a>
+            <?php } ?>
+            <?php if ($teams['own'] !== null && $selectedTeams !== [(int) $teams['own']]) { ?>
+                &middot; <a href="<?= e($href(['team' => [(int) $teams['own']]])) ?>">Show my team</a>
+            <?php } ?>
+        </p>
+    </form>
+<?php } ?>
+
 <?php if ($total === 0) { ?>
     <div class="card">
         <?php if ($statusPage['mode'] === 'mine') { ?>
@@ -245,8 +367,24 @@ $fully = (int) $dash['fully_complete'];
                 this link named. The figure that sent you here may have been
                 worked since &mdash;
                 <a href="<?= e($href([
-                    'division' => null, 'team' => null, 'contact' => null, 'assigned' => null,
+                    'division' => null, 'team' => TeamFilter::ALL, 'contact' => null, 'assigned' => null,
                 ])) ?>">show my whole roster</a>.
+            </p>
+        <?php } elseif (!$teams['all']) { ?>
+            <?php /* A team with nobody in it is not a scope with nobody in
+                     it, and saying the second when the first is true sends an
+                     officer to an Admin over a filter they can clear
+                     themselves. */ ?>
+            <h2>Nobody is on this team</h2>
+            <p>
+                <?php if ($teams['defaulted']) { ?>
+                    This screen starts on the team you are on, and it has no
+                    members you can see.
+                <?php } else { ?>
+                    The team selected above has no members you can see.
+                <?php } ?>
+                <a href="<?= e($href(['team' => TeamFilter::ALL])) ?>">Show all
+                teams you can see</a>.
             </p>
         <?php } else { ?>
             <h2>Your roster is empty</h2>
@@ -367,7 +505,13 @@ $fully = (int) $dash['fully_complete'];
         'mode'     => $statusPage['mode'],
         'show'     => $statusPage['show'] === 'all' ? 'all' : null,
         'division' => $filters['division'],
-        'team'     => $filters['teams'] === [] ? null : $filters['teams'],
+        // The team selection in whichever shape is in force, including the
+        // ALL token — the same rule as $href above, for the same reason: a
+        // 303 that dropped it would land somebody who asked for every team
+        // back on their own one, with no error and no way to tell.
+        'team'     => $teams['may_choose'] || $filters['teams'] !== []
+            ? TeamFilter::param($teams)
+            : null,
         'contact'  => $filters['contact'],
         'assigned' => $filters['assigned'],
         'page'     => $statusPage['page'] > 1 ? $statusPage['page'] : null,

@@ -201,6 +201,7 @@ function sq_fixture(): array
 function sq_teardown(PDO $pdo): void
 {
     $pdo->exec("DELETE FROM member WHERE member_number LIKE 'SQ%'");
+    $pdo->exec("DELETE FROM import_change WHERE import_batch_id IN (SELECT id FROM import_batch WHERE filename = 'sq-fixture')");
     $pdo->exec("DELETE FROM import_batch WHERE filename = 'sq-fixture'");
     $pdo->exec("DELETE FROM team WHERE name LIKE 'SQ Team %'");
 }

@@ -263,6 +263,13 @@ function import_reset(): void
     $pdo->exec('DELETE FROM member_metric');
     $pdo->exec('DELETE FROM import_staged_row');
     $pdo->exec('DELETE FROM import_warning');
+    // Phase 10's permanent record. It cites both import_batch and member,
+    // and both are cleared below, so a fixture that left changes behind
+    // would block the reset with an SQLSTATE rather than a sentence. The
+    // RESTRICT that makes this necessary is the same one that makes losing
+    // the record impossible in production, where nothing deletes a batch
+    // that wrote anything.
+    $pdo->exec('DELETE FROM import_change');
     $pdo->exec('UPDATE member SET last_seen_import_id = NULL, dropped_since_import_id = NULL, purged_at = NULL');
     $pdo->exec('DELETE FROM import_batch');
 

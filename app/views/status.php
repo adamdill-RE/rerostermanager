@@ -35,6 +35,8 @@ $chip = static function (string $state, string $word): string {
 <div class="card">
     <h2>Runtime</h2>
     <dl class="facts">
+        <dt>Version</dt>
+        <dd class="mono"><?= e((string) $checks['app_version']) ?></dd>
         <dt>PHP</dt>
         <dd>
             <span class="mono"><?= e(PHP_VERSION) ?></span>

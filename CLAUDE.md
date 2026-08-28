@@ -89,8 +89,8 @@ URL and cookie path is built from `app.base_path` (`/rerm/`) via
   Closing a show year **freezes**; a rollover **copies**; a revoked grant
   **deactivates**. A test names the tables that must never lose a row —
   `member`, `contact_log`, `assignment`, `member_metric`, `audit_log`,
-  `import_batch`, `import_warning`, `show_year` — and reads every admin write
-  path for a `DELETE` against them.
+  `import_batch`, `import_warning`, `import_change`, `show_year` — and reads
+  every admin write path for a `DELETE` against them.
 - **"Dropped" is the word for a member an import did not list**, in the schema
   as well as on screen (`dropped_since_import_id`). It is not "purged": a drop
   is automatic and the next import undoes it, a purge is deliberate and only
@@ -157,6 +157,18 @@ data-comprehension tool used year-round, at a desk as often as on a phone.
 - **Contact actions are the mobile priority.** `tel:`, `sms:` and `mailto:`
   links are first-class targets, and `sms:` is suppressed when the member's
   phone type is not `CELL PHONE` (116 members in the sample — see below).
+- **A roster starts on the caller's own team**, on My Roster Status and on the
+  export, for anyone whose scope holds more than one. `Rerm\Roster\TeamFilter`
+  resolves it once for both. A choice can only ever narrow the scope predicate,
+  never widen it; `team=all` is how somebody asks for everything, because with
+  a default an absent value means "I have not said" rather than "everything";
+  and a Committee Dashboard drill-down suppresses both the default and the
+  control, because §7.3's figures have to survive the trip. Full design:
+  `docs/spec-v2.md` §4.
+- **The shell says which build it is.** `app.version` in the footer of every
+  screen, signed out included, with **minor as the build phase**; and RESM's
+  "RE" tab icon, byte for byte, because the two applications sit in adjacent
+  tabs on the same phone (`docs/spec-v2.md` §5).
 
 ---
 
@@ -397,6 +409,26 @@ That boundary is what makes a designation **durable**: an import rewrites
 Effective level is `granted_level ?? title_level`, so a Committee Member made
 a Senior Officer stays one no matter what the next roster calls them.
 
+### Every import leaves a record of what it changed
+
+Rodeo Houston's export is a snapshot with no audit trail in it: it says who is
+on the committee today and nothing about how it got that way. So the apply
+writes `import_change` — one row per changed field per member, plus a row for
+each member it **created**, **dropped** or saw **return** — in the same
+transaction as the write it describes. A row there means the roster really
+changed; a file staged and never applied writes none.
+
+It is read at **`/import-history`** (spec-v2 §3), Admin, read-only: every
+import with the summary it stored when it ran, one import grouped by what it
+changed, and one member's whole history. It is the answer to "when did this
+person disappear" and "when did their team change", which previously meant
+keeping every spreadsheet and diffing it by hand.
+
+Two rules hold it: an **unchanged** member records nothing (a second import of
+the same roster is ~1,954 of them), and it may never name anything **we** own
+— a contact, an assignment, a grant, a scope, a progress value or `team.area`.
+A test reads the stored field names for exactly that.
+
 ### Contact history is loaded by its own import, not by this one
 
 Contacts that predate the application come in through **`/import-contacts`**
@@ -509,7 +541,8 @@ Each phase ends shippable. `docs/spec-v1.md` carries the detail through 8.7,
 | **8.6 · Scope and controls** | Officer team sets, division control gated to the levels that read it, Grant opens on the level in force, desktop control sizing | An Admin cannot downgrade somebody by opening a row |
 | **8.7 · Contact history** | Bulk load of contacts made before the app existed: aliased headers, back-dated rows, per-row officer, two-step apply | Eighty real contacts land on their real dates, and loading the file twice writes them once |
 | **9 · Create Forms** | The forms menu, and the Roster Change Form: officer and sub-committee pickers, twenty-five rows, `.xlsx` out | A generated blank RCF is the Rodeo Houston workbook cell for cell — 558 cells, zero differences |
-| **9.x · v2** | Recruiting and retention automation; multi-year contact history (OI-12) | see `docs/spec-v2.md` |
+| **10 · History and scope** | `import_change` and the Import History screen; the team default on My Roster Status and the export; the version footer; the RE tab icon | "When did this person disappear" is answered without keeping a single spreadsheet |
+| **10.x · v2** | Recruiting and retention automation; multi-year contact history (OI-12) | see `docs/spec-v2.md` |
 
 Phases 4 and 5 are the product. Everything before them is plumbing and
 everything after is leverage — if the schedule slips, it slips at 7 and 8.

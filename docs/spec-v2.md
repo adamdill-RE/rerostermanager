@@ -322,7 +322,216 @@ wrote into it is how a member gets left off a form.
 
 ---
 
-## 3. Open items
+## 3. Import History
+
+### 3.1 The question Rodeo Houston's file cannot answer
+
+Their export is a **snapshot**. It says who is on the committee at the moment
+somebody pressed Export and carries nothing at all about how it got that way:
+no revision, no effective date, no "changed by". So every question of the form
+*when did this change, and which file changed it* had exactly one answer —
+keep the old spreadsheets and diff them by hand — and the two that get asked
+are the two that matter most:
+
+* **somebody disappeared.** A member the last file did not list is flagged
+  dropped (spec-v1 §6.5), and the flag is cleared the moment they reappear.
+  The member row therefore answers "are they on the roster today" and can
+  never answer "when did they go, and did they come back".
+* **somebody changed in a way they were not supposed to.** A Captain arrives
+  as a Committee Member; a member is on another team; dues that were `Y` come
+  back `N`. Each is one cell of one row of a 1,954-row file, and each is
+  invisible until an officer notices.
+
+`import_batch` has answered the aggregate since Phase 2 — rows read, created,
+updated, unchanged, dropped, warnings by kind, which requirements moved and by
+how many, which teams the file introduced — and `summary_json` has held that
+summary since 004. What was missing was somewhere to *read it back*, and the
+field-level record to put beside it.
+
+### 3.2 `import_change`, and why it is its own table
+
+One row per changed field per member per import: which batch, which member,
+which field, what it was, what it became, and when.
+
+It is **written at apply time**, in the same transaction as the write it
+describes. That is the property the whole record rests on: a row in it means
+the roster really changed, never that a preview said it would. A file staged
+and never applied writes nothing, and can still be discarded — which it could
+not be if a permanent record already pointed at it.
+
+The parsed diff it stores already existed, on `import_staged_row`.`changes`,
+and that is the wrong place to keep it for two reasons:
+
+* that table is documented as disposable — "a parse of a file, thrown away 24
+  hours later", with `ON DELETE CASCADE` to prove it — and a permanent record
+  must not be founded on a table that discards itself;
+* it sits beside `payload`, the member's whole HLSR-owned record including
+  their address, so answering "when did this team change" would mean reading
+  and retaining everything else about them too.
+
+It is also **not `audit_log`**. That records what a *person* did and every row
+has an actor; this records what a *file* did, the actor is the same for all of
+them and is already on `import_batch`.`uploaded_by`, and the interesting column
+is the one `audit_log` has no room for — the field name. Keeping 1,954 create
+rows out of the audit log is also what keeps the audit log readable.
+
+Four kinds, and the first two are why it exists:
+
+| Kind | Means |
+| --- | --- |
+| `dropped` | the file did not list them, so they were flagged |
+| `returned` | a dropped member appeared again, and was un-flagged |
+| `created` | the roster had nobody with this number, and now does |
+| `updated` | an HLSR-owned field changed; `field` says which |
+
+**Unchanged records nothing.** A second import of the same roster is ~1,954
+unchanged rows, and writing "nothing happened" 1,954 times a month buries the
+rows that say something did.
+
+`field` stores the importer's own column name — `title`, `team`, `division`,
+`metric:committee_dues` — and is labelled for display in PHP. The stored
+vocabulary is therefore equal to the diff's, a label can be improved without
+rewriting history, and a column a future phase adds to the import is legible
+here the day it lands.
+
+### 3.3 The screen
+
+`/import-history`, Admin, through `Capability::ImportRoster` — the second half
+of the same job, so not a seventh capability: whoever may rewrite 1,954 rows
+from a file is exactly who needs to see what the last file did.
+
+Three shapes, one screen:
+
+* **Every import.** Applied and stopped-part-way both, newest first, each with
+  the summary it wrote when it ran. A file uploaded and never applied changed
+  nothing and is not listed — offering one beside imports that really happened
+  is how somebody comes to believe a file was applied when it was only read.
+* **One import.** Its counts, its stored summary, and what it changed grouped
+  by kind and field with a count each — dropped first, because "somebody
+  disappeared" is the sentence that brings people here — each group drilling
+  down to exactly the people it counted.
+* **One member.** Everything every import has ever done to them, newest first,
+  each row naming the file that did it. A change with no import beside it is a
+  fact with no cause, which is the state this table exists to end.
+
+It is **not scoped**, deliberately. The value of the screen is watching a
+member move *between* teams and divisions, and a scoped read would show half
+of such a move and hide the other half — worse than not showing it.
+
+The member box resolves a member number outright and refuses a name that
+matches more than one person. Names are not unique in this roster (1,951
+distinct of 1,954), and attributing one person's history to another is the
+same failure the contact import refuses for the same reason (spec-v1 §6.7).
+
+### 3.4 What it must never become
+
+* **Read-only, in every sense.** No POST, no CSRF check, no write path — and a
+  test refuses `INSERT`, `UPDATE`, `REPLACE` and `DELETE` in the reader. A
+  record somebody can edit answers no question worth asking.
+* **It never undoes an import.** A wrong import is fixed by importing the right
+  file, which diffs against the roster as it now stands (spec-v1 §6.3). This
+  answers *when did that happen*, which is the question being asked.
+* **It never records what we own.** Contacts, assignments, grants, scopes,
+  progress and `team.area` are ours and no import writes them (`CLAUDE.md`);
+  the record of what a file did must not name one either, and a test reads the
+  stored field names to hold it to that.
+
+---
+
+## 4. Which team, and where a roster starts
+
+Two screens narrow a roster by team — My Roster Status and Export Roster — and
+from this phase both **start narrowed**: a caller who has said nothing sees
+the team they are on, with everything they can see one click away.
+
+The reason is different on each screen and both are real. On the dashboard, a
+Division Chairman's first screen was 400 rows of somebody else's team; the
+roster somebody opens it to work is almost always the one they are on. On the
+export, the screen exists to stop a file turning out to hold 1,954 home
+addresses when somebody expected 82, and starting narrow makes the safe answer
+the one nobody has to choose.
+
+`Rerm\Roster\TeamFilter` resolves it once, for both, and three rules hold it
+together.
+
+### 4.1 A choice narrows; it can never widen
+
+Whatever is chosen is ANDed onto `ScopedQuery::forUser()`, never substituted
+for it. That is what makes it safe to take team ids straight from a query
+string: an id outside the caller's scope intersects nothing and yields an
+empty roster, which is the honest answer. Filtering the ids against the
+offered options first would be *worse* — a list of out-of-scope ids would
+filter down to nothing, and nothing means "every team" one line later.
+
+The options themselves are read through the scope as well, so the picker
+cannot offer a team the caller could not have seen anyway.
+
+### 4.2 The absence of a value can only mean one thing
+
+Before the default, an empty team filter meant "everything". With a default it
+means "I have not said" — so wanting everything needs a token that survives a
+link, a form, a page turn and a bookmark. `team=all` is that token, in both
+shapes a query string can spell it (`team=all` from the dashboard's select,
+`team[]=all` from the export's checkbox).
+
+Two consequences, and each is a bug that would otherwise be invisible:
+
+* **Every dashboard link carries the selection explicitly**, including when it
+  is the default. A link that leaves it out re-derives it at the other end,
+  and for somebody who asked for all teams that is their roster silently
+  shrinking on the next page turn.
+* **The export's download carries it too.** The POST resolves the same input
+  through the same call as the screen, so the file holds what the count
+  promised. Without the token, a POST carrying no team would come back as "I
+  have not chosen" — the screen says 1,247 rows and the file holds 82.
+
+### 4.3 A drill-down suppresses the default, and hides the control
+
+Spec-v1 §7.3's rule is that every figure on the Committee Dashboard equals the
+list it drills into. A default quietly ANDed onto a link that already said
+`division=` or `contact=never` would break that for exactly the people the
+figure counted, and break it invisibly. So while a drill-down is in force
+there is no default and no picker; the banner's **Show my whole roster** is
+the way out, and the picker is there once it is taken.
+
+One team in scope is not a choice either. An Officer's team **is** their
+scope, so they are offered no control and nothing on their screen claims to
+have been narrowed.
+
+---
+
+## 5. The shell says which build it is
+
+Two small things, on every screen including the signed-out ones.
+
+**`app.version` in the footer.** There is no build step on this host and
+nothing may require one, so there is no tag to read and no file to stamp: it
+is a configured constant, edited on purpose. **Minor is the build phase** —
+`1.9.0` is the application as Phase 9 left it, `1.10.0` is Phase 10 — so the
+footer answers "which build are you looking at" in the vocabulary the specs
+already use. It is on `/login` too, because that is exactly where somebody
+reporting "it still does the old thing" is standing. `/status` repeats it, for
+the case the footer cannot answer: the deploy landed and the page will not
+render.
+
+**RESM's "RE" tab icon, byte for byte.** The two applications share a domain,
+a palette and, for most people, a phone; a committeeman checking dues has both
+open in adjacent tabs, and a tab is sixteen pixels of icon. Two marks there
+would read as two organisations rather than one product with two screens,
+which is the reasoning the design system already applies to the colours,
+applied to the one part of the interface that is visible when the page is not.
+`bin/gen-icons.php` is RESM's generator with the PWA sizes removed, so the
+mark stays reproducible rather than folklore.
+
+Naming the icon in the page head matters for a second reason that has nothing
+to do with branding: an unnamed favicon makes the browser probe the **document
+root** for `/favicon.ico`, and the document root is not ours — it is the
+domain, where the landing page sits and RESM is served from the directory
+beside us.
+
+---
+
+## 6. Open items
 
 Carried from spec-v1 §12 where they bear on v2, plus those this document
 raises.
@@ -334,5 +543,7 @@ raises.
 | V2-3 | Which form is next? | Undecided. The menu at `/forms` is shaped for it. |
 | V2-4 | Should the officer lists be **scoped** rather than committee-wide (§2.2)? | Committee-wide, because the sponsor for a new recruit must be a VC or higher and is frequently on another team. Names and titles only. One line to narrow if it is ever unwanted. |
 | V2-5 | Should the sub-committee heading at `G5` carry the division (`Division - Team`) or the team alone, as `Subcommittee 1` does? | It carries the division. The field is six columns wide, it names what the whole form is about, and the per-row column — the one Rodeo Houston reads as `Subcommittee 1` — carries the team alone. |
-| OI-12 | Multi-year contact history reporting (spec-v1 §12) | Still deferred; the data is retained unconditionally. The smallest real v2 feature after this one. |
+| V2-6 | Should `import_change` be **retained forever**, or aged out with the show year? A full first import writes 1,954 rows and a monthly refresh a few hundred; ten years is comfortably inside a table this shape. | Retained forever, like every other import record. Revisit only if it is measured to be a problem, and a roll-up would then have to keep `dropped` and `returned` in full — they are the reason it exists. |
+| V2-7 | Should the team default apply to **View My Roster** as well? Its team filter is Senior Officer and above, and unchanged by this phase. | Not yet. That screen is a search over a roster rather than a working list, and starting it narrowed would make a search that finds nobody look like a member who is gone. |
+| OI-12 | Multi-year contact history reporting (spec-v1 §12) | Still deferred; the data is retained unconditionally. `import_change` is the shape the answer will take when it lands. |
 | OI-4 | Retention rule for dropped members (spec-v1 §12) | Flag only; an Admin confirms the purge. |

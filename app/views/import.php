@@ -550,6 +550,12 @@ $mode = (string) ($_POST['mode'] ?? Importer::MODE_COMPLETE);
     </div>
 <?php } ?>
 
+<p>
+    <a href="<?= e($app->url('import-history')) ?>">Import History</a> &mdash; what every
+    import actually changed, member by member, kept for good. It is where
+    &ldquo;when did this person disappear&rdquo; is answered.
+</p>
+
 <footer>
     An import refreshes what Rodeo Houston knows and never overwrites what we know.
     Allowed User grants, scope overrides, passwords, contact history, officer assignments,

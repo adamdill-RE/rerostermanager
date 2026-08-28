@@ -247,3 +247,90 @@ test('setup is refused without the configured key', function (): void {
 
     assertSame(null, $shipped->get('app.setup_key'), 'setup_key must ship null');
 });
+
+// ---------------------------------------------------------------------------
+// The shell: the version, and the tab icon (Phase 10)
+// ---------------------------------------------------------------------------
+
+test('the running version is configured, never empty, and looks like a version', function (): void {
+    $shipped = Config::load(dirname(__DIR__), []);
+    $version = (string) $shipped->get('app.version');
+
+    // MINOR IS THE BUILD PHASE, which is the whole point of the number: the
+    // footer answers "which build are you looking at" in the vocabulary the
+    // specs and CLAUDE.md already use.
+    assertSame(1, preg_match('/^\d+\.\d+\.\d+$/', $version), "app.version is '{$version}'");
+
+    $app = App::boot(dirname(__DIR__), $shipped);
+    assertSame($version, $app->version());
+
+    // An installation whose config predates the key still renders a legible
+    // footer. A footer that says "Version" and then nothing reads as a bug in
+    // the page rather than as a missing setting.
+    $older = App::boot(dirname(__DIR__), Config::fromArray(['app' => ['version' => '']]));
+    assertSame('unversioned', $older->version());
+
+    $absent = App::boot(dirname(__DIR__), Config::fromArray(['app' => []]));
+    assertSame('unversioned', $absent->version());
+});
+
+test('the shell carries the version and the RE tab icon on every screen', function (): void {
+    /** @var App $app */
+    $app = $GLOBALS['rerm_app'];
+
+    $render = static function (bool $wide) use ($app): string {
+        $title = 'A screen';
+        $body  = '<p>body</p>';
+
+        ob_start();
+        require $app->path('app/views/layout.php');
+
+        return (string) ob_get_clean();
+    };
+
+    foreach ([true, false] as $wide) {
+        $html = $render($wide);
+
+        // The version is on the signed-OUT screens too: /login is exactly
+        // where somebody reporting "it still does the old thing" is standing.
+        assertTrue(str_contains($html, 'Version ' . $app->version()), 'the footer carries the version');
+        assertTrue(str_contains($html, '<footer class="shell'), 'and it is the shell\'s own footer');
+
+        // Named explicitly, so the browser never probes the DOCUMENT ROOT for
+        // /favicon.ico — which is not ours: this application is mounted at a
+        // subpath and the root belongs to the domain, beside RESM.
+        assertTrue(str_contains($html, 'rel="icon"'), 'the tab icon is named');
+        assertTrue(str_contains($html, 'assets/icons/favicon.png'));
+        assertTrue(str_contains($html, 'rel="apple-touch-icon"'));
+
+        // Built through asset(), like every other URL: nothing may hard-code
+        // the mount point.
+        assertTrue(str_contains($html, $app->url('assets/icons/favicon.png')));
+    }
+});
+
+test('the RE icon ships, is a PNG, and is the one RESM wears', function (): void {
+    $root = dirname(__DIR__);
+
+    foreach (['favicon.png', 'apple-touch-icon.png'] as $file) {
+        $path = $root . '/public/assets/icons/' . $file;
+        assertTrue(is_file($path), "public/assets/icons/{$file} is missing");
+
+        // A PNG signature, not merely a .png name: the deploy copies public/
+        // verbatim and a broken icon is a broken tab on every screen.
+        $handle = fopen($path, 'rb');
+        $magic  = (string) fread($handle, 8);
+        fclose($handle);
+        assertSame("\x89PNG\r\n\x1a\n", $magic, "{$file} is not a PNG");
+    }
+
+    // 64px and 180px, which is what the two <link> tags in the shell are for.
+    assertSame([64, 64], array_slice((array) getimagesize($root . '/public/assets/icons/favicon.png'), 0, 2));
+    assertSame([180, 180], array_slice((array) getimagesize($root . '/public/assets/icons/apple-touch-icon.png'), 0, 2));
+
+    // And the generator that reproduces them is committed beside them, so the
+    // mark is reproducible rather than folklore. There is no build step on
+    // this host and nothing may require one, which is exactly why the PNGs
+    // themselves are committed and this script is not run by anything.
+    assertTrue(is_file($root . '/bin/gen-icons.php'), 'bin/gen-icons.php is missing');
+});

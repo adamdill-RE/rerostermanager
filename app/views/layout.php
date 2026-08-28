@@ -26,6 +26,19 @@ declare(strict_types=1);
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title><?= e($title) ?> · <?= e((string) $app->config()->get('app.name')) ?></title>
 <meta name="robots" content="noindex, nofollow">
+<?php /*
+    The "RE" tab icon, RESM's own file byte for byte (bin/gen-icons.php says
+    why the two applications share one mark rather than having one each).
+
+    Named explicitly for a second reason that has nothing to do with branding:
+    an unnamed favicon makes the browser probe the DOCUMENT ROOT for
+    /favicon.ico, and the document root is not ours — it is the domain, where
+    the landing page sits and RESM is served from the directory beside us. A
+    404 there is harmless; a file somebody else's deploy puts there later is
+    this application wearing another product's mark.
+*/ ?>
+<link rel="icon" type="image/png" href="<?= e($app->asset('assets/icons/favicon.png')) ?>">
+<link rel="apple-touch-icon" href="<?= e($app->asset('assets/icons/apple-touch-icon.png')) ?>">
 <style>
 :root {
     --rodeo-orange: #EF7622;
@@ -480,6 +493,19 @@ form.quick { margin: 1rem 0; padding: .75rem .9rem; border: 1px dashed var(--bor
 form.quick label { display: block; margin-bottom: .4rem; }
 form.quick button { margin-top: .5rem; }
 
+/* The team picker (Phase 10). On a phone it stacks like every other quick
+   form and every target stays full size; at a desk the select and its button
+   are one control and read as one, rather than as two full-width slabs above
+   a 1300px page. The same departure Phase 8.6 made for buttons, at the same
+   breakpoint and for the same reason. */
+@media (min-width: 720px) {
+    form.quick.teams { display: grid; grid-template-columns: 1fr auto; gap: .5rem .75rem; align-items: center; }
+    form.quick.teams label { grid-column: 1 / -1; margin: 0; }
+    form.quick.teams select { min-height: 48px; }
+    form.quick.teams button { width: auto; min-width: 12rem; min-height: 48px; margin: 0; }
+    form.quick.teams p.hint { grid-column: 1 / -1; margin: 0; }
+}
+
 /* Visible to a screen reader, not to the eye: the checkbox column header and
    the two action-bar selects, whose buttons already say what they do. */
 .vh {
@@ -654,6 +680,27 @@ input:focus-visible { outline: 3px solid var(--rodeo-orange); outline-offset: 1p
 
 form { margin: 1rem 0 0; }
 footer { margin-top: 2.5rem; color: var(--muted); font-size: .85rem; }
+
+/* The shell's own footer, outside <main>, carrying the running version.
+   Several screens end with a <footer> of their own inside the column; this
+   one is a rule across the bottom of the page under all of them, so the two
+   never read as one paragraph. It follows the column the page chose, for the
+   same reason every other element does — a 78rem rule under a 34rem menu
+   would look like a different page. */
+footer.shell {
+    max-width: var(--page-max);
+    margin: 3rem auto 0;
+    padding-top: .9rem;
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: .25rem 1rem;
+    color: var(--muted);
+    font-size: .78rem;
+}
+footer.shell.wide { max-width: var(--page-wide); }
+footer.shell .ver { font-variant-numeric: tabular-nums; }
 a { color: var(--action-orange); }
 @media (prefers-color-scheme: dark) { a { color: var(--rodeo-orange); } }
 </style>
@@ -682,5 +729,16 @@ a { color: var(--action-orange); }
 <?php } ?>
 <?= $body ?>
 </main>
+<?php /*
+    The running version, on every screen including the ones nobody is signed
+    in to — /login is exactly where somebody reporting "it still does the old
+    thing" is standing, and a version they cannot reach without signing in is
+    a version they cannot read out. It is a configured constant, not a build
+    stamp: there is no build step on this host (App::version).
+*/ ?>
+<footer class="shell<?= ($wide ?? false) ? ' wide' : '' ?>">
+    <span><?= e((string) $app->config()->get('app.name')) ?></span>
+    <span class="ver">Version <?= e($app->version()) ?></span>
+</footer>
 </body>
 </html>
