@@ -180,6 +180,12 @@ test('nothing in the admin screens can delete a member, a contact or a record', 
         // (tests/contact_import_test.php) goes further and holds it to no
         // UPDATE of those tables either.
         'Import/ContactImporter.php',
+        // spec-v2 §2. Neither writes the roster — one draws a spreadsheet and
+        // the other reads members into it — but both are new paths that touch
+        // it, and the rule is that every one of them is read here. The v2
+        // handoff says so in as many words.
+        'Forms/RcfPage.php',
+        'Forms/RosterChangeForm.php',
     ] as $file) {
         $source = (string) file_get_contents(__DIR__ . '/../app/src/' . $file);
         assertTrue($source !== '', $file . ' is readable');
@@ -273,6 +279,12 @@ test('the audit vocabulary is a type, and every writer uses it', function (): vo
         'create_show_year', 'set_active_show_year', 'open_show_year',
         'close_show_year', 'carry_assignments',
         'set_team_area', 'export_roster',
+        // spec-v2 §2. The second READ in the vocabulary, for the first one's
+        // reason: a filled-in form names members and carries their member
+        // numbers, so it is the same data leaving by a different door. One
+        // verb for every form — what was produced is in the row's details, so
+        // a seventh form does not need a seventh verb.
+        'create_form',
     ];
 
     $actual = array_map(static fn (Action $a): string => $a->value, Action::cases());

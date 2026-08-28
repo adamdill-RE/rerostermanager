@@ -11,11 +11,33 @@ file copy.
 | Document | What it is |
 | --- | --- |
 | **`CLAUDE.md`** | Constraints, topology, access model and the phase plan. Start here. |
-| **`docs/spec-v1.md`** | Authoritative screen-by-screen specification. |
+| **`docs/spec-v1.md`** | Authoritative screen-by-screen specification for v1. Closed — the record of what was decided and why. |
+| **`docs/spec-v2.md`** | v2, from Create Forms on. Cross-references v1 rather than editing it. |
 | **`docs/data-findings.md`** | What the real Rodeo Houston export contains. Read before writing import or permission code. |
 | **`docs/hosting.md`** | The measured server environment. |
 
 ## Where this build stands
+
+**Phase 9 — Create Forms, complete.** The phrase that survived the whole of v1
+undefined now means something: Create Forms produces the committee's own
+paperwork, filled in from the roster the officer can already see, and downloads
+it as a spreadsheet. `/forms` is the menu; the first form on it is the **Roster
+Change Form** at `/form-rcf` — additions, removals, title changes and team
+changes for one sub-committee, up to twenty-five people, `.xlsx` out. Officer
+and above, scoped like every other member read.
+
+The requirement is fidelity, and it is asserted rather than eyeballed: a blank
+form this application generates was diffed against the workbook Rodeo Houston
+sends out, cell by cell — **558 cells, style id and value, zero differences**,
+all sixty merged ranges and every column width and row height identical. The
+style sheet ships as `app/templates/rcf/styles.xml`, byte for byte; everything
+else is transcribed in `Rerm\Forms\RosterChangeForm` and transcribed a second
+time in `tests/forms_test.php`. Design: `docs/spec-v2.md`.
+
+A filled-in form names members and carries their member numbers, so it is
+handled exactly like the export — built outside the document root, unlinked as
+soon as it is sent, logged with the actor, the sub-committee and the row count,
+and downloaded by POST rather than by a link.
 
 **Phase 2 — Import, complete.** `docs/spec-v1.md` §6 in full: three modes, a
 staged preview with a row-by-row diff, thirteen kinds of warning and absence

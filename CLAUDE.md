@@ -4,7 +4,9 @@ Tracks the ~1,950 members of the Rodeo Express Committee against four
 compliance metrics, and gives every officer a scoped, phone-first view of the
 people they are responsible for chasing.
 
-`docs/spec-v1.md` is the authoritative screen-by-screen specification.
+`docs/spec-v1.md` is the authoritative screen-by-screen specification for v1
+and is now closed — it is the record of what was decided and why, and is not
+edited further. `docs/spec-v2.md` carries v2 and cross-references it.
 `docs/data-findings.md` records what the real Rodeo Houston export actually
 contains — read it before writing any import or permission code, because it
 contradicts the original prose spec in seven measured places.
@@ -220,11 +222,15 @@ Five levels. `Rerm\Auth\Level` is the enum; `Rerm\Auth\Capability` and
 `Rerm\Auth\Access` are the matrix, transcribed once and re-transcribed in
 `tests/access_test.php` so a change has to be made twice on purpose.
 
-One capability is **scoped rather than Admin-only, and deliberately**:
-`export_roster` is Officer / Scoped (§4.5). There is one export and every row
-of it goes through `ScopedQuery::forUser()`, so breadth is decided by who is
+Two capabilities are **scoped rather than Admin-only, and deliberately**:
+`export_roster` and `create_forms` are both Officer / Scoped (§4.5, spec-v2
+§1.3). There is one export and one form builder, and every row either of them
+touches goes through `ScopedQuery::forUser()`, so breadth is decided by who is
 asking rather than by which button they pressed — the same shape as
-`view_roster`, for the same reason.
+`view_roster`, for the same reason. They are separate capabilities because
+taking the roster away as a file and producing committee paperwork are
+different powers over different documents, and either should be grantable
+without the other.
 
 | Level | Sees | Titles that map here |
 | --- | --- | --- |
@@ -446,9 +452,47 @@ unconditionally. That is what answers "why did Johnson's dues flip back to N".
 
 ---
 
+## Create Forms, and what a form may not do
+
+Phase 9 answers a phrase that survived the whole of v1 undefined: **Create
+Forms produces the committee's own paperwork, filled in from the roster the
+officer can already see, and downloads it as a spreadsheet that looks exactly
+like the form they fill in by hand today.** Not a form builder, not a push back
+to Rodeo Houston, not recruiting automation. Full design: `docs/spec-v2.md`.
+
+Four rules, and the first is the whole feature:
+
+- **"Looks exactly like" is a requirement, not a nicety.** These forms are read
+  by a Division Chairman and then by Rodeo Houston's membership office, and one
+  that differs visibly from the form they process gets questioned instead.
+  `app/templates/rcf/styles.xml` is that workbook's own style sheet shipped
+  byte for byte; every merge, width, row height, style id and printed label is
+  transcribed in `Rerm\Forms\RosterChangeForm` and **transcribed a second time
+  in `tests/forms_test.php`**, the same ritual the permission matrix gets. A
+  generated blank form was diffed against the original cell by cell: 558 cells,
+  style id and value, zero differences.
+- **A form is PII leaving the building**, handled exactly like the export —
+  built in `var/exports`, unlinked as soon as it is sent, logged with the
+  actor, the sub-committee and the row count, and downloaded by POST rather
+  than by a link.
+- **A form never writes the roster.** It is a request; the next import is the
+  answer. The ownership boundary above is not relaxed by a screen that produces
+  paperwork.
+- **`(No Division)` is never offered on one and never printed on one.** The
+  export already writes it back blank; a form is worse, because a human reads
+  it. Its teams are real and are offered, under their own names.
+
+The screen also carries the application's only genuine byte-budget tension —
+twenty-five rows of ten controls against spec §10's 100KB — and the three
+measured decisions that resolve it (shared datalists, five rows drawn at a
+time, a 300-member picker cap) are in spec-v2 §2.4 with the numbers.
+
+---
+
 ## Build phases
 
-Each phase ends shippable. `docs/spec-v1.md` carries the detail.
+Each phase ends shippable. `docs/spec-v1.md` carries the detail through 8.7,
+`docs/spec-v2.md` from 9 on.
 
 | Phase | What lands | Done when |
 | --- | --- | --- |
@@ -464,7 +508,8 @@ Each phase ends shippable. `docs/spec-v1.md` carries the detail.
 | **8.5 · Fit and finish** | Admin password reset, absent→dropped, import Team column, top nav, scoped Dropped Members, Vice Chairmen + team-set scope | Nobody's visibility changed who did not need it to |
 | **8.6 · Scope and controls** | Officer team sets, division control gated to the levels that read it, Grant opens on the level in force, desktop control sizing | An Admin cannot downgrade somebody by opening a row |
 | **8.7 · Contact history** | Bulk load of contacts made before the app existed: aliased headers, back-dated rows, per-row officer, two-step apply | Eighty real contacts land on their real dates, and loading the file twice writes them once |
-| **9 · v2** | Create Forms; recruiting and retention automation | out of scope for v1 |
+| **9 · Create Forms** | The forms menu, and the Roster Change Form: officer and sub-committee pickers, twenty-five rows, `.xlsx` out | A generated blank RCF is the Rodeo Houston workbook cell for cell — 558 cells, zero differences |
+| **9.x · v2** | Recruiting and retention automation; multi-year contact history (OI-12) | see `docs/spec-v2.md` |
 
 Phases 4 and 5 are the product. Everything before them is plumbing and
 everything after is leverage — if the schedule slips, it slips at 7 and 8.

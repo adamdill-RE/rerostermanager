@@ -549,6 +549,58 @@ form.quick button { margin-top: .5rem; }
     .committee th.num a { white-space: nowrap; }
 }
 
+/* The Roster Change Form (spec-v2 §2) — twenty-five rows of ten fields, and
+   the only screen here that is a GRID somebody types into rather than a list
+   they read. It transforms at 720px like every other table in this
+   application: the paper form's own layout at a desk, a stacked card per row
+   on a phone, one template either way.
+
+   Above 720px the controls come down to 40px. That is the departure Phase 8.6
+   already made for buttons, for the same reason and with the same limit: a
+   56px control twenty-five rows deep is a 1,600px page nobody can see the
+   shape of, and this is a form filled in at a desk from a list of people.
+   Below 720px NOTHING changes and every target stays full size. */
+.rcf input, .rcf select { min-height: 56px; }
+.rcf td.tick { text-align: center; }
+.rcf td.tick input[type="checkbox"] {
+    width: 1.5rem;
+    height: 1.5rem;
+    min-height: 0;
+    accent-color: var(--action-orange);
+}
+
+@media (max-width: 719px) {
+    .rcf td { display: block; padding: .3rem 0; }
+    .rcf td::before { display: block; margin-bottom: .15rem; }
+    .rcf td.n {
+        font-weight: 700;
+        color: var(--text);
+        border-bottom: 1px solid var(--border);
+        padding-bottom: .35rem;
+        margin-bottom: .35rem;
+    }
+    .rcf td.n::before { content: none; }
+    .rcf td.tick { text-align: left; }
+}
+
+@media (min-width: 720px) {
+    .rcf { table-layout: fixed; }
+    .rcf th, .rcf td { padding: .2rem .25rem; vertical-align: middle; }
+    .rcf thead th { font-size: .78rem; line-height: 1.25; white-space: normal; }
+    .rcf input, .rcf select {
+        min-height: 40px;
+        padding: 0 .35rem;
+        font-size: .88rem;
+        border-radius: 6px;
+    }
+    .rcf td.n {
+        text-align: right;
+        color: var(--muted);
+        font-variant-numeric: tabular-nums;
+        font-size: .85rem;
+    }
+}
+
 textarea {
     width: 100%;
     min-height: 56px;
@@ -588,7 +640,7 @@ summary { cursor: pointer; min-height: 44px; padding: .4rem 0; }
 ul.rows { margin: .25rem 0 .75rem; padding-left: 1.1rem; color: var(--muted); font-size: .92rem; }
 ul.rows li { margin: .15rem 0; }
 
-input[type="password"], input[type="text"] {
+input[type="password"], input[type="text"], input[type="date"] {
     width: 100%;
     min-height: 56px;
     padding: 0 .75rem;

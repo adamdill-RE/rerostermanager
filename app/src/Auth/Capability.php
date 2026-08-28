@@ -56,6 +56,30 @@ enum Capability: string
     // rows". Spec 4.5 and 7.5 were updated in the same commit.
     case ExportRoster        = 'export_roster';
 
+    /**
+     * Create Forms (spec-v2 §2) — Officer and above, SCOPED, and the first
+     * capability of v2.
+     *
+     * The shape is `export_roster`'s, for `export_roster`'s reason. A Roster
+     * Change Form names members and carries their member numbers, and the
+     * picker that puts them on it reads through `ScopedQuery::forUser()` like
+     * every other member read: an Officer fills one in for their team, a
+     * Division Chairman for their division. Breadth is decided by who is
+     * asking rather than by which button they pressed, so there is one code
+     * path rather than a scoped one and a full one that have to agree.
+     *
+     * The floor is Officer because filling in an RCF is an Officer's job —
+     * they are the person who knows somebody has resigned — and because
+     * everything the form shows them about a member, they already read row by
+     * row on View My Roster.
+     *
+     * It is NOT `export_roster` reused. That one means "may take the roster
+     * away as a file"; this one means "may produce committee paperwork". They
+     * are different powers over different documents, and either should be
+     * grantable without the other.
+     */
+    case CreateForms         = 'create_forms';
+
     // Senior Officer and above, inside their scope.
     case ViewCommitteeDashboard = 'view_committee_dashboard';
     case DesignateAllowedUser   = 'designate_allowed_user';
@@ -97,7 +121,8 @@ enum Capability: string
             self::SetMetricProgress,
             self::AssignOfficers,
             self::ViewStatusDashboard,
-            self::ExportRoster            => Level::Officer,
+            self::ExportRoster,
+            self::CreateForms             => Level::Officer,
 
             self::ViewCommitteeDashboard,
             self::DesignateAllowedUser    => Level::SeniorOfficer,
@@ -124,7 +149,8 @@ enum Capability: string
             self::ViewStatusDashboard,
             self::ViewCommitteeDashboard,
             self::DesignateAllowedUser,
-            self::ExportRoster            => Scope::Scoped,
+            self::ExportRoster,
+            self::CreateForms             => Scope::Scoped,
 
             self::ImportRoster,
             self::ImportContactHistory,
