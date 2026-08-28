@@ -210,14 +210,42 @@ final class Auth
             'SELECT u.id, u.member_id, u.effective_level, u.must_change_password, '
             . 'u.scope_division_id, u.scope_team_id, '
             . 'm.member_number, m.first_name, m.last_name, m.preferred_name, '
-            . 'm.division_id, m.team_id '
+            // m.title since Phase 8.5: a title carries a default scope
+            // breadth as well as a level, and User::fromRow needs it to
+            // resolve the third branch of the scope.
+            . 'm.title, m.division_id, m.team_id '
             . 'FROM app_user u INNER JOIN member m ON m.id = u.member_id '
             . 'WHERE u.id = :id AND u.is_active = 1'
         );
         $read->execute([':id' => $userId]);
         $row = $read->fetch();
 
-        return is_array($row) ? User::fromRow($row) : null;
+        if (!is_array($row)) {
+            return null;
+        }
+
+        return User::fromRow($row, $this->teamScope($userId));
+    }
+
+    /**
+     * The teams this account is narrowed to (Phase 8.5), or an empty list.
+     *
+     * A second query rather than a join: the row above is one row per user
+     * and this is a list, so joining would multiply the user's own columns by
+     * the number of teams and make every other field arrive N times. It costs
+     * one round trip on a request that already made one, against a scope that
+     * is read on every page.
+     *
+     * @return array<int, int>
+     */
+    private function teamScope(int $userId): array
+    {
+        $read = $this->app->db()->prepare(
+            'SELECT team_id FROM app_user_team WHERE app_user_id = :id ORDER BY team_id'
+        );
+        $read->execute([':id' => $userId]);
+
+        return array_map('intval', $read->fetchAll(\PDO::FETCH_COLUMN));
     }
 
     private function sendCookie(string $value, int $expires): void

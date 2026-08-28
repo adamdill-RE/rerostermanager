@@ -61,8 +61,13 @@ final class TitleMap
         'Coordinator'              => 'senior_officer',
         'Ambassador'               => 'senior_officer',
 
+        // Senior Officer, and narrower by default — see BREADTH below.
+        // Moved here from Officer by Phase 8.5: 21 people who need the
+        // Committee Dashboard and the ability to designate, without the
+        // whole-division visibility that usually comes with the level.
+        'Vice Chairman'            => 'senior_officer',
+
         // Officer — their own team.
-        'Vice Chairman'            => 'officer',
         'Captain'                  => 'officer',
         'Assistant Captain'        => 'officer',
 
@@ -73,6 +78,72 @@ final class TitleMap
         'Lifetime Director'        => 'member',
         'Past Committee Chairman'  => 'member',
     ];
+
+    /** A default scope that is the officer's whole division (spec 4.3). */
+    public const BREADTH_DIVISION = 'division';
+
+    /** A default scope that is the officer's own team, and nothing else. */
+    public const BREADTH_TEAM = 'team';
+
+    /**
+     * How wide a title's holder sees BEFORE anybody records anything about
+     * them (Phase 8.5).
+     *
+     * Level and scope are different questions and this application has always
+     * kept them apart — a capability floor answers "may they", ScopedQuery
+     * answers "to whom". Until now every Senior Officer answered the second
+     * question the same way, so the map above could carry only the first.
+     *
+     * `Vice Chairman` is why that changed. Moving 21 people to Senior Officer
+     * gives them the level's capabilities; leaving their default at DIVISION
+     * would also, on the next import and with nobody doing anything, widen
+     * each of them from one team to several hundred people. The owner's
+     * decision (28 August) was that nobody's visibility grows by accident:
+     * they start where they are and are widened deliberately, one at a time,
+     * from Designate Users.
+     *
+     * Two other ways of arranging that were considered and are wrong:
+     *
+     *   * Having the IMPORT seed each of them a team set. An import never
+     *     writes a scope override (CLAUDE.md) — that boundary is exactly what
+     *     makes a designation durable, and an import that wrote scope would
+     *     break the rule the whole access model rests on.
+     *   * Making an empty team set mean "your own team" for every Senior
+     *     Officer. That silently NARROWS the 20 who already exist — 8
+     *     Division Vice Chairmen, 7 Ambassadors, 5 Coordinators — each of
+     *     whom correctly sees their whole division today. A change that
+     *     promotes 21 people must not demote 20 others.
+     *
+     * So it belongs here, beside the level, in the one file that already says
+     * what a title means. A title absent from this map takes the default for
+     * its level, which is DIVISION for a Senior Officer and irrelevant for
+     * everybody else.
+     *
+     * @var array<string, string>
+     */
+    public const BREADTH = [
+        'Vice Chairman' => self::BREADTH_TEAM,
+    ];
+
+    /**
+     * The default breadth for a title — the LAST thing consulted when a scope
+     * is resolved, after an explicit team set and an explicit division
+     * override (Rerm\Auth\User::fromRow). Explicit always beats implicit.
+     */
+    public static function breadth(string $title): string
+    {
+        // Matched the same way level() matches — on the normalised key, so
+        // `Vice Chairman ` out of a spreadsheet resolves like `Vice Chairman`.
+        $key = self::key($title);
+
+        foreach (self::BREADTH as $known => $breadth) {
+            if (self::key($known) === $key) {
+                return $breadth;
+            }
+        }
+
+        return self::BREADTH_DIVISION;
+    }
 
     /**
      * The level a title confers, or Member for one this map does not know.

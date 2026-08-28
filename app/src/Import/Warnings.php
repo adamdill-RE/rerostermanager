@@ -101,7 +101,7 @@ final class Warnings
      * The row's member number belongs to a row this application created rather
      * than one Rodeo Houston sent (`member.is_system`). Skipped: the master
      * administrator is not on the committee and an import never creates,
-     * updates, absents or purges one. It cannot happen with the seeded number,
+     * updates, drops or purges one. It cannot happen with the seeded number,
      * which is deliberately outside the export's observed range — but a
      * collision that silently rewrote the only account able to sign in is not
      * a failure worth leaving to arithmetic.

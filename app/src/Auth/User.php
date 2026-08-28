@@ -24,6 +24,10 @@ namespace Rerm\Auth;
  */
 final class User
 {
+    /**
+     * @param array<int, int> $scopeTeamIds the teams a Senior Officer is
+     *        narrowed to. EMPTY means "not narrowed" — see fromRow().
+     */
     public function __construct(
         public readonly int $id,
         public readonly int $memberId,
@@ -33,15 +37,86 @@ final class User
         public readonly ?int $scopeTeamId,
         public readonly bool $mustChangePassword,
         public readonly string $displayName,
+        public readonly array $scopeTeamIds = [],
     ) {
     }
 
     /**
-     * From the app_user ⋈ member row Rerm\Auth\Auth selects.
+     * The teams a SENIOR OFFICER is narrowed to, or an empty list when they
+     * are not narrowed at all (Phase 8.5).
+     *
+     * Resolved ONCE, here, so that `ScopedQuery` (which rows) and `Access`
+     * (may they act on this member) cannot disagree about it. A scope the
+     * query narrows but the access check does not is a member an officer can
+     * edit and cannot see.
+     *
+     * Explicit always beats implicit, in this order:
+     *
+     *   1. an explicit team set, recorded by an Admin on Designate Users;
+     *   2. an explicit division override on app_user, likewise — which means
+     *      the Admin has already said "this division", so a title's default
+     *      must not second-guess them;
+     *   3. the title's own default breadth (TitleMap::breadth). Only
+     *      `Vice Chairman` resolves to a team today, which is what keeps the
+     *      21 promoted by this phase seeing exactly what they saw before.
+     *
+     * Anything below Senior Officer gets an empty list whatever the table
+     * holds: an Officer's scope is their single team and this shape is not
+     * offered to them (settled with the owner, 28 August). Executive Officer
+     * and Admin see everything, so a narrowing would be meaningless — and
+     * returning it anyway would put a WHERE clause on a query that should
+     * have none.
      *
      * @param array<string, mixed> $row
+     * @param array<int, int>      $teamScope
+     * @return array<int, int>
      */
-    public static function fromRow(array $row): self
+    private static function resolveTeamScope(
+        Level $level,
+        array $row,
+        array $teamScope,
+        ?int $ownTeam
+    ): array {
+        if ($level !== Level::SeniorOfficer) {
+            return [];
+        }
+
+        // 1. Explicit, and the only branch that can name more than one team.
+        $explicit = [];
+        foreach ($teamScope as $teamId) {
+            $teamId = (int) $teamId;
+            if ($teamId > 0) {
+                $explicit[$teamId] = $teamId;
+            }
+        }
+        if ($explicit !== []) {
+            return array_values($explicit);
+        }
+
+        // 2. An Admin has named a division for them; that is an answer.
+        if (($row['scope_division_id'] ?? null) !== null) {
+            return [];
+        }
+
+        // 3. The title's default. A Vice Chairman with no team of their own
+        //    reaches nobody rather than everybody — an unanswerable "which
+        //    team?" must not widen into "every team in the division", which
+        //    is the same rule ScopedQuery applies to an Officer with no team.
+        if (TitleMap::breadth((string) ($row['title'] ?? '')) === TitleMap::BREADTH_TEAM) {
+            return $ownTeam !== null ? [$ownTeam] : [0];
+        }
+
+        return [];
+    }
+
+    /**
+     * From the app_user ⋈ member row Rerm\Auth\Auth selects, plus the team
+     * set that row cannot carry because it is a list.
+     *
+     * @param array<string, mixed> $row
+     * @param array<int, int>      $teamScope rows of app_user_team for this user
+     */
+    public static function fromRow(array $row, array $teamScope = []): self
     {
         // Override ?? own record, per field. Explicitly, not with ??, because
         // the member columns are meaningful when the override is NULL and a
@@ -58,15 +133,18 @@ final class User
         $first     = $preferred !== '' ? $preferred : trim((string) ($row['first_name'] ?? ''));
         $name      = trim($first . ' ' . trim((string) ($row['last_name'] ?? '')));
 
+        $level = Level::from((string) $row['effective_level']);
+
         return new self(
             (int) $row['id'],
             (int) $row['member_id'],
             (string) $row['member_number'],
-            Level::from((string) $row['effective_level']),
+            $level,
             $division,
             $team,
             (int) $row['must_change_password'] === 1,
             $name !== '' ? $name : (string) $row['member_number'],
+            self::resolveTeamScope($level, $row, $teamScope, $team),
         );
     }
 }

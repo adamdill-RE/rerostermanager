@@ -86,15 +86,14 @@ final class LogContact
         $showYearId = (int) $year['id'];
 
         // The member, by the same visibility rules as every roster read: a
-        // purged, absent or system row takes no contact. Scope is NOT in
+        // purged, dropped or system row takes no contact. Scope is NOT in
         // this WHERE — it is Access's question, asked next, so the refusal
         // is decided by the matrix and not by a query this class wrote.
         $memberId = is_scalar($input['member_id'] ?? null) ? (int) $input['member_id'] : 0;
 
         $read = $this->pdo->prepare(
             'SELECT id, member_number, first_name, last_name, preferred_name, division_id, team_id'
-            . ' FROM member WHERE id = :id AND is_system = 0 AND purged_at IS NULL'
-            . ' AND absent_since_import_id IS NULL'
+            . ' FROM member WHERE id = :id AND ' . ScopedQuery::visible('member')
         );
         $read->execute([':id' => $memberId]);
         $member = $read->fetch();

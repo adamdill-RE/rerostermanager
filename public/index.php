@@ -85,6 +85,19 @@ function render(Rerm\App $app, string $view, string $title, array $data = [], in
     header('X-Content-Type-Options: nosniff');
     header('Referrer-Policy: same-origin');
 
+    // Who is signed in is a property of the REQUEST, not of a route's
+    // decision to mention it. The layout's nav strip (spec 8.6) belongs on
+    // every screen a signed-in person can reach or on none of them, and
+    // sourcing it here rather than at each of the render() calls below is
+    // what stops the next route added from silently losing it — /import,
+    // the longest screen in the application, had already lost it that way.
+    //
+    // Null on the public routes and on the 404 that fires before the session
+    // starts, which is exactly what the layout tests for. A route that passes
+    // its own 'user' still wins: += fills the gap, it does not overwrite.
+    global $user;
+    $data += ['user' => $user];
+
     extract($data, EXTR_SKIP);
 
     ob_start();
@@ -949,6 +962,32 @@ function log_contact_act(Rerm\App $app, Rerm\Auth\User $user): never
 }
 
 // ---------------------------------------------------------------------------
+// Dropped Members (Phase 8.5) — Officer and above, through
+// Capability::ViewRoster. READ-ONLY: the rows come through
+// ScopedQuery::droppedForUser(), which is the ordinary scope predicate over
+// the population every other read hides. No POST, no CSRF, nothing to write.
+// ---------------------------------------------------------------------------
+
+/** Renders Dropped Members — who fell off the roster, in the caller's scope. */
+function dropped_screen(Rerm\App $app, Rerm\Auth\User $user): void
+{
+    $year = active_show_year($app);
+    if ($year === null) {
+        render($app, 'not-found', 'Not found', [], 404);
+
+        return;
+    }
+
+    render($app, 'dropped', 'Dropped Members', [
+        // A data screen (spec 8.2): the wide container above 720px.
+        'wide'    => true,
+        'user'    => $user,
+        'year'    => $year,
+        'dropped' => Rerm\Roster\DroppedPage::fromApp($app)->page($user, $year['id'], $_GET),
+    ]);
+}
+
+// ---------------------------------------------------------------------------
 // Committee Dashboard (spec 7.3) — Senior Officer and above, through
 // Capability::ViewCommitteeDashboard. READ-ONLY: no POST, no CSRF check and
 // no Access::allows() per member, because nothing on it writes. The route
@@ -1243,6 +1282,42 @@ function designate_act(Rerm\App $app, Rerm\Auth\User $user): never
 
     if ($outcome === 'scope_cleared') {
         flash_set('ok', $who . ' is back to the scope of their own member record.');
+        redirect($app, $return);
+    }
+
+    if ($outcome === 'password_reset') {
+        flash_set('ok', $who . "'s password is reset to 1234 and every session they had"
+            . ' is signed out. They must choose a new password the next time they sign in.'
+            . ' Nothing was emailed — tell them yourself.');
+        redirect($app, $return);
+    }
+
+    if ($outcome === 'team_scope_set') {
+        $n = count($result['teams']);
+        flash_set('ok', sprintf(
+            '%s now sees %d team%s, and nothing outside them.',
+            $who,
+            $n,
+            $n === 1 ? '' : 's'
+        ));
+        redirect($app, $return);
+    }
+
+    if ($outcome === 'team_scope_cleared') {
+        flash_set('ok', $who . ' is no longer narrowed to particular teams.'
+            . ' They fall back to their division, or to their own team if their title says so.');
+        redirect($app, $return);
+    }
+
+    if ($outcome === 'not_senior') {
+        flash_set('warn', 'Only a Senior Officer can be narrowed to a set of teams.'
+            . ' An Officer already sees one team, and anyone above sees everything.');
+        redirect($app, $return);
+    }
+
+    if ($outcome === 'no_account') {
+        flash_set('warn', $who . ' has no login, so there is no password to reset.'
+            . ' Grant them a level first.');
         redirect($app, $return);
     }
 
@@ -1886,12 +1961,12 @@ function import_act(Rerm\App $app, Rerm\Auth\User $actor): array
 
             return [
                 'notices' => [['ok', sprintf(
-                    'Applied. %s created, %s updated, %s unchanged, %s flagged absent, %s account(s) '
+                    'Applied. %s created, %s updated, %s unchanged, %s dropped, %s account(s) '
                     . 'created or changed, %s metric(s) reset to Not started because they moved N to Y.',
                     number_format($result['created']),
                     number_format($result['updated']),
                     number_format($result['unchanged']),
-                    number_format($result['absent']),
+                    number_format($result['dropped']),
                     number_format($result['accounts']),
                     number_format($result['progress_reset'])
                 )]],
@@ -2066,6 +2141,10 @@ switch ($path) {
 
     case 'committee':
         committee_screen($app, $user);
+        break;
+
+    case 'dropped':
+        dropped_screen($app, $user);
         break;
 
     case 'assign':

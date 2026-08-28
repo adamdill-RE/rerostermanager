@@ -288,7 +288,7 @@ function rt_fixture(): array
 
         $pdo->prepare(
             'INSERT INTO member (member_number, first_name, last_name, preferred_name, division_id, team_id, '
-            . 'purged_at, absent_since_import_id, phone, phone_e164, phone_type, email) '
+            . 'purged_at, dropped_since_import_id, phone, phone_e164, phone_type, email) '
             . 'VALUES ' . implode(', ', $places)
         )->execute($bind);
     }

@@ -85,8 +85,15 @@ URL and cookie path is built from `app.base_path` (`/rerm/`) via
   foreign key referencing `member` is `RESTRICT`, never `CASCADE`. Contact
   history must still be queryable years from now (`docs/spec-v1.md` §5.5).
   Closing a show year **freezes**; a rollover **copies**; a revoked grant
-  **deactivates**. There is no `DELETE` in any Phase 8 write path and a test
-  asserts that by reading their source.
+  **deactivates**. A test names the tables that must never lose a row —
+  `member`, `contact_log`, `assignment`, `member_metric`, `audit_log`,
+  `import_batch`, `import_warning`, `show_year` — and reads every admin write
+  path for a `DELETE` against them.
+- **"Dropped" is the word for a member an import did not list**, in the schema
+  as well as on screen (`dropped_since_import_id`). It is not "purged": a drop
+  is automatic and the next import undoes it, a purge is deliberate and only
+  Restore undoes it. Keeping the two distinct on every screen is a rule, not a
+  preference.
 - **An export is PII leaving the building.** It is built in `var/exports`
   (0700, outside the document root), unlinked as soon as it has been sent, and
   logged with the actor, the scope and the row count. Every cell is written as
@@ -223,9 +230,23 @@ asking rather than by which button they pressed — the same shape as
 | --- | --- | --- |
 | **Admin** | Everything, plus import/export/show-year | none — designated only |
 | **Executive Officer** | Whole committee | Chairman, Vice President, Officer in Charge, Division Chairman |
-| **Senior Officer** | Their whole Division | Division Vice Chairman, Coordinator, Ambassador |
-| **Officer** | Their Team only | Vice Chairman, Captain, Assistant Captain |
+| **Senior Officer** | Their whole Division | Division Vice Chairman, Coordinator, Ambassador, Vice Chairman* |
+| **Officer** | Their Team only | Captain, Assistant Captain |
 | **Member** | No login | everything else |
+
+\* **`Vice Chairman` is a Senior Officer who sees ONE team by default.** A
+title carries a default scope *breadth* as well as a level, and this is the
+only one where the two differ: the 21 of them need the level's capabilities
+without the level's usual whole-division visibility. An Admin widens each to
+the teams they really cover, in `app_user_team`. Nobody's visibility grows by
+accident, and the 20 Senior Officers who predate the change keep their
+division — a test asserts it. Both halves live in `Rerm\Auth\TitleMap`.
+
+**Scope is resolved once**, in `Rerm\Auth\User::fromRow`: an explicit team
+set, else an explicit division override, else the title's breadth. `Access`
+and `ScopedQuery` both read the answer, so they cannot disagree — a scope one
+narrows and the other does not is a member an officer can act on and cannot
+see.
 
 **Titles with no login:** `Committee Member`, `Lifetime Committeemen`,
 `Lifetime Vice Presidents`, `Lifetime Director`, `Past Committee Chairman`.
@@ -397,6 +418,7 @@ Each phase ends shippable. `docs/spec-v1.md` carries the detail.
 | **6 · Assign Officers** | Unassigned isolation, bulk assign, thin-team flagging | Every assignable member has 1–3 officers or a named reason |
 | **7 · Committee Dashboard** | Roll-up by division, area and team with drill-down; `team.area` seeded; §7.1 gains the group, `contact=never` and `assigned=none` filters | An Executive can find the worst team in two taps, and every figure lands on exactly the people it counted |
 | **8 · Admin** | Designate Admins and Allowed Users, export by show year, show-year start/stop | A full round trip: import → work → export |
+| **8.5 · Fit and finish** | Admin password reset, absent→dropped, import Team column, top nav, scoped Dropped Members, Vice Chairmen + team-set scope | Nobody's visibility changed who did not need it to |
 | **9 · v2** | Create Forms; recruiting and retention automation | out of scope for v1 |
 
 Phases 4 and 5 are the product. Everything before them is plumbing and

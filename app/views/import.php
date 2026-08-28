@@ -219,8 +219,8 @@ $mode = (string) ($_POST['mode'] ?? Importer::MODE_COMPLETE);
                     <td data-label="Meaning">Nothing differs</td>
                 </tr>
                 <tr>
-                    <td data-label="What"><?= $done ? 'Flagged absent' : 'Would flag absent' ?></td>
-                    <td data-label="Members" class="num"><?= e($number($counts['absent'])) ?></td>
+                    <td data-label="What"><?= $done ? 'Dropped' : 'Would drop' ?></td>
+                    <td data-label="Members" class="num"><?= e($number($counts['dropped'])) ?></td>
                     <td data-label="Meaning">Not in this file. Flagged for review &mdash; never deleted</td>
                 </tr>
                 <tr>
@@ -310,6 +310,7 @@ $mode = (string) ($_POST['mode'] ?? Importer::MODE_COMPLETE);
                         <th scope="col">Row</th>
                         <th scope="col">Member</th>
                         <th scope="col">Name</th>
+                        <th scope="col">Team</th>
                         <th scope="col">Changes</th>
                     </tr>
                 </thead>
@@ -319,6 +320,7 @@ $mode = (string) ($_POST['mode'] ?? Importer::MODE_COMPLETE);
                         <td data-label="Row" class="num"><?= e((string) $row['row_number']) ?></td>
                         <td data-label="Member" class="mono"><?= e($row['member_number']) ?></td>
                         <td data-label="Name"><?= e($row['name']) ?></td>
+                        <td data-label="Team"><?= e($shown($row['team'])) ?></td>
                         <td data-label="Changes">
                             <?php foreach ($row['changes'] as $field => $change) { ?>
                                 <div>
@@ -366,24 +368,29 @@ $mode = (string) ($_POST['mode'] ?? Importer::MODE_COMPLETE);
         </div>
     <?php } ?>
 
-    <?php if ($preview['sample_absent'] !== []) { ?>
+    <?php if ($preview['sample_dropped'] !== []) { ?>
         <div class="card">
-            <h2><?= $done ? 'Flagged absent' : 'Would be flagged absent' ?></h2>
+            <h2><?= $done ? 'Dropped' : 'Would be dropped' ?></h2>
             <p class="hint">
-                First <?= e((string) count($preview['sample_absent'])) ?> of
-                <?= e($number($counts['absent'])) ?>. Flagging hides nobody's history: purging is a
+                First <?= e((string) count($preview['sample_dropped'])) ?> of
+                <?= e($number($counts['dropped'])) ?>. Dropping hides nobody's history: purging is a
                 separate, confirmed, logged action, and a member who reappears in a later import is
-                un-flagged automatically.
+                picked back up automatically.
             </p>
             <table>
                 <thead>
-                    <tr><th scope="col">Member</th><th scope="col">Name</th></tr>
+                    <tr>
+                        <th scope="col">Member</th>
+                        <th scope="col">Name</th>
+                        <th scope="col">Team</th>
+                    </tr>
                 </thead>
                 <tbody>
-                <?php foreach ($preview['sample_absent'] as $row) { ?>
+                <?php foreach ($preview['sample_dropped'] as $row) { ?>
                     <tr>
                         <td data-label="Member" class="mono"><?= e($row['member_number']) ?></td>
                         <td data-label="Name"><?= e($row['name']) ?></td>
+                        <td data-label="Team"><?= e($shown($row['team'])) ?></td>
                     </tr>
                 <?php } ?>
                 </tbody>
@@ -521,7 +528,7 @@ $mode = (string) ($_POST['mode'] ?? Importer::MODE_COMPLETE);
                 <tr>
                     <th scope="col">Batch</th><th scope="col">File</th><th scope="col">Mode</th>
                     <th scope="col" class="num">Created</th><th scope="col" class="num">Updated</th>
-                    <th scope="col" class="num">Absent</th><th scope="col" class="num">Warnings</th>
+                    <th scope="col" class="num">Dropped</th><th scope="col" class="num">Warnings</th>
                     <th scope="col">Applied</th>
                 </tr>
             </thead>
@@ -533,7 +540,7 @@ $mode = (string) ($_POST['mode'] ?? Importer::MODE_COMPLETE);
                     <td data-label="Mode"><?= e((string) $row['mode']) ?></td>
                     <td data-label="Created" class="num"><?= e($number((int) $row['rows_created'])) ?></td>
                     <td data-label="Updated" class="num"><?= e($number((int) $row['rows_updated'])) ?></td>
-                    <td data-label="Absent" class="num"><?= e($number((int) $row['rows_absent'])) ?></td>
+                    <td data-label="Dropped" class="num"><?= e($number((int) $row['rows_dropped'])) ?></td>
                     <td data-label="Warnings" class="num"><?= e($number((int) $row['warnings_count'])) ?></td>
                     <td data-label="Applied"><?= e($app->toDisplay((string) $row['applied_at'])->format('j M H:i')) ?></td>
                 </tr>

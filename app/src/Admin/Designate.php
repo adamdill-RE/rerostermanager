@@ -13,6 +13,7 @@ use Rerm\Auth\Capability;
 use Rerm\Auth\Level;
 use Rerm\Auth\Password;
 use Rerm\Auth\Subject;
+use Rerm\Auth\TokenStore;
 use Rerm\Auth\User;
 use Rerm\Roster\RosterPage;
 
@@ -54,8 +55,16 @@ use Rerm\Roster\RosterPage;
  */
 final class Designate
 {
+    /**
+     * The most teams one scope may name. The committee has 96 and this is
+     * the whole of it — anything past it is a crafted request, not somebody
+     * ticking boxes, and it is TRIMMED rather than refused because a scope
+     * that names every team is the same as naming none.
+     */
+    public const MAX_TEAM_SCOPE = 96;
+
     /** The actions a request may name. Anything else is refused unread. */
-    public const ACTIONS = ['grant', 'revoke', 'scope'];
+    public const ACTIONS = ['grant', 'revoke', 'scope', 'reset_password', 'team_scope'];
 
     /**
      * Every outcome apply() can return. Declared rather than implied: the
@@ -65,13 +74,15 @@ final class Designate
     public const OUTCOMES = [
         'granted', 'revoked', 'scope_set', 'scope_cleared', 'unchanged',
         'bad_level', 'bad_action', 'refused', 'not_found', 'nothing_to_revoke',
-        'bad_scope',
+        'bad_scope', 'password_reset', 'no_account',
+        'team_scope_set', 'team_scope_cleared', 'not_senior',
     ];
 
     public function __construct(
         private readonly PDO $pdo,
         private readonly Password $passwords,
         private readonly string $initialPassword,
+        private readonly TokenStore $tokens,
     ) {
     }
 
@@ -81,6 +92,9 @@ final class Designate
             $app->db(),
             Password::fromApp($app),
             (string) $app->config()->get('auth.default_password', '1234'),
+            // Phase 8.5: an Admin reset kills every session for the account,
+            // which is the same revocation the emailed reset already does.
+            TokenStore::fromApp($app),
         );
     }
 
@@ -108,6 +122,7 @@ final class Designate
             'created'     => false,
             'reactivated' => false,
             'scope'       => '',
+            'teams'       => [],
         ];
 
         if (!in_array($action, self::ACTIONS, true)) {
@@ -143,6 +158,14 @@ final class Designate
 
         if ($action === 'revoke') {
             return $this->revoke($user, $member, $result);
+        }
+
+        if ($action === 'reset_password') {
+            return $this->resetPassword($user, $member, $result);
+        }
+
+        if ($action === 'team_scope') {
+            return $this->teamScope($user, $member, $input, $result);
         }
 
         return $this->scope($user, $member, $input, $result);
@@ -310,6 +333,94 @@ final class Designate
     }
 
     /**
+     * Reset somebody else's password to the shipped initial one (Phase 8.5).
+     *
+     * The gap this fills: `/password` is self-service, `/forgot` needs mail —
+     * and `mail.enabled` ships false, so on the live server it delivers
+     * nothing — and `bin/set-admin-password.php` covers the seeded master
+     * admin alone. An officer who forgot their password had no route back in.
+     *
+     * **Capped by Access::mayGrant() against the TARGET'S effective level,
+     * and that is the load-bearing line in this method.** Resetting a password
+     * to a value the actor knows is equivalent to taking the account: without
+     * the cap a Senior Officer could reset an Admin's password and then sign
+     * in as them, which is a straight privilege escalation through a button
+     * labelled "help". The same rank rule that decides who may GRANT a level
+     * decides who may seize one.
+     *
+     * Two more refusals, each for its own reason:
+     *
+     *   * **No account, nothing to reset.** A member with no login has no
+     *     password; the Admin wanted `grant`, and the outcome says so rather
+     *     than silently doing nothing.
+     *   * **Never a system row.** The master administrator has `/setup` and
+     *     `bin/set-admin-password.php`. Letting a web screen seize it would
+     *     widen the blast radius of one stolen Admin session for no benefit
+     *     — it is refused by the member read below, which already excludes
+     *     `is_system`, and asserted by a test so the exclusion cannot be
+     *     loosened by accident.
+     *
+     * Every session dies with the password. Spec 3.2 already requires that of
+     * a voluntary change; a reset the account holder did not ask for is not
+     * the weaker case. Without it, whoever is signed in on the old password
+     * stays signed in — which, if the reset was a response to a compromise,
+     * is exactly the session that must not survive.
+     *
+     * Nothing is emailed, and nothing here touches Rerm\Mail.
+     *
+     * @param array<string, mixed> $member
+     * @param array<string, mixed> $result
+     * @return array<string, mixed>
+     */
+    private function resetPassword(User $user, array $member, array $result): array
+    {
+        if ($member['user_id'] === null) {
+            $result['outcome'] = 'no_account';
+
+            return $result;
+        }
+
+        // What the target can currently DO — granted_level ?? title_level,
+        // read off the schema's own VIRTUAL column rather than re-derived.
+        $effective = Level::from(
+            (string) ($member['effective_level'] ?? $member['title_level'])
+        );
+
+        if (!Access::mayGrant($user, $effective)) {
+            $result['outcome'] = 'refused';
+
+            return $result;
+        }
+
+        $result['level'] = $effective;
+
+        $this->pdo->prepare(
+            'UPDATE app_user SET password_hash = :hash, must_change_password = 1,'
+            . ' password_changed_at = UTC_TIMESTAMP() WHERE id = :id'
+        )->execute([
+            ':hash' => $this->passwords->hash($this->initialPassword),
+            ':id'   => $member['user_id'],
+        ]);
+
+        // ALL of them, with no exception: none of these sessions belongs to
+        // the person standing at this screen.
+        $this->tokens->revokeAllFor((int) $member['user_id']);
+
+        $this->audit($user, Action::PasswordResetByAdmin, $member, [
+            'must_change_password' => $member['must_change'] ?? null,
+        ], [
+            'password'             => 'reset to the initial password',
+            'must_change_password' => 1,
+            'sessions'             => 'all revoked',
+            'target_level'         => $effective->value,
+        ]);
+
+        $result['outcome'] = 'password_reset';
+
+        return $result;
+    }
+
+    /**
      * The Admin-only scope override (spec 4.4).
      *
      * It is the only mechanism that can point a Senior Officer at a division
@@ -388,9 +499,148 @@ final class Designate
     }
 
     /**
+     * The teams a Senior Officer is narrowed to (Phase 8.5).
+     *
+     * The shape spec 4.3 did not have: some Vice Chairmen cover three teams
+     * and some cover one, and neither "a whole division" nor "a single team"
+     * describes the first. An empty selection clears the narrowing, which
+     * puts them back on whatever their title and any division override say —
+     * for a Vice Chairman, their own team; for everybody else, their division.
+     *
+     * **Senior Officer only** (settled with the owner, 28 August). An Officer
+     * already has a working single-team scope and a second shape at that
+     * level is untested surface nobody asked for; an Executive Officer and an
+     * Admin see everything, so a narrowing would be a WHERE clause on a query
+     * that should have none. Both are refused as `not_senior` rather than
+     * silently ignored, so the Admin finds out.
+     *
+     * Admin-only, like the division override beside it, and for the same
+     * reason: spec 4.4 says an Admin sets a scope.
+     *
+     * @param array<string, mixed> $member
+     * @param array<string, mixed> $input
+     * @param array<string, mixed> $result
+     * @return array<string, mixed>
+     */
+    private function teamScope(User $user, array $member, array $input, array $result): array
+    {
+        if (!Access::mayUse($user, Capability::DesignateAdmin)) {
+            $result['outcome'] = 'refused';
+
+            return $result;
+        }
+
+        if ($member['user_id'] === null) {
+            $result['outcome'] = 'no_account';
+
+            return $result;
+        }
+
+        // What the target can DO decides whether this shape applies to them,
+        // read off the schema's VIRTUAL column rather than re-derived.
+        $effective = $member['effective_level'] !== null
+            ? Level::from((string) $member['effective_level'])
+            : null;
+
+        if ($effective !== Level::SeniorOfficer) {
+            $result['outcome'] = 'not_senior';
+
+            return $result;
+        }
+
+        // Digits only, de-duplicated, and capped: max_input_vars is 1000 on
+        // this host with SILENT truncation, and 96 teams is the whole
+        // committee, so anything past the cap is a crafted request rather
+        // than a person ticking boxes.
+        $wanted = [];
+        foreach ((array) ($input['team_scope'] ?? []) as $value) {
+            if ((is_string($value) || is_int($value)) && ctype_digit((string) $value)) {
+                $teamId = (int) $value;
+                if ($teamId > 0) {
+                    $wanted[$teamId] = $teamId;
+                }
+            }
+        }
+        $wanted = array_slice(array_values($wanted), 0, self::MAX_TEAM_SCOPE);
+
+        // A team id that names nothing is refused rather than stored — the
+        // foreign key would refuse it anyway, with a message nobody can read.
+        foreach ($wanted as $teamId) {
+            if (!$this->exists('team', $teamId)) {
+                $result['outcome'] = 'bad_scope';
+
+                return $result;
+            }
+        }
+
+        $before = $this->teamScopeFor((int) $member['user_id']);
+        sort($before);
+        $after = $wanted;
+        sort($after);
+
+        if ($before === $after) {
+            $result['outcome'] = 'unchanged';
+
+            return $result;
+        }
+
+        // Replace wholesale, in one transaction: a half-applied scope is a
+        // person seeing some of the teams they should and none of the ones
+        // they were about to be given.
+        $this->pdo->beginTransaction();
+
+        try {
+            $this->pdo->prepare('DELETE FROM app_user_team WHERE app_user_id = :id')
+                ->execute([':id' => $member['user_id']]);
+
+            if ($after !== []) {
+                $add = $this->pdo->prepare(
+                    'INSERT INTO app_user_team (app_user_id, team_id, granted_by)'
+                    . ' VALUES (:user, :team, :by)'
+                );
+                foreach ($after as $teamId) {
+                    $add->execute([
+                        ':user' => $member['user_id'],
+                        ':team' => $teamId,
+                        ':by'   => $user->id,
+                    ]);
+                }
+            }
+
+            $this->pdo->commit();
+        } catch (\Throwable $e) {
+            $this->pdo->rollBack();
+
+            throw $e;
+        }
+
+        $this->audit($user, Action::SetTeamScope, $member, ['teams' => $before], ['teams' => $after]);
+
+        $result['teams']   = $after;
+        $result['outcome'] = $after === [] ? 'team_scope_cleared' : 'team_scope_set';
+
+        return $result;
+    }
+
+    /**
+     * The teams currently recorded against an account.
+     *
+     * @return array<int, int>
+     */
+    private function teamScopeFor(int $userId): array
+    {
+        $read = $this->pdo->prepare(
+            'SELECT team_id FROM app_user_team WHERE app_user_id = :id ORDER BY team_id'
+        );
+        $read->execute([':id' => $userId]);
+
+        return array_map('intval', $read->fetchAll(PDO::FETCH_COLUMN));
+    }
+
+    /**
      * The member and their account, read fresh. Visible members only —
      * ScopedQuery::visible(), the same three columns every roster read
-     * respects — so a purged or absent member cannot be designated. Scope is
+     * respects — so a purged or dropped member cannot be designated. Scope is
      * NOT applied here: that is Access's question, asked next against this
      * row, so the refusal is decided by the matrix rather than by the query.
      *
@@ -402,7 +652,7 @@ final class Designate
             'SELECT m.id, m.member_number, m.first_name, m.last_name, m.preferred_name,'
             . ' m.title_level, m.division_id, m.team_id,'
             . ' u.id AS user_id, u.granted_level, u.is_active, u.effective_level,'
-            . ' u.scope_division_id, u.scope_team_id'
+            . ' u.must_change_password, u.scope_division_id, u.scope_team_id'
             . ' FROM member m LEFT JOIN app_user u ON u.member_id = m.id'
             . ' WHERE m.id = :id AND ' . \Rerm\Roster\ScopedQuery::visible('m')
         );
@@ -427,6 +677,7 @@ final class Designate
             'granted_level'     => $row['granted_level'] !== null ? (string) $row['granted_level'] : null,
             'effective_level'   => $row['effective_level'] !== null ? (string) $row['effective_level'] : null,
             'is_active'         => $row['user_id'] !== null ? (int) $row['is_active'] : 0,
+            'must_change'       => $row['user_id'] !== null ? (int) $row['must_change_password'] : null,
             'scope_division_id' => $row['scope_division_id'] !== null ? (int) $row['scope_division_id'] : null,
             'scope_team_id'     => $row['scope_team_id'] !== null ? (int) $row['scope_team_id'] : null,
             'subject'           => Subject::fromMemberRow($row),

@@ -38,7 +38,7 @@ use Throwable;
  * bucket 2 as cleanup nobody asked for.
  *
  * Eligible means what `EligibleOfficers` already means by it and nothing new:
- * a visible member (not system, not purged, not absent-flagged), still on
+ * a visible member (not system, not purged, not dropped), still on
  * that member's team, still at Officer level or above by effective level.
  * Rank comparison in PHP, never a SQL `>=` on the ENUM.
  *

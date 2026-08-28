@@ -156,9 +156,19 @@ final class DesignatePage
         );
         $read->execute($bind);
 
+        $members = $read->fetchAll();
+
+        // The team scopes for this whole page in one query rather than one
+        // per row — the same batched-read discipline every roster screen
+        // uses, for the same reason: the database is on another machine.
+        $teamScopes = $this->teamScopesFor(array_map(
+            static fn (array $r): ?int => $r['user_id'] !== null ? (int) $r['user_id'] : null,
+            $members
+        ));
+
         $rows = [];
-        foreach ($read->fetchAll() as $row) {
-            $rows[] = $this->row($user, $row);
+        foreach ($members as $row) {
+            $rows[] = $this->row($user, $row, $teamScopes);
         }
 
         // ONE form on the page, not fifty (the Phase 5 budget lesson): the
@@ -227,9 +237,10 @@ final class DesignatePage
      * ask answered here.
      *
      * @param array<string, mixed> $row
+     * @param array<int, array<int, array{id: int, name: string}>> $teamScopes
      * @return array<string, mixed>
      */
-    private function row(User $user, array $row): array
+    private function row(User $user, array $row, array $teamScopes = []): array
     {
         $titleLevel = Level::from((string) $row['title_level']);
         $granted    = $row['granted_level'] !== null
@@ -279,6 +290,15 @@ final class DesignatePage
                 )
                 : null,
 
+            // The teams this account is narrowed to, and whether the shape
+            // applies to them at all. Only a Senior Officer may hold one
+            // (settled with the owner): an Officer has a single-team scope
+            // already, and anyone above sees everything.
+            'team_scope'      => $row['user_id'] !== null
+                ? ($teamScopes[(int) $row['user_id']] ?? [])
+                : [],
+            'may_team_scope'  => $effective === Level::SeniorOfficer,
+
             'scope_division_id'   => $row['scope_division_id'] !== null ? (int) $row['scope_division_id'] : null,
             'scope_team_id'       => $row['scope_team_id'] !== null ? (int) $row['scope_team_id'] : null,
             'scope_division_name' => (string) ($row['scope_division_name'] ?? ''),
@@ -297,7 +317,61 @@ final class DesignatePage
             'may_revoke'    => $granted !== null
                 && Access::allows($user, Capability::DesignateAllowedUser, $subject)
                 && Access::mayGrant($user, $granted),
+
+            // Resetting a password is equivalent to taking the account, so it
+            // is capped against what the target can currently DO — their
+            // EFFECTIVE level, not the granted half. Otherwise a Senior
+            // Officer could seize an Admin who holds their level by title.
+            'may_reset'     => $effective !== null
+                && Access::allows($user, Capability::DesignateAllowedUser, $subject)
+                && Access::mayGrant($user, $effective),
         ];
+    }
+
+    /**
+     * The team scopes for a page of accounts, keyed by app_user id. One
+     * query, never one per row.
+     *
+     * @param array<int, ?int> $userIds
+     * @return array<int, array<int, array{id: int, name: string}>>
+     */
+    private function teamScopesFor(array $userIds): array
+    {
+        $ids = [];
+        foreach ($userIds as $id) {
+            if ($id !== null && $id > 0) {
+                $ids[$id] = $id;
+            }
+        }
+
+        if ($ids === []) {
+            return [];
+        }
+
+        $places = [];
+        $bind   = [];
+        foreach (array_values($ids) as $i => $id) {
+            $places[]                  = ":scope_user_{$i}";
+            $bind[":scope_user_{$i}"]  = $id;
+        }
+
+        $read = $this->pdo->prepare(
+            'SELECT ut.app_user_id, t.id, t.name FROM app_user_team ut'
+            . ' INNER JOIN team t ON t.id = ut.team_id'
+            . ' WHERE ut.app_user_id IN (' . implode(', ', $places) . ')'
+            . ' ORDER BY t.name'
+        );
+        $read->execute($bind);
+
+        $byUser = [];
+        foreach ($read->fetchAll() as $row) {
+            $byUser[(int) $row['app_user_id']][] = [
+                'id'   => (int) $row['id'],
+                'name' => (string) $row['name'],
+            ];
+        }
+
+        return $byUser;
     }
 
     /**

@@ -181,7 +181,7 @@ function sq_fixture(): array
         }
 
         $pdo->prepare(
-            'INSERT INTO member (member_number, first_name, last_name, division_id, team_id, purged_at, absent_since_import_id) '
+            'INSERT INTO member (member_number, first_name, last_name, division_id, team_id, purged_at, dropped_since_import_id) '
             . 'VALUES ' . implode(', ', $placeholders)
         )->execute($bind);
     }
@@ -318,7 +318,7 @@ test('the predicate itself excludes purged and absent members from every scope',
     $rows   = sq_rows(sq_user(Level::Officer, $fixture['real'][1], $teamId));
 
     $seen = sq_pdo()->prepare(
-        'SELECT member_number FROM member WHERE team_id = :team AND (purged_at IS NOT NULL OR absent_since_import_id IS NOT NULL)'
+        'SELECT member_number FROM member WHERE team_id = :team AND (purged_at IS NOT NULL OR dropped_since_import_id IS NOT NULL)'
     );
     $seen->execute([':team' => $teamId]);
     $hidden = $seen->fetchAll(PDO::FETCH_COLUMN);
