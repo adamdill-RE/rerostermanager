@@ -212,7 +212,6 @@ final class RcfPage
         $known = $number === '' ? null : $this->memberInScope($user, $number);
 
         $resolved['type']          = self::oneOf((string) ($entry['type'] ?? ''), array_keys(RosterChangeForm::TYPES));
-        $resolved['rookie']        = self::oneOf((string) ($entry['rookie'] ?? ''), RosterChangeForm::ROOKIE);
         $resolved['member_number'] = $number;
         $resolved['member_name']   = $name !== '' ? $name : (string) ($known['form_name'] ?? '');
         $resolved['new_title']     = self::text((string) ($entry['new_title'] ?? ''));
@@ -248,15 +247,19 @@ final class RcfPage
 
         $resolved['sponsor'] = self::text((string) ($entry['sponsor'] ?? ''));
 
-        // WAIT LIST is a tick box on the screen and Yes/No on the paper, and
-        // an unticked box submits NOTHING — so an untouched row would collect
-        // a "No" and stop being untouched. The answer is only written once
-        // the row says something else too: a blank row prints blank, exactly
-        // as it does on the form Rodeo Houston sends out.
-        $resolved['wait_list'] = '';
-
-        if (!RosterChangeForm::entryIsBlank($resolved)) {
-            $resolved['wait_list'] = (string) ($entry['wait_list'] ?? '') === 'Yes' ? 'Yes' : 'No';
+        // ROOKIE and WAIT LIST are CHECKBOX cells on the paper form, not text
+        // (RosterChangeForm's class comment has how that was established), so
+        // they are tick boxes here and `1`/`0` in the file — on every row,
+        // exactly as the blank form Rodeo Houston sends out already is.
+        //
+        // An unticked box submits NOTHING, which is why the value is derived
+        // rather than read: `RosterChangeForm::entryIsBlank()` ignores both
+        // columns for the same reason, or twenty-five untouched rows would
+        // all look filled in.
+        foreach (['rookie', 'wait_list'] as $tick) {
+            $resolved[$tick] = (string) ($entry[$tick] ?? '') === RosterChangeForm::TICKED
+                ? RosterChangeForm::TICKED
+                : RosterChangeForm::UNTICKED;
         }
 
         return $resolved;

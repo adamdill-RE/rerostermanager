@@ -46,12 +46,20 @@ use RuntimeException;
  * because a human would read it as a real one. `RcfPage` never offers it and
  * a test asserts that too.
  *
- * **The two literal zeros are reproduced, on untouched rows only.** The blank
- * form Rodeo Houston sends carries a numeric `0` in the ROOKIE and WAIT LIST
- * cells of all twenty-five rows — plainly a leftover of theirs, and plainly
- * what a printed blank RCF looks like today. Rows nobody filled in keep it;
- * rows somebody filled in carry their answer. "Exactly like the form" is a
- * claim about the paper, not about the tidiest possible file.
+ * **ROOKIE and WAIT LIST are CHECKBOXES, and that had to be discovered.**
+ * The blank form carries a numeric `0` in both columns of all twenty-five
+ * rows, which reads like a leftover and is not one: cell formats 60 and 61 —
+ * which is exactly those fifty cells and nothing else — carry an
+ * `xfComplement` that resolves, through the workbook's feature property bag,
+ * to `CellControl -> Checkbox`. The `0` is an unchecked box. So this writes
+ * `1` or `0` into both columns of EVERY row, as the source workbook does, and
+ * `app/templates/rcf/featurePropertyBag.xml` ships beside the style sheet so
+ * the reference resolves. Without it Excel repairs the file on open and the
+ * checkboxes are gone — see `FormSheet::BAG_PART`.
+ *
+ * The form's own older instructions still say `y/n` under ROOKIE and 'Please
+ * enter "Yes" or "No"' beside WAIT LIST. Those predate the conversion; the
+ * cells are what Rodeo Houston actually processes, so the cells win.
  *
  * A filled-in RCF names members and carries their member numbers, so it is
  * **PII leaving the building** and it is handled the way the roster export is:
@@ -101,15 +109,17 @@ final class RosterChangeForm
     ];
 
     /**
-     * WAIT LIST is `Yes` or `No` — the form says so in as many words, in the
-     * panel at H8. The column's own sub-header is a tick, which is what it
-     * meant before that instruction was added; the instruction wins, because
-     * it is the one addressed to the person filling the form in.
+     * The two columns whose cells are Excel checkboxes — see the class
+     * comment. Both are written on every row, `1` ticked and `0` not, which
+     * is what the blank form Rodeo Houston sends out already holds.
+     *
+     * Their values are therefore NOT part of whether a row says anything: a
+     * tick and nothing else is not a change request, and if it counted, every
+     * one of the twenty-five rows would look filled in the moment the form
+     * was drawn.
      */
-    public const WAIT_LIST = ['Yes', 'No'];
-
-    /** ROOKIE is `y` or `n`, which is what the sub-header at C26 says. */
-    public const ROOKIE = ['y', 'n'];
+    public const TICKED   = '1';
+    public const UNTICKED = '0';
 
     /**
      * The waitlist notice, whose double spaces are the form's own. It is
@@ -346,17 +356,17 @@ final class RosterChangeForm
     ];
 
     /**
-     * The two columns whose blank-form cells hold a literal `0` — see the
-     * class comment. Reproduced on untouched rows only.
+     * The checkbox columns, by the letter they sit in: ROOKIE and WAIT LIST.
      *
-     * @var array<int, string>
+     * @var array<string, string> column => the entry field it carries
      */
-    private const ZERO_COLUMNS = ['C', 'H'];
+    private const CHECKBOX_COLUMNS = ['C' => 'rookie', 'H' => 'wait_list'];
 
     public function __construct(
         private readonly PDO $pdo,
         private readonly string $exportDirectory,
         private readonly string $stylesPath,
+        private readonly string $featurePropertyBagPath,
     ) {
     }
 
@@ -365,7 +375,8 @@ final class RosterChangeForm
         return new self(
             $app->db(),
             $app->path('var/exports'),
-            $app->path('app/templates/rcf/styles.xml')
+            $app->path('app/templates/rcf/styles.xml'),
+            $app->path('app/templates/rcf/featurePropertyBag.xml')
         );
     }
 
@@ -381,10 +392,23 @@ final class RosterChangeForm
         return array_fill_keys(array_values(self::ENTRY_COLUMNS), '');
     }
 
-    /** Is there anything on this row at all? A blank one prints as blank. */
+    /**
+     * Is there anything on this row at all? A blank one prints as blank.
+     *
+     * The two CHECKBOX fields are not consulted, deliberately: they carry an
+     * answer on every row of the blank form, so counting them would make all
+     * twenty-five rows look filled in before anybody had typed a thing. A
+     * tick with no name beside it is not a change request.
+     */
     public static function entryIsBlank(array $entry): bool
     {
+        $ticks = array_values(self::CHECKBOX_COLUMNS);
+
         foreach (self::emptyEntry() as $field => $unused) {
+            if (in_array($field, $ticks, true)) {
+                continue;
+            }
+
             if (trim((string) ($entry[$field] ?? '')) !== '') {
                 return false;
             }
@@ -417,7 +441,12 @@ final class RosterChangeForm
         // 'Sheet1', because that is what the tab on their form is called. A
         // better name would be a visible difference from the form officers
         // already know, which is the one thing this file may not be.
-        $sheet = FormSheet::create($this->exportDirectory, $this->stylesPath, 'Sheet1');
+        $sheet = FormSheet::create(
+            $this->exportDirectory,
+            $this->stylesPath,
+            'Sheet1',
+            $this->featurePropertyBagPath
+        );
 
         self::draw($sheet, $form);
 
@@ -536,7 +565,6 @@ final class RosterChangeForm
         foreach (self::ENTRY_ROW_STYLES as $number => $styles) {
             $index = $number - self::FIRST_ENTRY_ROW;
             $entry = $entries[$index] ?? [];
-            $blank = self::entryIsBlank($entry);
 
             $sheet->merge('J' . $number . ':K' . $number);
 
@@ -551,8 +579,17 @@ final class RosterChangeForm
                     continue;
                 }
 
-                if ($blank && in_array($column, self::ZERO_COLUMNS, true)) {
-                    $sheet->number($reference, $style, '0');
+                // A checkbox cell, on every row: `1` ticked, `0` not. Never
+                // a string — a checkbox format holding text is a checkbox
+                // Excel stops drawing.
+                if (isset(self::CHECKBOX_COLUMNS[$column])) {
+                    $sheet->number(
+                        $reference,
+                        $style,
+                        (string) ($entry[self::CHECKBOX_COLUMNS[$column]] ?? '') === self::TICKED
+                            ? self::TICKED
+                            : self::UNTICKED
+                    );
 
                     continue;
                 }
