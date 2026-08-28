@@ -67,6 +67,14 @@ test('the capability matrix matches spec 4.5, transcribed independently', functi
         // row by row, on View My Roster. Spec 4.5 was edited in the same
         // commit, and this line is transcribed FROM that table.
         'export_roster'            => ['officer', Scope::Scoped],
+        // spec-v2 §1.3. Officer / Scoped, the same shape as export_roster and
+        // for the same reason: a Roster Change Form names members, and the
+        // picker that puts them on it reads through ScopedQuery::forUser()
+        // like every other member read. Its own capability rather than a
+        // second use of export_roster — taking the roster away as a file and
+        // producing committee paperwork are different powers over different
+        // documents. Transcribed from the spec-v2 §1.3 table.
+        'create_forms'             => ['officer', Scope::Scoped],
         'view_committee_dashboard' => ['senior_officer', Scope::Scoped],
         'designate_allowed_user'   => ['senior_officer', Scope::Scoped],
         'import_roster'            => ['admin', Scope::Everywhere],

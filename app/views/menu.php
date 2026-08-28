@@ -29,6 +29,7 @@ $tiles = [
     ['cap' => Capability::ImportRoster,          'label' => 'Import Roster',       'route' => 'import', 'phase' => ''],
     ['cap' => Capability::ImportContactHistory,  'label' => 'Import Contact History', 'route' => 'import-contacts', 'phase' => ''],
     ['cap' => Capability::ExportRoster,          'label' => 'Export Roster',       'route' => 'export', 'phase' => ''],
+    ['cap' => Capability::CreateForms,           'label' => 'Create Forms',        'route' => 'forms', 'phase' => ''],
     ['cap' => Capability::ManageShowYear,        'label' => 'Show Year',           'route' => 'show-year', 'phase' => ''],
     ['cap' => Capability::DesignateAllowedUser,  'label' => 'Designate Users',     'route' => 'designate', 'phase' => ''],
     ['cap' => Capability::ImportRoster,          'label' => 'Flagged for Purge',   'route' => 'purge',  'phase' => ''],

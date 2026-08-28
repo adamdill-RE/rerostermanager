@@ -147,6 +147,26 @@ final class Routes
         // a GET an <img src> can send should produce.
         'export'   => Capability::ExportRoster->value,
 
+        // ----- Create Forms (spec-v2 §1, §2), Phase 9 --------------------
+
+        // The forms menu — Officer and above, and the only thing on it so far
+        // is the Roster Change Form. It is a route rather than a section of
+        // /menu because a form is a thing somebody comes here to make, and
+        // because the second and third forms need somewhere to appear.
+        'forms'    => Capability::CreateForms->value,
+
+        // The Roster Change Form itself (spec-v2 §2). Both verbs on one
+        // route, like /assign and /teams: the GET draws the form for a chosen
+        // sub-committee and the POST turns what was typed into an .xlsx, and
+        // the two are one screen.
+        //
+        // Hyphenated and flat — 'form-rcf', not 'forms/rcf'. Every route in
+        // this application is one segment, .htaccess rewrites with a relative
+        // substitution and no RewriteBase, and there is no reason to be the
+        // first request to find out how LiteSpeed resolves that from a
+        // subdirectory.
+        'form-rcf' => Capability::CreateForms->value,
+
         // Show Year (spec 5.1) — Admin. Create, set active, open/close, and
         // the rollover that carries eligible assignments into a new year.
         // 'show-year', hyphenated like 'log-contact'.

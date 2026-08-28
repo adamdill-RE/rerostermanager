@@ -107,6 +107,20 @@ enum Action: string
      */
     case ExportRoster            = 'export_roster';
 
+    /**
+     * A form was produced (spec-v2 §2). The second READ in this vocabulary,
+     * and here for the first one's reason: a filled-in Roster Change Form
+     * names members and carries their member numbers, so it is the same data
+     * leaving by a different door and it is recorded the same way — the
+     * actor, the sub-committee it covers and how many people are on it.
+     *
+     * One verb for every form rather than one per form type. What was
+     * produced is in the row's own details, so a seventh form does not need a
+     * seventh verb, and "which forms went out for Bus Ops Team A" stays one
+     * filter.
+     */
+    case CreateForm              = 'create_form';
+
     /** What the filter and the log's own rows call it. */
     public function label(): string
     {
@@ -143,6 +157,7 @@ enum Action: string
             self::SetTeamArea            => 'Team area changed',
 
             self::ExportRoster           => 'Roster exported',
+            self::CreateForm             => 'Form created',
         };
     }
 

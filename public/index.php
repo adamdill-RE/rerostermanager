@@ -1536,6 +1536,121 @@ function export_act(Rerm\App $app, Rerm\Auth\User $user): never
 }
 
 // ---------------------------------------------------------------------------
+// Create Forms (spec-v2 §1, §2) — Officer and above, through
+// Capability::CreateForms, and scoped. The menu of forms, and the first form
+// on it.
+//
+// The GET draws the Roster Change Form for a chosen sub-committee; the POST
+// turns what was typed into an .xlsx and sends it. Like the export, the file
+// is a POST rather than a link: it names members and carries their member
+// numbers, which is not something a GET an <img src> can send should produce.
+// ---------------------------------------------------------------------------
+
+/** The menu of forms. One entry today; the shape is for the second one. */
+function forms_screen(Rerm\App $app, Rerm\Auth\User $user): void
+{
+    render($app, 'forms', 'Create Forms', [
+        // A list of choices, not a data table (spec 8.2): the narrow column.
+        'wide' => false,
+        'user' => $user,
+    ]);
+}
+
+/** The Roster Change Form, as far as it has been filled in. */
+function rcf_screen(Rerm\App $app, Rerm\Auth\User $user, array $input, array $notices = []): void
+{
+    render($app, 'form-rcf', 'Roster Change Form', [
+        // Twelve columns of grid: the wide container, and below 720px the
+        // same markup stacks (spec 8.2).
+        'wide'    => true,
+        'user'    => $user,
+        'notices' => $notices === [] ? flash_take() : $notices,
+        'rcf'     => Rerm\Forms\RcfPage::fromApp($app)->page($user, $input),
+    ]);
+}
+
+/**
+ * The download. CSRF first, then the form is built to a temp path outside the
+ * document root, sent with readfile(), and unlinked — always, including on a
+ * failure, because a filled-in RCF names members and must not survive on disk.
+ *
+ * A form with no sub-committee and a form with no rows are both refused, and
+ * refused BACK ONTO THE SCREEN with everything still typed in: twenty-five
+ * rows is too much work to lose to a validation message. That is why this
+ * re-renders rather than redirecting — a 303 would have to carry the whole
+ * form in a query string to do the same thing.
+ *
+ * The audit row is written BEFORE the body is sent: the rows have been read
+ * and the file has been built by then, which is the fact worth keeping.
+ */
+function rcf_act(Rerm\App $app, Rerm\Auth\User $user): void
+{
+    if (!Rerm\Csrf::check()) {
+        rcf_screen($app, $user, $_POST, [stale_form_notice()]);
+        exit;
+    }
+
+    // "Load this sub-committee" is the same POST with a different button.
+    // It re-renders with everything still typed in, which is why changing the
+    // sub-committee costs nothing: a link back to a GET would throw away
+    // twenty-five rows.
+    if (($_POST['action'] ?? '') !== 'download') {
+        rcf_screen($app, $user, $_POST);
+        exit;
+    }
+
+    $page = Rerm\Forms\RcfPage::fromApp($app);
+    $form = $page->formFromInput($user, $_POST);
+
+    if ($form['subcommittee'] === '') {
+        rcf_screen($app, $user, $_POST, [['danger',
+            'Choose the sub-committee this form is about before downloading it.']]);
+        exit;
+    }
+
+    $filled = 0;
+    foreach ($form['entries'] as $entry) {
+        if (!Rerm\Forms\RosterChangeForm::entryIsBlank($entry)) {
+            $filled++;
+        }
+    }
+
+    if ($filled === 0) {
+        rcf_screen($app, $user, $_POST, [['warn',
+            'Nothing is filled in yet, so there is no change to ask for. '
+            . 'Add at least one row.']]);
+        exit;
+    }
+
+    $rcf = Rerm\Forms\RosterChangeForm::fromApp($app);
+
+    try {
+        $built = $rcf->build($form);
+    } catch (Throwable $e) {
+        // Never a blank 500: app.debug is off in production and an uncaught
+        // throw renders nothing at all.
+        rcf_screen($app, $user, $_POST, [['danger',
+            'The form could not be built: ' . $e->getMessage()]]);
+        exit;
+    }
+
+    $rcf->audit($user, $form, (int) $built['rows']);
+
+    // Nothing about a download is cacheable, and no proxy should keep a copy.
+    header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    header('Content-Disposition: attachment; filename="' . $built['filename'] . '"');
+    header('Content-Length: ' . (string) filesize($built['path']));
+    header('Cache-Control: no-store, private');
+    header('X-Content-Type-Options: nosniff');
+
+    readfile($built['path']);
+
+    // Gone, whether or not the client got the whole body.
+    $rcf->discard($built['sheet'], $built['path']);
+    exit;
+}
+
+// ---------------------------------------------------------------------------
 // Show Year (spec 5.1, Phase 8 decided 1 and 5) — Admin, through
 // Capability::ManageShowYear. Create, set active, open/close, and the
 // rollover. Everything that changes state is a POST with a token; the
@@ -2352,6 +2467,21 @@ switch ($path) {
         }
 
         export_screen($app, $user);
+        break;
+
+    case 'forms':
+        forms_screen($app, $user);
+        break;
+
+    case 'form-rcf':
+        // Both verbs on one route. A POST never falls through: rcf_act()
+        // sends the file and exits, or re-renders the screen with everything
+        // still typed in and exits.
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            rcf_act($app, $user);
+        }
+
+        rcf_screen($app, $user, $_GET);
         break;
 
     case 'show-year':
