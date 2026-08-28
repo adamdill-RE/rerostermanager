@@ -47,10 +47,16 @@ use Rerm\Routes;
 
 test('the dropped route is guarded, scoped, and shares view_roster', function (): void {
     // It is the roster filtered to the people who fell off it, so it takes
-    // the roster's capability rather than a sixteenth row in the matrix.
+    // the roster's capability rather than a row of its own in the matrix.
+    //
+    // The count is the point of the assertion and it is deliberately exact:
+    // a capability appearing without anybody deciding to add one is the
+    // failure this catches. It moved to 16 with spec 6.7's
+    // import_contact_history, which IS its own row — see the note beside it
+    // in tests/access_test.php.
     assertSame(Capability::ViewRoster->value, Routes::guard('dropped'));
     assertSame(Level::Officer, Capability::ViewRoster->minimumLevel());
-    assertSame(15, count(Capability::cases()), 'the matrix is still 15 rows');
+    assertSame(16, count(Capability::cases()), 'the matrix is still 16 rows');
 });
 
 test('the dropped screen has no write path at all', function (): void {

@@ -254,6 +254,11 @@ function import_reset(): void
     $pdo->prepare('DELETE FROM audit_log WHERE action LIKE :like')->execute([':like' => 'import%']);
 
     $pdo->exec('DELETE FROM contact_log');
+    // Spec 6.7's staging. It cites app_user, which this function deletes
+    // below, so a batch left staged by another test file would block the
+    // reset with an SQLSTATE rather than a sentence.
+    $pdo->exec('DELETE FROM contact_import_row');
+    $pdo->exec('DELETE FROM contact_import_batch');
     $pdo->exec('DELETE FROM assignment');
     $pdo->exec('DELETE FROM member_metric');
     $pdo->exec('DELETE FROM import_staged_row');

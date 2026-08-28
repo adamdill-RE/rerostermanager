@@ -62,6 +62,21 @@ enum Capability: string
 
     // Admin, everywhere.
     case ImportRoster   = 'import_roster';
+
+    /**
+     * Loading a contact history from a file (spec 6.7) — Admin, everywhere,
+     * and its OWN capability rather than a second use of import_roster.
+     *
+     * Two reasons, and the second is the real one. First, import_roster means
+     * "may refresh what Rodeo Houston knows"; this means "may write rows into
+     * the permanent contact record", and CLAUDE.md keeps those two ownerships
+     * apart everywhere else in the application. Second, and unlike anything
+     * else here, it ATTRIBUTES WORK TO OTHER PEOPLE: every row it writes says
+     * a named officer contacted a named member on a named day. A capability
+     * that says so by name can be reasoned about, and can be taken away on
+     * its own.
+     */
+    case ImportContactHistory = 'import_contact_history';
     case ManageShowYear = 'manage_show_year';
     case DesignateAdmin = 'designate_admin';
     case ManageTeams    = 'manage_teams';
@@ -88,6 +103,7 @@ enum Capability: string
             self::DesignateAllowedUser    => Level::SeniorOfficer,
 
             self::ImportRoster,
+            self::ImportContactHistory,
             self::ManageShowYear,
             self::DesignateAdmin,
             self::ManageTeams,
@@ -111,6 +127,7 @@ enum Capability: string
             self::ExportRoster            => Scope::Scoped,
 
             self::ImportRoster,
+            self::ImportContactHistory,
             self::ManageShowYear,
             self::DesignateAdmin,
             self::ManageTeams,

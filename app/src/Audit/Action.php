@@ -44,6 +44,16 @@ enum Action: string
     case ImportFailed            = 'import_failed';
     case ImportResetProgress     = 'import_reset_progress';
 
+    /**
+     * A bulk load of contacts that happened before this application existed
+     * (spec 6.7). Deliberately NOT `import_applied`: that one means Rodeo
+     * Houston's roster was refreshed, and this one means eighty rows were
+     * added to the permanent contact record and attributed to officers who
+     * were not the person pressing the button. They are different questions
+     * and they get different verbs, so a filter can ask either.
+     */
+    case ImportContactHistory    = 'import_contact_history';
+
     // Assignment (spec 7.4). Written by Rerm\Roster\AssignOfficers.
     case AssignOfficer           = 'assign_officer';
     case RemoveAssignment        = 'remove_assignment';
@@ -110,6 +120,7 @@ enum Action: string
             self::ImportApplied          => 'Import applied',
             self::ImportFailed           => 'Import failed',
             self::ImportResetProgress    => 'Progress reset by import',
+            self::ImportContactHistory   => 'Contact history imported',
 
             self::AssignOfficer          => 'Officer assigned',
             self::RemoveAssignment       => 'Assignment removed',

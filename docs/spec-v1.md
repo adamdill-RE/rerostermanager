@@ -396,6 +396,7 @@ granted it.
 | `view_committee_dashboard` | Senior Officer | Scoped |
 | `designate_allowed_user` | Senior Officer | Scoped, capped at own level |
 | `import_roster` | Admin | Everywhere |
+| `import_contact_history` | Admin | Everywhere |
 | `manage_show_year` | Admin | Everywhere |
 | `designate_admin` | Admin | Everywhere |
 | `manage_teams` | Admin | Everywhere |
@@ -532,7 +533,8 @@ member_metric      member_id, show_year_id, metric,
 
 contact_log        id, member_id, show_year_id, contacted_by,
                    contact_type ENUM('call','text','email','in_person','other'),
-                   occurred_at, notes
+                   occurred_at, notes,
+                   contact_import_batch_id NULL   -- 6.7; NULL = logged on a screen
 
 assignment         id, member_id, officer_member_id, show_year_id,
                    assigned_by, assigned_at, removed_at NULL
@@ -546,6 +548,18 @@ import_batch       id, show_year_id, mode ENUM('complete','update','team'),
                    started_at, applied_at NULL, dry_run
 import_warning     id, import_batch_id, row_number, member_number NULL,
                    kind, detail
+
+contact_import_batch  id, show_year_id, team_id NULL,
+                   default_officer_user_id, filename, sha256, uploaded_by,
+                   rows_read, rows_ready, rows_duplicate, rows_skipped,
+                   rows_inserted, warnings_count,
+                   started_at, applied_at NULL, dry_run
+contact_import_row id, batch_id, row_number,
+                   action ENUM('insert','duplicate','skip'),
+                   outcome_kind, detail,
+                   raw_member, raw_officer, raw_date, raw_type,
+                   member_id NULL, contacted_by NULL, show_year_id NULL,
+                   contact_type, occurred_at NULL, notes
 
 audit_log          id, actor_user_id, action, entity, entity_id,
                    before_json, after_json, occurred_at, ip
@@ -884,6 +898,90 @@ assignment rows are **not** deleted — an assignment that silently empties is
 how twenty people stop being chased without anyone noticing. Re-assignment is
 an explicit act.
 
+### 6.7 Contact history import
+
+A **separate import, on a separate screen, behind a separate capability**, for
+contacts made before this application existed. Route `/import-contacts`,
+capability `import_contact_history`, Admin / Everywhere.
+
+It exists because officers were chasing people for months before there was
+anywhere to record it, and those contacts are in a spreadsheet. §7.1 orders its
+list by **never contacted first, then oldest first**, so a member called in
+October reads as never called and goes to the top of somebody's list in
+November. Retyping eighty rows one screen at a time is the alternative, and
+losing them is what actually happens.
+
+#### Why it is not part of §6
+
+The roster import refreshes what **Rodeo Houston** knows. This writes
+`contact_log`, which §6.6 says no import may ever touch. Those are opposite
+sides of the one ownership boundary this application is built on, so they get
+different tables (`contact_import_batch`, `contact_import_row`), different
+verbs (`import_contact_history` in `audit_log`), and different capabilities —
+either can be held without the other.
+
+#### What the file needs
+
+One row per contact. Columns are matched **by name and by alias**, in any
+order, and extra columns are ignored — the file is one an officer kept by hand,
+and nobody agreed a header row with them in advance.
+
+| Field | Spellings accepted | Required |
+| --- | --- | --- |
+| the member | `Customer Number`, `Member Number`, `Member #`, `Number`, … or `Member`, `Name`, `Full Name`, … | **yes** |
+| when | `Date`, `Contact Date`, `When`, `Occurred At`, … | **yes**, per row |
+| how | `Type`, `Method`, `How`, … | no — blank is `call` |
+| which officer | `Contacted By`, `Officer`, `Logged By`, … | no — blank is the batch default |
+| what was said | `Notes`, `Comment`, `Detail`, `Outcome`, … | no |
+
+Dates are read in **US order** (`3/4/2026` is the fourth of March), and a
+date with no time lands at **local noon** — midnight UTC is the previous
+evening in Chicago, which would display every contact a day early. Contact
+types understand the words officers write: `vm`, `left voicemail`, `sms`,
+`f2f`. A word this application does not model lands as **Other with its note
+intact**, never as a guess.
+
+#### Resolution, and the four refusals
+
+Members resolve by `Customer Number` where the file has one. Where it has a
+name instead, the Admin names a **team**, and the name is resolved **within
+that team only** — "never key on a name" (§5.2) is a rule about identity, and
+it holds: the name becomes an id **once**, at stage time, and a name matching
+two people on the team is **refused, not guessed**.
+
+Every row lands or is listed with a reason. The reasons are
+`no_member`, `member_not_found`, `ambiguous_name`, `bad_date`, `future_date`,
+`officer_not_found`, `year_closed` and `duplicate`; two more —
+`unknown_type` and `year_assumed` — annotate a row that **landed anyway**.
+
+Two of the refusals are decisions rather than mechanics:
+
+- **`officer_not_found` refuses the row.** A named officer with no active
+  account cannot be silently replaced with the batch default: attributing one
+  person's work to another is a false entry in a permanent record. Grant them a
+  login, or clear the column.
+- **`year_closed` refuses the row.** Closing a show year **freezes** it (§5.1).
+  `Rerm\Roster\LogContact` refuses a live contact into a closed year and this
+  import gets no exemption from that.
+
+#### Two steps, and idempotence
+
+Parse and resolve into staging, show every row and what it resolved to, and
+write only on a second explicit POST — §6.3's shape, for §6.3's reason.
+Everything is resolved at **stage** time and stored, so the apply inserts what
+the Admin read rather than re-resolving it into something else.
+
+Applying the same file twice writes its rows **once**. A row matching an
+existing `contact_log` entry on member, moment and type is recognised as a
+duplicate — checked at stage time, and **again at apply time**, because
+somebody may have logged one of them by hand in between. This is the only
+protection there is: `contact_log` is append-only forever (§5.5) and a
+duplicate cannot be deleted back out.
+
+Every written row carries `contact_log.contact_import_batch_id`, so "where did
+these eighty come from" is one join. The column is **not** a delete handle —
+no code path removes contacts by batch, and the foreign key is `RESTRICT`.
+
 ---
 
 ## 7. Screens
@@ -900,6 +998,7 @@ Officer and above     My Roster Status      ← default landing screen
 Senior Officer and above
                       Committee Dashboard
 Admin                 Import Roster
+                      Import Contact History
                       Export Roster
                       Show Year
                       Designate Users

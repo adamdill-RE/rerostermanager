@@ -289,6 +289,13 @@ $number = static fn (int $n): string => number_format($n);
                     if (trim((string) $entry['notes']) !== '') {
                         echo ' &mdash; ', e((string) $entry['notes']);
                     }
+                    // Loaded from a spreadsheet rather than logged here as it
+                    // happened (spec 6.7). Said quietly and said anyway: the
+                    // date is the officer's word for when it was, not this
+                    // application's record of when it was typed.
+                    if ($entry['from_history'] ?? false) {
+                        echo ' <span class="why">loaded from history</span>';
+                    }
                     echo '</li>';
                 }
                 echo '</ul>';

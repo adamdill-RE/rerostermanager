@@ -32,6 +32,15 @@ CLI-only importer is one production could not use:
   `Capability::IMPORT_ROSTER`; the marker is in `public/index.php`.
 - **`bin/import-roster.php`**, for local work against a real file.
 
+There is a **second, separate import** for contact history — contacts made
+before this application existed (`docs/spec-v1.md` §6.7). `/import-contacts`
+and `bin/import-contacts.php`, its own tables, its own capability
+(`import_contact_history`), its own audit verb. Separate because it writes
+`contact_log`, which the roster import may never touch; it is the counterpart
+to §6.6's boundary rather than a hole in it. Rows land on the date they really
+happened, attributed to the officer who really made them, and loading the same
+file twice writes them once.
+
 Both are two steps with a diff in between, and neither writes to `member` until
 a second, explicit act naming a batch id. The rule underneath all of it is
 `docs/spec-v1.md` §6.6: **an import refreshes what Rodeo Houston knows and
@@ -79,6 +88,11 @@ php bin/import-roster.php roster.xls        # parse, diff, stage — writes noth
 php bin/import-roster.php --apply=<id>      # the step that writes
 php bin/import-roster.php --dry-run f.xls   # parse, diff, keep nothing
 php bin/import-roster.php --list            # what is staged, and until when
+
+# Contacts made before the app existed (spec 6.7). Same two steps.
+php bin/import-contacts.php --officer=<number> --team="Bus Ops Team A" f.csv
+php bin/import-contacts.php --apply=<id>
+php bin/import-contacts.php --template      # a CSV header row it understands
 ```
 
 ## Getting started
