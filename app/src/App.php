@@ -89,6 +89,26 @@ final class App
     }
 
     /**
+     * The running version, as the footer of every screen shows it.
+     *
+     * Configured rather than derived. There is no build step on this host and
+     * nothing may require one (CLAUDE.md), so there is no tag to read and no
+     * generated file to stamp; config app.version is the single place it is
+     * written down, and this is the single place anything reads it.
+     *
+     * Never empty: a footer that says "Version" and then nothing is worse
+     * than no footer at all, because it reads as a bug in the page rather
+     * than as a missing setting. An installation whose config predates the
+     * key falls back to the word below and stays legible.
+     */
+    public function version(): string
+    {
+        $version = trim((string) $this->config->get('app.version', ''));
+
+        return $version === '' ? 'unversioned' : $version;
+    }
+
+    /**
      * An application URL.
      *
      *     $app->url()               the menu

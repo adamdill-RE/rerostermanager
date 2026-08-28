@@ -424,6 +424,7 @@ function rt_teardown(PDO $pdo): void
     $pdo->exec("DELETE FROM member_metric WHERE member_id IN (SELECT id FROM member WHERE member_number LIKE 'RT%')");
     $pdo->exec("DELETE FROM app_user WHERE member_id IN (SELECT id FROM member WHERE member_number LIKE 'RT%')");
     $pdo->exec("DELETE FROM member WHERE member_number LIKE 'RT%'");
+    $pdo->exec("DELETE FROM import_change WHERE import_batch_id IN (SELECT id FROM import_batch WHERE filename = 'rt-fixture')");
     $pdo->exec("DELETE FROM import_batch WHERE filename = 'rt-fixture'");
     $pdo->exec("DELETE FROM team WHERE name LIKE 'RT Team %'");
 }

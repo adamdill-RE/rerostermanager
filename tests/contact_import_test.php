@@ -236,6 +236,13 @@ function contacts_reset(): void
     $pdo->exec('DELETE FROM assignment');
     $pdo->exec('DELETE FROM member_metric');
     $pdo->exec("DELETE FROM app_user WHERE member_id NOT IN ({$members})");
+    // Phase 10's import history cites `member` with RESTRICT, like everything
+    // else that points at a person, so it comes out before they do. A row
+    // written by another test file's import is exactly what this catches, and
+    // it is the constraint working rather than a bug: nothing in the
+    // application ever deletes a member, which is why the record can outlive
+    // one.
+    $pdo->exec("DELETE FROM import_change WHERE member_id NOT IN ({$members})");
     $pdo->exec("DELETE FROM member WHERE id NOT IN ({$members})");
     $pdo->exec('DELETE FROM team');
 

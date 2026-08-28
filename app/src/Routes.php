@@ -110,6 +110,19 @@ final class Routes
         // only, everywhere-scoped; the setup-key era ended with Phase 3.
         'import'   => Capability::ImportRoster->value,
 
+        // Import History (Phase 10) — Admin, and import_roster's own
+        // capability rather than a seventh, because it is the second half of
+        // the same job: whoever may rewrite 1,954 rows from a file is exactly
+        // who needs to be able to see what the last file did. Read-only, so
+        // no POST and no CSRF check — the only controls on it are a search
+        // box and links.
+        //
+        // NOT scoped, deliberately. The value of the screen is watching a
+        // member move BETWEEN teams and divisions, and a scoped read would
+        // show half of such a move and hide the other half, which is worse
+        // than not showing it.
+        'import-history' => Capability::ImportRoster->value,
+
         // Import Contact History (spec 6.7) — Admin, and its OWN capability
         // rather than import_roster's. The roster import refreshes what Rodeo
         // Houston knows; this one writes rows into contact_log, which no

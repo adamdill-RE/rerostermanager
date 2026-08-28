@@ -161,6 +161,11 @@ test('nothing in the admin screens can delete a member, a contact or a record', 
     $protected = [
         'member', 'contact_log', 'assignment', 'member_metric',
         'audit_log', 'import_batch', 'import_warning', 'show_year',
+        // Phase 10. The record of what each import changed, field by field.
+        // It is the only answer to "when did this person disappear" once the
+        // staged parse it was copied from has been swept, so it belongs on
+        // this list for exactly the reason import_batch does.
+        'import_change',
     ];
 
     foreach ([
@@ -186,6 +191,9 @@ test('nothing in the admin screens can delete a member, a contact or a record', 
         // handoff says so in as many words.
         'Forms/RcfPage.php',
         'Forms/RosterChangeForm.php',
+        // Phase 10. Read-only by design — it is the record of what the
+        // imports did — so it is read here to keep it that way.
+        'Import/ImportHistory.php',
     ] as $file) {
         $source = (string) file_get_contents(__DIR__ . '/../app/src/' . $file);
         assertTrue($source !== '', $file . ' is readable');
@@ -660,6 +668,7 @@ function ad_teardown(PDO $pdo): void
     $pdo->exec("DELETE FROM app_user WHERE member_id IN ({$members})");
     $pdo->exec("DELETE FROM member WHERE member_number LIKE 'AD%'");
     $pdo->exec("DELETE FROM import_warning WHERE import_batch_id IN (SELECT id FROM import_batch WHERE filename LIKE 'AD-%')");
+    $pdo->exec("DELETE FROM import_change WHERE import_batch_id IN (SELECT id FROM import_batch WHERE filename LIKE 'AD-%')");
     $pdo->exec("DELETE FROM import_batch WHERE filename LIKE 'AD-%'");
     $pdo->exec("DELETE FROM team WHERE name LIKE '% AD'");
     $pdo->exec("DELETE FROM division WHERE name LIKE 'AD %'");

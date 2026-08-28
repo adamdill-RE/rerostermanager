@@ -18,6 +18,24 @@ return [
     'app' => [
         'name' => 'Rodeo Express Roster',
 
+        // The running version, shown in the footer of every screen.
+        //
+        // There is no build step on this host and nothing may require one
+        // (CLAUDE.md), so there is no tag, no commit stamp and no generated
+        // file to read it from — it is a constant, edited on purpose, and
+        // that is the point: a number nobody has to maintain is a number
+        // nobody can trust when somebody on a phone says "it still does the
+        // old thing" and the only question that matters is which build they
+        // are looking at.
+        //
+        // MINOR IS THE BUILD PHASE, so the footer answers that question in
+        // the vocabulary the specs and CLAUDE.md already use: 1.9.0 is the
+        // application as Phase 9 left it, 1.10.0 is Phase 10, and a patch
+        // release is a fix that landed inside a phase. Bump it in the commit
+        // that closes the phase, and nowhere else — a version that moves on
+        // every commit tells a user nothing they can repeat back.
+        'version' => '1.10.0',
+
         // The app is served from https://www.reshiftmanager.com/rerm/, never
         // the domain root — that is the landing page in site/index.html, and
         // RESM sits beside us at /resm/. Every link, form action, redirect,

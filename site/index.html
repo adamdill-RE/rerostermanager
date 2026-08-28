@@ -16,6 +16,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>Rodeo Express</title>
+<!--
+  The "RE" mark both applications wear in a browser tab. The file itself is
+  deployed by the roster application, which is why the path names it: this
+  page is the ONE file this repository writes to the document root, and a
+  second one beside it would be a second thing a future deploy has to be
+  careful of. A relative href, so it resolves under whatever host serves this
+  page rather than assuming the domain.
+-->
+<link rel="icon" type="image/png" href="rerm/assets/icons/favicon.png">
 <style>
   :root {
     --rodeo-orange: #EF7622;

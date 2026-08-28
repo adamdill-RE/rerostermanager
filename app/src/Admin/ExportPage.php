@@ -9,8 +9,7 @@ use Rerm\App;
 use Rerm\Auth\Level;
 use Rerm\Auth\User;
 use Rerm\Export\RosterExport;
-use Rerm\Roster\RosterPage;
-use Rerm\Roster\ScopedQuery;
+use Rerm\Roster\TeamFilter;
 
 /**
  * What the Export screen shows BEFORE anybody presses the button (spec 7.5,
@@ -27,6 +26,23 @@ use Rerm\Roster\ScopedQuery;
  * hold members in this caller's scope, through the same predicate. An Officer
  * gets no team filter at all — their team IS their scope, so the control
  * would offer them the one thing they already have.
+ *
+ * PHASE 10 GAVE THE FILTER A DEFAULT, AND THAT CHANGED WHAT AN EMPTY ONE MEANS
+ *
+ * The export now starts on the caller's own team rather than on everything
+ * they can see. The reason is the paragraph above, read the other way round:
+ * the screen exists to stop a file turning out to hold 1,954 home addresses
+ * when somebody expected 82, and starting narrow makes the safe answer the
+ * one nobody has to choose. Whoever wants the whole of their scope still
+ * gets it in one click, and the count on the screen says which they are
+ * about to download either way.
+ *
+ * That is why the ALL token exists (`Rerm\Roster\TeamFilter`). With a
+ * default, "no teams ticked" can no longer mean "every team" — it means "I
+ * have not said" — so wanting everything needs a way to say so that survives
+ * the GET form, the hidden fields on the POST, and a bookmark. Both verbs
+ * resolve the same input through the same call, which is what keeps the file
+ * equal to the count that was on the screen when the button was pressed.
  */
 final class ExportPage
 {
@@ -69,17 +85,28 @@ final class ExportPage
         }
         $selected ??= $years[0] ?? null;
 
-        // The team filter is for Senior Officer and above only, exactly as on
-        // View My Roster: an Officer's team is their scope.
-        $canFilterTeams = $user->level->atLeast(Level::SeniorOfficer);
-        $selectedTeams  = $canFilterTeams ? RosterPage::teamIds($input['team'] ?? []) : [];
+        // Which teams, resolved exactly as My Roster Status resolves them, by
+        // the same call. The control appears for a caller whose scope holds
+        // more than one team; below that an Officer's team IS their scope and
+        // the filter would offer them the one thing they already have.
+        $teamChoice    = TeamFilter::choose(
+            $input['team'] ?? null,
+            TeamFilter::inScope($this->pdo, $user),
+            $user->scopeTeamId,
+        );
+        $selectedTeams = $teamChoice['selected'];
 
         return [
             'years'            => $years,
             'year'             => $selected,
-            'can_filter_teams' => $canFilterTeams,
-            'teams'            => $canFilterTeams ? $this->teamsInScope($user) : [],
+            'can_filter_teams' => $teamChoice['may_choose'],
+            'teams'            => $teamChoice['options'],
             'selected_teams'   => $selectedTeams,
+
+            // The picker's full state, so the screen can say whether this
+            // selection was chosen or is where it started, and offer the one
+            // click to everything in scope.
+            'team_choice'      => $teamChoice,
 
             // The exact number, counted now, through the same predicate the
             // build will use. Not an estimate and not a cap.
@@ -127,26 +154,5 @@ final class ExportPage
         return $this->pdo
             ->query('SELECT id, label, is_open, is_active FROM show_year ORDER BY is_active DESC, label DESC')
             ->fetchAll();
-    }
-
-    /**
-     * The teams the filter can offer: those that hold members in this user's
-     * scope, through the roster's own predicate.
-     *
-     * @return array<int, array<string, mixed>>
-     */
-    private function teamsInScope(User $user): array
-    {
-        $scoped = ScopedQuery::forUser($user);
-
-        $read = $this->pdo->prepare(
-            'SELECT t.id, t.name, COUNT(*) AS members FROM member m'
-            . ' INNER JOIN team t ON t.id = m.team_id'
-            . ' WHERE ' . $scoped->predicate()
-            . ' GROUP BY t.id, t.name ORDER BY t.name'
-        );
-        $read->execute($scoped->bindings());
-
-        return $read->fetchAll();
     }
 }

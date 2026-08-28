@@ -22,16 +22,36 @@ declare(strict_types=1);
  */
 
 use Rerm\Csrf;
+use Rerm\Roster\TeamFilter;
 
 $number = static fn (int $n): string => number_format($n);
 $year   = $export['year'];
 $rows   = (int) $export['rows'];
+
+/** The team picker's state (Phase 10). @var array<string, mixed> $teams */
+$teams = $export['team_choice'];
+
+/**
+ * The `team[]` inputs that reproduce the current selection on the POST that
+ * downloads the file.
+ *
+ * This is the whole reason the ALL token exists. The download resolves the
+ * same input through the same call as the screen, so whatever the screen
+ * counted is what the file holds — but only if the POST can SAY "everything",
+ * and an empty selection cannot: with a default in force, sending no team at
+ * all means "I have not chosen" and comes back as the caller's own team. The
+ * screen would then promise 1,247 rows and hand over 82.
+ *
+ * @var array<int, string|int> $carryTeams
+ */
+$carryTeams = (array) TeamFilter::param($teams);
 ?>
 <h1>Export Roster</h1>
 <p class="lede">
-    Every member you can see, as a spreadsheet, for one show year. What you get
-    is <?= e((string) $export['scope_word']) ?> &mdash; the same people every
-    other screen shows you, in one file.
+    Members you can see, as a spreadsheet, for one show year. The widest this
+    can ever be is <?= e((string) $export['scope_word']) ?> &mdash; the same
+    people every other screen shows you. Which of them are in the file is the
+    count below, and it is exact.
 </p>
 
 <?php foreach ($notices as [$level, $message]) { ?>
@@ -73,13 +93,35 @@ $rows   = (int) $export['rows'];
         <?php } ?>
     </select>
 
-    <?php if ($export['can_filter_teams'] && $export['teams'] !== []) { ?>
+    <?php if ($export['can_filter_teams']) { ?>
         <fieldset>
-            <legend>Narrow to particular teams (optional)</legend>
+            <legend>Which teams</legend>
             <p class="hint">
-                Leave every box clear to export <?= e((string) $export['scope_word']) ?>.
-                Ticking teams can only ever narrow that &mdash; it never widens it.
+                <?php if ($teams['own'] !== null) { ?>
+                    This starts on the team you are on, because a file of
+                    twenty-five people is the one nobody has to check twice.
+                <?php } ?>
+                Tick whichever teams you actually want, or the first box for
+                <?= e((string) $export['scope_word']) ?>. Every choice here can
+                only narrow what you can see &mdash; none of them widens it.
             </p>
+
+            <?php /* The ALL token as a real, visible choice. With a default in
+                     force, no box ticked no longer means "everything" — it
+                     means "I have not said" — so wanting everything has to be
+                     something a person can tick and a URL can carry. */ ?>
+            <label class="choice" for="tall">
+                <input type="checkbox" id="tall" name="team[]"
+                       value="<?= e(TeamFilter::ALL) ?>"<?= $teams['all'] ? ' checked' : '' ?>>
+                <span>
+                    <span class="what">Everything you can see</span>
+                    <span class="why">
+                        <?= e((string) $export['scope_word']) ?> &mdash;
+                        <?= e($number(count($export['teams']))) ?> teams
+                    </span>
+                </span>
+            </label>
+
             <?php foreach ($export['teams'] as $team) { ?>
                 <label class="choice" for="t<?= e((string) $team['id']) ?>">
                     <input type="checkbox" id="t<?= e((string) $team['id']) ?>"
@@ -87,7 +129,10 @@ $rows   = (int) $export['rows'];
                         <?= in_array((int) $team['id'], $export['selected_teams'], true) ? ' checked' : '' ?>>
                     <span>
                         <span class="what"><?= e((string) $team['name']) ?></span>
-                        <span class="why"><?= e($number((int) $team['members'])) ?> members</span>
+                        <span class="why">
+                            <?= e($number((int) $team['members'])) ?> members<?php
+                                if ($teams['own'] === (int) $team['id']) { ?> &middot; your team<?php } ?>
+                        </span>
                     </span>
                 </label>
             <?php } ?>
@@ -114,8 +159,8 @@ $rows   = (int) $export['rows'];
         <form method="post" action="<?= e($app->url('export')) ?>">
             <?= Csrf::field() ?>
             <input type="hidden" name="year" value="<?= e((string) $year['id']) ?>">
-            <?php foreach ($export['selected_teams'] as $teamId) { ?>
-                <input type="hidden" name="team[]" value="<?= e((string) $teamId) ?>">
+            <?php foreach ($carryTeams as $teamValue) { ?>
+                <input type="hidden" name="team[]" value="<?= e($teamValue) ?>">
             <?php } ?>
             <button type="submit">Download the spreadsheet</button>
         </form>

@@ -1036,7 +1036,7 @@ final class Importer
             foreach ($this->stagedChunks($batchId, 'dropped') as $chunk) {
                 $this->pdo->beginTransaction();
                 try {
-                    $applied['dropped'] += $this->applyDropped($chunk, $batchId);
+                    $applied['dropped'] += $this->applyDropped($chunk, $batchId, $now);
                     $this->pdo->commit();
                 } catch (Throwable $e) {
                     $this->pdo->rollBack();
@@ -1194,6 +1194,12 @@ final class Importer
 
         // Ids for the rows just created; there is no RETURNING here.
         $ids = $this->memberIds(array_column($payloads, 'member_number'));
+
+        // The permanent record of this chunk's diff (Phase 10), written here
+        // rather than at stage time and inside the same transaction as the
+        // writes above: a row in `import_change` means the roster really
+        // changed, never that a preview said it would.
+        $this->recordChanges($chunk, $action, $batchId, $ids, $now);
 
         $metricResult = $this->applyMetrics($payloads, $ids, $showYearId, $batchId, $actorUserId, $now);
         $result['progress_reset'] = $metricResult['progress_reset'];
@@ -1528,7 +1534,7 @@ final class Importer
     }
 
     /** @param array<int, array<string, mixed>> $chunk */
-    private function applyDropped(array $chunk, int $batchId): int
+    private function applyDropped(array $chunk, int $batchId, string $now): int
     {
         $ids = [];
         foreach ($chunk as $row) {
@@ -1558,7 +1564,199 @@ final class Importer
         // What was flagged, not what was staged: a member purged between the
         // preview and the apply is skipped by the WHERE clause above, and
         // reporting them as newly flagged would be a count nothing supports.
-        return $flag->rowCount();
+        //
+        // Read back rather than counted, because the permanent record has to
+        // name them. "Who disappeared, and when" is the question this whole
+        // history exists for, and a count cannot answer it — while
+        // `dropped_since_import_id` on the member row answers only the
+        // LATEST one, and is cleared the moment they reappear.
+        $flagged = $this->pdo->prepare(
+            'SELECT `id`, `member_number` FROM `member` '
+            . "WHERE `id` IN ({$placeholders}) AND `dropped_since_import_id` = :batch"
+        );
+        $flagged->execute($bind);
+
+        $rows = [];
+        foreach ($flagged->fetchAll() as $member) {
+            $rows[] = self::changeRow(
+                $batchId,
+                (int) $member['id'],
+                (string) $member['member_number'],
+                'dropped',
+                '',
+                null,
+                null,
+                $now
+            );
+        }
+
+        $this->insertRows('import_change', self::CHANGE_COLUMNS, $rows);
+
+        return count($rows);
+    }
+
+    // -----------------------------------------------------------------------
+    // The permanent record of what an import changed (Phase 10)
+    // -----------------------------------------------------------------------
+
+    /**
+     * The columns of `import_change`, in one place, because two methods write
+     * it and a column list that disagrees with itself is an insert that binds
+     * the wrong value to the wrong field.
+     */
+    private const CHANGE_COLUMNS = [
+        'import_batch_id', 'member_id', 'member_number',
+        'kind', 'field', 'before_value', 'after_value', 'occurred_at',
+    ];
+
+    /**
+     * The field whose change means "a dropped member is back", rather than
+     * "a column of theirs is different". `diff()` writes it as a change like
+     * any other so that a returning member's row is not mistaken for an
+     * unchanged one; here it becomes its own kind, so "who came back" is a
+     * question the history answers without a WHERE on a column name.
+     */
+    private const RETURNED_FIELD = 'dropped_since_import_id';
+
+    /**
+     * Copies this chunk's diff into `import_change`.
+     *
+     * Called from inside `applyChunk`'s transaction, AFTER the member writes
+     * and after the created rows have been resolved back to ids. Both matter:
+     * a row here is a statement that the roster changed, so it must not
+     * survive a rollback that undid the change, and a create has no id until
+     * the insert that made it has happened.
+     *
+     * `unchanged` records nothing at all. A file that mentions somebody and
+     * alters nothing about them is the overwhelming majority of every import
+     * after the first — a second run of the same roster is ~1,954 of them —
+     * and writing "nothing happened" 1,954 times a month would bury the rows
+     * that say something did.
+     *
+     * @param array<int, array<string, mixed>> $chunk staged rows, with `changes`
+     * @param array<string, int>               $ids   member_number => member id
+     */
+    private function recordChanges(array $chunk, string $action, int $batchId, array $ids, string $now): void
+    {
+        if ($action === 'unchanged') {
+            return;
+        }
+
+        $rows = [];
+
+        foreach ($chunk as $row) {
+            $number   = (string) $row['member_number'];
+            $memberId = $row['member_id'] === null
+                ? ($ids[$number] ?? null)
+                : (int) $row['member_id'];
+
+            if ($action === 'create') {
+                // One row, no field, no values: the kind is the whole fact.
+                // "This is the import that first listed them" is what makes a
+                // member who appears, disappears and reappears legible later.
+                //
+                // Only when the insert really produced a row. `applyChunk`
+                // drops a staged row whose payload will not decode, so a
+                // number that does not resolve to an id here is a member that
+                // was not created — and a create recorded for somebody who
+                // does not exist is the one kind of entry a permanent record
+                // must not contain.
+                if ($memberId !== null) {
+                    $rows[] = self::changeRow($batchId, $memberId, $number, 'created', '', null, null, $now);
+                }
+
+                continue;
+            }
+
+            $changes = json_decode((string) ($row['changes'] ?? ''), true);
+            if (!is_array($changes)) {
+                continue;
+            }
+
+            foreach ($changes as $field => $pair) {
+                $field = (string) $field;
+
+                if ($field === self::RETURNED_FIELD) {
+                    $rows[] = self::changeRow($batchId, $memberId, $number, 'returned', '', null, null, $now);
+
+                    continue;
+                }
+
+                if (!is_array($pair) || !array_key_exists(0, $pair) || !array_key_exists(1, $pair)) {
+                    continue;
+                }
+
+                $rows[] = self::changeRow(
+                    $batchId,
+                    $memberId,
+                    $number,
+                    'updated',
+                    mb_substr($field, 0, 64),
+                    self::changeValue($pair[0]),
+                    self::changeValue($pair[1]),
+                    $now
+                );
+            }
+        }
+
+        $this->insertRows('import_change', self::CHANGE_COLUMNS, $rows);
+    }
+
+    /**
+     * @return array<string, mixed> one row shaped for CHANGE_COLUMNS
+     */
+    private static function changeRow(
+        int $batchId,
+        ?int $memberId,
+        string $memberNumber,
+        string $kind,
+        string $field,
+        ?string $before,
+        ?string $after,
+        string $now,
+    ): array {
+        return [
+            'import_batch_id' => $batchId,
+            'member_id'       => $memberId,
+            'member_number'   => mb_substr($memberNumber, 0, 32),
+            'kind'            => $kind,
+            'field'           => $field,
+            'before_value'    => $before,
+            'after_value'     => $after,
+            'occurred_at'     => $now,
+        ];
+    }
+
+    /**
+     * A diff value as the history stores it: text, or NULL.
+     *
+     * NULL and the empty string stay different, and that difference is the
+     * point — "they had no email address" and "their email address was
+     * cleared" are two different things to have happened, and a history that
+     * flattened them would answer the question wrongly rather than not at
+     * all.
+     *
+     * Truncated rather than refused. The widest column an import owns is
+     * `address` at 160 characters, so 255 is not a limit anything real
+     * reaches; a value that somehow does is a value worth having most of,
+     * and a history that stops recording where something unusual happened is
+     * a history with a hole exactly where it is needed.
+     */
+    private static function changeValue(mixed $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        if (is_bool($value)) {
+            $value = $value ? '1' : '0';
+        }
+
+        if (is_array($value)) {
+            $value = self::json($value);
+        }
+
+        return mb_substr((string) $value, 0, 255);
     }
 
     // -----------------------------------------------------------------------
@@ -2155,7 +2353,10 @@ final class Importer
 
         while (true) {
             $read = $this->pdo->prepare(
-                'SELECT id, member_number, member_id, payload FROM import_staged_row '
+                // `changes` comes along since Phase 10: the apply copies it
+                // into `import_change`, which is where it stops being a parse
+                // and becomes the record of what the roster actually did.
+                'SELECT id, member_number, member_id, payload, changes FROM import_staged_row '
                 . 'WHERE import_batch_id = :batch AND action = :action AND id > :after '
                 . 'ORDER BY id LIMIT ' . $this->batchRows
             );

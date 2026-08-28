@@ -292,6 +292,8 @@ function ff_teardown(PDO $pdo): void
         . "WHERE member_number LIKE 'FF%'");
     $pdo->exec("DELETE FROM import_warning WHERE import_batch_id IN "
         . "(SELECT id FROM (SELECT id FROM import_batch WHERE filename LIKE 'FF-%') x)");
+    $pdo->exec("DELETE FROM import_change WHERE import_batch_id IN "
+        . "(SELECT id FROM (SELECT id FROM import_batch WHERE filename LIKE 'FF-%') x)");
     $pdo->exec("DELETE FROM import_batch WHERE filename LIKE 'FF-%'");
     $pdo->exec("DELETE FROM member WHERE member_number LIKE 'FF%'");
     $pdo->exec("DELETE FROM team WHERE name LIKE 'FF %'");

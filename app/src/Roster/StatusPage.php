@@ -114,9 +114,51 @@ final class StatusPage
         // ------------------------------------------------------------------
 
         $divisionFilter = (int) ($input['division'] ?? 0);
-        $teamFilter     = RosterPage::teamIds($input['team'] ?? []);
         $contactFilter  = ($input['contact'] ?? '') === 'never';
         $assignedFilter = ($input['assigned'] ?? '') === 'none';
+
+        // ------------------------------------------------------------------
+        // The team picker (Phase 10), for a caller whose scope holds more
+        // than one team — Senior Officer and above, and an Officer an Admin
+        // has given a team set.
+        //
+        // It shares `team[]` with the drill-down above rather than inventing
+        // a second parameter, because it IS the same narrowing: a Division
+        // Chairman arriving from the Committee Dashboard and one choosing a
+        // team from the select are asking for the same rows, and one filter
+        // that two controls write is one filter that cannot disagree with
+        // itself.
+        //
+        // What is new is the DEFAULT. A caller who has said nothing starts on
+        // their own team rather than on their whole division, because the
+        // roster somebody opens this screen to work is almost always the one
+        // they are on — and because a Division Chairman's 400-row list is a
+        // worse first screen than a 25-row one with a visible way out.
+        //
+        // A DRILL-DOWN SUPPRESSES IT, and that is not a detail. Spec 7.3's
+        // rule is that every figure on the Committee Dashboard equals this
+        // list filtered to it; a default silently ANDed onto a link that
+        // already said `division=` or `contact=never` would break that for
+        // exactly the people the figure counted, and it would break it
+        // invisibly.
+        // ------------------------------------------------------------------
+
+        // A drill-down is any of the three filters this screen has no control
+        // for. While one is in force the screen is reproducing a figure from
+        // the Committee Dashboard, so the team picker is neither defaulted
+        // nor offered: a control that could quietly alter the group is the
+        // one thing spec 7.3's rule cannot survive. The banner's "Show my
+        // whole roster" is the way out, and the picker is there afterwards.
+        $drilled = $divisionFilter > 0 || $contactFilter || $assignedFilter;
+
+        $teamOptions = TeamFilter::inScope($this->pdo, $user);
+        $teamChoice  = TeamFilter::choose(
+            $input['team'] ?? null,
+            $teamOptions,
+            $user->scopeTeamId,
+            !$drilled
+        );
+        $teamFilter = $teamChoice['selected'];
 
         if ($divisionFilter > 0) {
             $where .= ' AND m.division_id = :filter_division';
@@ -333,6 +375,12 @@ final class StatusPage
             // is half the spec 10 first-paint budget by themselves.
             'log_open'     => (int) ($input['log'] ?? 0),
 
+            // The team picker's own state: the options, the caller's own team,
+            // what is selected and whether that was chosen or defaulted. The
+            // view needs all four to draw the control AND to say in words
+            // which roster is on the screen.
+            'team_choice'  => $teamChoice,
+
             // The drill-down filters as they were actually applied, with the
             // names to say them in. A screen that has been narrowed by a URL
             // has to show what it was narrowed to, or the officer reads a
@@ -342,8 +390,19 @@ final class StatusPage
                 'teams'         => $teamFilter,
                 'contact'       => $contactFilter ? 'never' : null,
                 'assigned'      => $assignedFilter ? 'none' : null,
-                'active'        => $divisionFilter > 0 || $teamFilter !== []
-                    || $contactFilter || $assignedFilter,
+                // A TEAM ALONE NO LONGER LIGHTS THE BANNER (Phase 10). The
+                // banner says "you are seeing a slice somebody linked you to"
+                // and offers the one way out; a team is now a choice this
+                // screen itself offers, described by the picker and undone by
+                // it. Two controls saying the same thing, one of them in the
+                // language of a link nobody followed, is worse than one.
+                //
+                // A team arriving WITH a drill-down still appears in the
+                // banner's list of words — it is part of the group that was
+                // linked to — which is what the line below and $filterWords
+                // together produce.
+                'active'        => $drilled,
+                'drilled'       => $drilled,
                 'division_name' => $divisionFilter > 0
                     ? $this->divisionName($scoped, $divisionFilter)
                     : '',

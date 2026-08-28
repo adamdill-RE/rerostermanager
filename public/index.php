@@ -471,6 +471,11 @@ function status_checks(Rerm\App $app): array
 
     $checks = [
         'generated_at'            => Rerm\App::now(),
+        // The same string the footer of every screen shows. It is here for
+        // the case the footer cannot answer: the deploy landed but the page
+        // will not render, and the health check is the only thing left that
+        // can say which build is on the server.
+        'app_version'             => $app->version(),
         'php_matches_production'  => str_starts_with(PHP_VERSION, '8.2.'),
         'document_root'           => (string) ($_SERVER['DOCUMENT_ROOT'] ?? 'unknown'),
         'db_host'                 => (string) $config->get('db.host'),
@@ -800,6 +805,26 @@ function return_query(array $input, array $allowed): string
         }
 
         if (is_array($rule) && array_key_exists('ints', $rule)) {
+            // A NAMED TOKEN BESIDE THE IDS (Phase 10). `team=all` is how
+            // somebody says "every team in my scope", and it has to survive
+            // the redirect after a write or the officer comes back to a
+            // narrower roster than the one they were working — which is the
+            // silent subtraction this whole whitelist exists to prevent. The
+            // token wins over any ids beside it, exactly as
+            // Rerm\Roster\TeamFilter resolves the same input.
+            $token  = array_key_exists('token', $rule) ? (string) $rule['token'] : null;
+            $spoken = false;
+            if ($token !== null) {
+                foreach (is_array($value) ? $value : [$value] as $item) {
+                    $spoken = $spoken || (is_string($item) && $item === $token);
+                }
+            }
+            if ($spoken) {
+                $params[$key] = $token;
+
+                continue;
+            }
+
             // De-duplicated and capped at 200, the same ceiling
             // RosterPage::teamIds() applies: a thousand-value query string
             // must not become a thousand-placeholder statement, and
@@ -855,7 +880,8 @@ function dashboard_return_query(array $input): string
         'mode'     => ['mine', 'team'],
         'show'     => ['all'],
         'division' => ['int' => 0],
-        'team'     => ['ints' => 0],
+        // Ids, or the ALL token that means every team in the caller's scope.
+        'team'     => ['ints' => 0, 'token' => Rerm\Roster\TeamFilter::ALL],
         'contact'  => ['never'],
         'assigned' => ['none'],
         'page'     => ['int' => 1],
@@ -1923,6 +1949,48 @@ function import_schema_blocker(Rerm\App $app): ?string
     );
 }
 
+// ---------------------------------------------------------------------------
+// Import History (Phase 10) — Admin, through Capability::ImportRoster.
+//
+// Read-only: no POST arm, no CSRF check, nothing here writes. The screen
+// answers "when did this change, and which file changed it" from
+// `import_change`, which the apply writes in the same transaction as the
+// change itself.
+// ---------------------------------------------------------------------------
+
+/** Renders Import History — every import, one import, or one member. */
+function import_history_screen(Rerm\App $app, Rerm\Auth\User $user): void
+{
+    // The same guard the import screen uses, and for the same reason: this
+    // reads a table a pending migration may not have created yet, and a blank
+    // page is a worse answer than a sentence saying which migration is
+    // missing.
+    $blocker = import_schema_blocker($app);
+    if ($blocker !== null) {
+        render($app, 'import', 'Import History', [
+            'wide'    => false,
+            'user'    => $user,
+            'blocked' => $blocker,
+            'notices' => [],
+            'preview' => null,
+            'staged'  => [],
+            'applied' => [],
+            'failedBatches' => [],
+            'teams'   => [],
+        ]);
+
+        return;
+    }
+
+    render($app, 'import-history', 'Import History', [
+        // A data screen (spec 8.2): the wide container above 720px.
+        'wide'    => true,
+        'user'    => $user,
+        'notices' => flash_take(),
+        'history' => Rerm\Import\ImportHistory::fromApp($app)->page($_GET),
+    ]);
+}
+
 /**
  * Teams, for the team-mode picker.
  *
@@ -2561,6 +2629,10 @@ switch ($path) {
             'failedBatches' => $importer->failedBatches(5),
             'teams'   => import_teams($app),
         ]);
+        break;
+
+    case 'import-history':
+        import_history_screen($app, $user);
         break;
 
     case 'import-contacts':
