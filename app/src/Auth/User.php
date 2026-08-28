@@ -25,8 +25,9 @@ namespace Rerm\Auth;
 final class User
 {
     /**
-     * @param array<int, int> $scopeTeamIds the teams a Senior Officer is
-     *        narrowed to. EMPTY means "not narrowed" — see fromRow().
+     * @param array<int, int> $scopeTeamIds the teams an Officer or Senior
+     *        Officer is narrowed to. EMPTY means "not narrowed" — see
+     *        fromRow(), where an Officer then falls back to $scopeTeamId.
      */
     public function __construct(
         public readonly int $id,
@@ -42,8 +43,8 @@ final class User
     }
 
     /**
-     * The teams a SENIOR OFFICER is narrowed to, or an empty list when they
-     * are not narrowed at all (Phase 8.5).
+     * The teams an OFFICER or SENIOR OFFICER is narrowed to, or an empty
+     * list when they are not narrowed at all (Phase 8.5, widened in 8.6).
      *
      * Resolved ONCE, here, so that `ScopedQuery` (which rows) and `Access`
      * (may they act on this member) cannot disagree about it. A scope the
@@ -77,7 +78,11 @@ final class User
         array $teamScope,
         ?int $ownTeam
     ): array {
-        if ($level !== Level::SeniorOfficer) {
+        // Officer and Senior Officer both hold team sets (Phase 8.6). Above
+        // them the whole committee is visible, so a narrowing would be
+        // meaningless and returning one would put a WHERE clause on a query
+        // that should have none; below, Member holds no roster capability.
+        if ($level !== Level::SeniorOfficer && $level !== Level::Officer) {
             return [];
         }
 
@@ -91,6 +96,14 @@ final class User
         }
         if ($explicit !== []) {
             return array_values($explicit);
+        }
+
+        // An Officer with no set is not narrowed by this mechanism at all:
+        // their scope is the single team ScopedQuery already reads from
+        // scopeTeamId (the Admin override, else their own member row). The
+        // steps below are Senior Officer questions and have no meaning here.
+        if ($level === Level::Officer) {
+            return [];
         }
 
         // 2. An Admin has named a division for them; that is an answer.

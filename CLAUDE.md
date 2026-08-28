@@ -248,6 +248,20 @@ and `ScopedQuery` both read the answer, so they cannot disagree — a scope one
 narrows and the other does not is a member an officer can act on and cannot
 see.
 
+**A team set is offered to Officers as well as Senior Officers**, and to
+nobody else. A Captain runs their own team and helps with another, which a
+single `scope_team_id` cannot say; an Executive Officer and an Admin already
+see everything, and a Member has no roster to narrow. Two rules hang off it:
+
+- **It widens sight, never assignability.** `EligibleOfficers` decides who may
+  be assigned a member from the officer's own `member.team_id` and never reads
+  scope, so somebody helping chase a second team does not become one of its
+  assignable officers. Assignment stays same-team.
+- **The division override is read only at Senior Officer and above.** Both
+  scope readers consult team at Officer level and never division, so Designate
+  Users renders that control only where it does something. A control that
+  saves and changes nothing is a screen lying to an Admin.
+
 **Titles with no login:** `Committee Member`, `Lifetime Committeemen`,
 `Lifetime Vice Presidents`, `Lifetime Director`, `Past Committee Chairman`.
 An individual may still be granted a login as an **Allowed User** (below).
@@ -419,6 +433,7 @@ Each phase ends shippable. `docs/spec-v1.md` carries the detail.
 | **7 · Committee Dashboard** | Roll-up by division, area and team with drill-down; `team.area` seeded; §7.1 gains the group, `contact=never` and `assigned=none` filters | An Executive can find the worst team in two taps, and every figure lands on exactly the people it counted |
 | **8 · Admin** | Designate Admins and Allowed Users, export by show year, show-year start/stop | A full round trip: import → work → export |
 | **8.5 · Fit and finish** | Admin password reset, absent→dropped, import Team column, top nav, scoped Dropped Members, Vice Chairmen + team-set scope | Nobody's visibility changed who did not need it to |
+| **8.6 · Scope and controls** | Officer team sets, division control gated to the levels that read it, Grant opens on the level in force, desktop control sizing | An Admin cannot downgrade somebody by opening a row |
 | **9 · v2** | Create Forms; recruiting and retention automation | out of scope for v1 |
 
 Phases 4 and 5 are the product. Everything before them is plumbing and

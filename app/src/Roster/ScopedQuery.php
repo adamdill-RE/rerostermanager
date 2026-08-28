@@ -28,6 +28,8 @@ use Rerm\Auth\User;
  *   Admin, Executive Officer   every member
  *   Senior Officer             division_id = theirs
  *   Officer                    team_id = theirs
+ *   either of those two        team_id IN (their set), when an Admin has
+ *                              recorded one — it wins over both rows above
  *   anything else              nothing — a predicate that is never true
  *
  * The user's division and team ids were resolved by User::fromRow — an
@@ -93,24 +95,27 @@ final class ScopedQuery
             return new self($base, []);
         }
 
-        if ($user->level === Level::SeniorOfficer) {
-            // A team set NARROWS a Senior Officer to those teams (Phase 8.5).
-            // Resolved in User::fromRow so this and Access::inScope() cannot
-            // disagree; empty here means "not narrowed", never "no teams".
-            if ($user->scopeTeamIds !== []) {
-                $places = [];
-                $bind   = [];
-                foreach (array_values($user->scopeTeamIds) as $i => $teamId) {
-                    $places[]                       = ":scoped_team_{$i}";
-                    $bind[":scoped_team_{$i}"]      = $teamId;
-                }
-
-                return new self(
-                    "{$base} AND {$alias}.team_id IN (" . implode(', ', $places) . ')',
-                    $bind
-                );
+        // A team set NARROWS an Officer or a Senior Officer to those teams
+        // (Phase 8.5, widened to Officers in 8.6). Resolved in User::fromRow
+        // so this and Access::inScope() cannot disagree; empty here means
+        // "not narrowed by a set", never "no teams".
+        if ($user->scopeTeamIds !== []
+            && ($user->level === Level::SeniorOfficer || $user->level === Level::Officer)
+        ) {
+            $places = [];
+            $bind   = [];
+            foreach (array_values($user->scopeTeamIds) as $i => $teamId) {
+                $places[]                  = ":scoped_team_{$i}";
+                $bind[":scoped_team_{$i}"] = $teamId;
             }
 
+            return new self(
+                "{$base} AND {$alias}.team_id IN (" . implode(', ', $places) . ')',
+                $bind
+            );
+        }
+
+        if ($user->level === Level::SeniorOfficer) {
             return $user->scopeDivisionId === null
                 ? self::nobody($base)
                 : new self(

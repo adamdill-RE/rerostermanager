@@ -80,12 +80,18 @@ final class AssignPage
     {
         $scoped = ScopedQuery::forUser($user);
 
-        // Senior Officer and above choose a team; an Officer IS a team, so
-        // the input is not read for them at all — not validated and dropped,
-        // never read, because a team picker they cannot use is a control that
-        // lies about what the screen does.
-        $canChooseTeam = $user->level->atLeast(Level::SeniorOfficer);
-        $teams         = $this->teamsInScope($user, $showYearId);
+        // teamsInScope() reads through ScopedQuery, so this is already every
+        // team the caller can see — including the extra ones an Admin ticked
+        // for an Officer (Phase 8.6).
+        $teams = $this->teamsInScope($user, $showYearId);
+
+        // Senior Officer and above always choose a team. An Officer normally
+        // IS a team and gets no picker, because one they cannot use is a
+        // control that lies about what the screen does — but an Officer
+        // covering two teams has a real choice to make, and without this the
+        // roster would show them Team E while Assign silently stayed on
+        // Team A.
+        $canChooseTeam = $user->level->atLeast(Level::SeniorOfficer) || count($teams) > 1;
 
         $teamId = null;
         if ($canChooseTeam) {
@@ -98,6 +104,12 @@ final class AssignPage
                     $teamId = $requested;
                 }
             }
+        } elseif ($teams !== []) {
+            // The one team they can see, which is their own for an ordinary
+            // Officer and the single ticked one for a narrowed Officer. Taken
+            // from the scoped list rather than from scopeTeamId so a set of
+            // one wins over the member row, exactly as ScopedQuery has it.
+            $teamId = (int) $teams[0]['id'];
         } elseif ($user->scopeTeamId !== null) {
             $teamId = $user->scopeTeamId;
         }

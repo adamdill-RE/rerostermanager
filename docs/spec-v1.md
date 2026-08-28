@@ -300,16 +300,34 @@ Four notes:
 ```
 Admin, Executive Officer  ->  every member
 Senior Officer            ->  members whose division = the officer's division,
-                              OR, when narrowed, the teams they are scoped to
-Officer                   ->  members whose team = the officer's team
+                              OR, when scoped, the teams they are scoped to
+Officer                   ->  members whose team = the officer's team,
+                              OR, when scoped, the teams they are scoped to
 ```
 
-**A Senior Officer may be narrowed to a SET of teams** (Phase 8.5). Some Vice
-Chairmen cover three teams and some cover one, and neither "a whole division"
-nor "a single team" describes the first. The set lives in `app_user_team`, is
-set by an Admin on Designate Users, and applies to Senior Officer and above
-only — an Officer already has a working single-team scope, and anyone above
-sees everything.
+**An Officer or a Senior Officer may be scoped to a SET of teams**
+(Phase 8.5, widened to Officers in 8.6). Some Vice Chairmen cover three teams
+and some cover one, and neither "a whole division" nor "a single team"
+describes the first. Officers turned out to need the same shape for a
+different reason: a Captain runs their own team and helps with another, which
+a single `scope_team_id` cannot say. The set lives in `app_user_team` and is
+set by an Admin on Designate Users. Executive Officer and Admin are refused it
+— they see everything, so a narrowing would put a WHERE clause on a query that
+should have none — and so is a Member, who has no roster to narrow. The
+refusal is named (`not_scopable`), never silent.
+
+**A team set widens SIGHT, never assignability.** `EligibleOfficers` decides
+who may be assigned a member by the officer's own `member.team_id`, and it
+does not read scope at all. So an Officer scoped to a second team can see it,
+chase it, and log contact against it, and does **not** become one of its
+assignable officers — assignment stays same-team (§6.2). That separation is
+deliberate: helping chase a team is not the same as being its officer of
+record, and the Assign screen must not start naming somebody as one.
+
+**The division override is read only at Senior Officer and above.** Both
+`ScopedQuery` and `Access` consult team at Officer level and never division,
+so Designate Users offers the control only where it does something — an Admin
+who can set a field that changes nothing has been told a lie by the screen.
 
 Scope resolves in one place, `Rerm\Auth\User::fromRow`, so `ScopedQuery` and
 `Access` cannot disagree about it. Explicit always beats implicit:

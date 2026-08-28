@@ -242,8 +242,19 @@ $levelWord = static function (array $row): string {
                             <label for="level-<?= e((string) $row['id']) ?>">Grant a level</label>
                             <select id="level-<?= e((string) $row['id']) ?>" name="level">
                                 <?php foreach ($designate['grantable'] as $level) { ?>
+                                    <?php
+                                    // The EFFECTIVE level, not the granted one. A title-derived
+                                    // officer has no grant, so matching on granted_level selected
+                                    // nothing and the browser fell back to the first option —
+                                    // Member, the first enum case. An Admin who opened a row to
+                                    // do something else and pressed Grant silently demoted an
+                                    // Officer to Member, durably, while the row two columns left
+                                    // still read "Officer". Opening on what is in force makes
+                                    // Grant-without-changing a no-op, which is what it looks like.
+                                    $current = $row['granted_level'] ?? $row['effective_level'];
+                                    ?>
                                     <option value="<?= e($level->value) ?>"
-                                        <?= $row['granted_level'] === $level ? ' selected' : '' ?>>
+                                        <?= $current === $level ? ' selected' : '' ?>>
                                         <?= e($level->label()) ?>
                                     </option>
                                 <?php } ?>
@@ -320,11 +331,22 @@ $levelWord = static function (array $row): string {
                             <input type="hidden" name="return" value="<?= e($returnState) ?>">
 
                             <fieldset>
-                                <legend>Teams this Senior Officer covers</legend>
+                                <legend>Teams they cover</legend>
                                 <p class="hint">
-                                    Tick the teams they are responsible for. Leave every box clear
-                                    and they fall back to their whole division &mdash; or, for a
-                                    Vice Chairman, to their own team.
+                                    Tick every team they are responsible for &mdash; their own and
+                                    any they are helping with. Leave all the boxes clear and their
+                                    scope follows the roster:
+                                    <?php if ($row['effective_level'] === Rerm\Auth\Level::Officer) { ?>
+                                        their own team, as the last import placed them.
+                                    <?php } else { ?>
+                                        their whole division &mdash; or, for a Vice Chairman, their
+                                        own team.
+                                    <?php } ?>
+                                </p>
+                                <p class="hint">
+                                    This decides what they can <strong>see and chase</strong>. It does
+                                    not make them an assignable officer for the extra teams &mdash;
+                                    assignment stays same-team, read from their own member record.
                                 </p>
                                 <?php $held = array_column($row['team_scope'], 'id'); ?>
                                 <?php foreach ($designate['teams'] as $team) { ?>
@@ -341,7 +363,20 @@ $levelWord = static function (array $row): string {
                         </form>
                     <?php } ?>
 
-                    <?php if ($designate['may_override'] && $row['has_account']) { ?>
+                    <?php
+                    // The DIVISION override, and only for the levels that read
+                    // it. ScopedQuery and Access both consult team_id and never
+                    // division_id below Senior Officer, so offering this to an
+                    // Officer let an Admin set it, be told it saved, and see
+                    // nothing change (Phase 8.6). Team scope for an Officer is
+                    // the checkbox set above.
+                    //
+                    // No team select here any more: two controls for one idea
+                    // is how the two disagree. scope() leaves scope_team_id
+                    // alone when the field is absent, so this form cannot clear
+                    // an override it does not show.
+                    ?>
+                    <?php if ($designate['may_override'] && $row['has_account'] && $row['may_division_scope']) { ?>
                         <form method="post" action="<?= e($app->url('designate')) ?>">
                             <?= Csrf::field() ?>
                             <input type="hidden" name="action" value="scope">
@@ -359,22 +394,11 @@ $levelWord = static function (array $row): string {
                                 <?php } ?>
                             </select>
 
-                            <label for="st-<?= e((string) $row['id']) ?>">Scope override &mdash; team</label>
-                            <select id="st-<?= e((string) $row['id']) ?>" name="scope_team_id">
-                                <option value="">Their own team</option>
-                                <?php foreach ($designate['teams'] as $team) { ?>
-                                    <option value="<?= e((string) $team['id']) ?>"
-                                        <?= $row['scope_team_id'] === (int) $team['id'] ? ' selected' : '' ?>>
-                                        <?= e((string) $team['name']) ?>
-                                    </option>
-                                <?php } ?>
-                            </select>
-
                             <p class="hint">
-                                A Senior Officer sees their division and an Officer their team, read from
-                                their own member record. An override points them somewhere else &mdash;
+                                A Senior Officer sees their whole division, read from their own
+                                member record. An override points them at a different one &mdash;
                                 which is how somebody comes to own the members in
-                                <code>(No Division)</code>.
+                                <code>(No Division)</code>. A team set above wins over this.
                             </p>
                             <button type="submit" class="quiet">Save scope</button>
                         </form>

@@ -208,6 +208,31 @@ button {
 button:hover { filter: brightness(1.08); }
 button:focus-visible { outline: 3px solid var(--rodeo-orange); outline-offset: 2px; }
 
+/* Above 720px this stops being a phone. RESM is one screen used one-handed
+   outdoors in February and every control is sized for that; RERM is also a
+   data-comprehension tool used at a desk, which is why the tables transform
+   at this width (CLAUDE.md). The controls never got the same treatment, so a
+   Search button sat as a full-width 64px slab across a 1300px page.
+   Below this width nothing changes: the phone keeps its 64px targets. */
+@media (min-width: 720px) {
+    button {
+        width: auto;
+        min-width: 12rem;
+        min-height: 48px;
+    }
+
+    /* Full width is right inside a narrow column: these are the last control
+       in a card or a table cell, where a 12rem button beside nothing reads as
+       unfinished rather than as roomy. */
+    .roster button[type="submit"],
+    form.quick button,
+    .mcard button { width: 100%; }
+
+    /* A row of filters is a set of choices, not a set of destinations, so
+       each one is as wide as its own label rather than a third of the page. */
+    .toggle a { flex: 0 1 auto; min-width: 10rem; min-height: 48px; }
+}
+
 label { font-weight: 600; }
 
 /* ONE TEMPLATE, ONE QUERY, TWO LAYOUTS (spec 8.2). The breakpoint is 720px:
