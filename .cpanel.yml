@@ -63,8 +63,16 @@ deployment:
     # It exists on the server too, because the safest production misconfiguration
     # is one that writes a file nobody reads rather than one that emails 1,950
     # people.
-    - /bin/mkdir -p $APP_DIR/var/sessions $APP_DIR/var/imports $APP_DIR/var/mail
-    - /bin/chmod 0700 $APP_DIR/var $APP_DIR/var/sessions $APP_DIR/var/imports $APP_DIR/var/mail
+    # var/exports is where the Phase 8 export builds its two temporary files -
+    # the sheet XML, written a row at a time, and the finished .xlsx. Both are
+    # unlinked the moment the download has been sent, and by the writer's
+    # destructor if anything throws first. It has to exist and be writable
+    # BEFORE somebody presses the button, and it has to be outside the document
+    # root: the file is ~1,950 people's home addresses, and a web-reachable
+    # copy of it would be the single worst thing this application could leave
+    # lying around. 0700, like the other three, for exactly that reason.
+    - /bin/mkdir -p $APP_DIR/var/sessions $APP_DIR/var/imports $APP_DIR/var/mail $APP_DIR/var/exports
+    - /bin/chmod 0700 $APP_DIR/var $APP_DIR/var/sessions $APP_DIR/var/imports $APP_DIR/var/mail $APP_DIR/var/exports
     # Migrations are NOT run automatically, and this account has NO SSH and no
     # cPanel Terminal, so they cannot be applied from a shell here at all.
     # Apply them from a browser, deliberately, after reading what is pending:

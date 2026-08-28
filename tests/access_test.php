@@ -60,10 +60,16 @@ test('the capability matrix matches spec 4.5, transcribed independently', functi
         'set_metric_progress'      => ['officer', Scope::Scoped],
         'assign_officers'          => ['officer', Scope::Scoped],
         'view_status_dashboard'    => ['officer', Scope::Scoped],
+        // Phase 8 decided 3 moved export_roster here from Admin / Everywhere.
+        // There is ONE export and every row of it goes through
+        // ScopedQuery::forUser(), so breadth is decided by who is asking; an
+        // Officer exporting their own team exports data they already read,
+        // row by row, on View My Roster. Spec 4.5 was edited in the same
+        // commit, and this line is transcribed FROM that table.
+        'export_roster'            => ['officer', Scope::Scoped],
         'view_committee_dashboard' => ['senior_officer', Scope::Scoped],
         'designate_allowed_user'   => ['senior_officer', Scope::Scoped],
         'import_roster'            => ['admin', Scope::Everywhere],
-        'export_roster'            => ['admin', Scope::Everywhere],
         'manage_show_year'         => ['admin', Scope::Everywhere],
         'designate_admin'          => ['admin', Scope::Everywhere],
         'manage_teams'             => ['admin', Scope::Everywhere],

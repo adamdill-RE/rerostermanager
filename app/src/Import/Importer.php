@@ -8,6 +8,7 @@ use DateTimeImmutable;
 use DateTimeZone;
 use PDO;
 use Rerm\App;
+use Rerm\Audit\Action;
 use Rerm\Auth\Level;
 use Rerm\Auth\TitleMap;
 use Rerm\Roster\Spreadsheet;
@@ -1076,7 +1077,7 @@ final class Importer
                 . 'VALUES (:actor, :action, :entity, :entity_id, :after_json, :ip)'
             )->execute([
                 ':actor'      => $actorUserId,
-                ':action'     => 'import_failed',
+                ':action'     => Action::ImportFailed->value,
                 ':entity'     => 'import_batch',
                 ':entity_id'  => (string) $batchId,
                 ':after_json' => self::json(['applied_before_failure' => $applied, 'reason' => mb_substr($reason, 0, 500)]),
@@ -1393,7 +1394,7 @@ final class Importer
 
             $audit->execute([
                 ':actor'       => $actorUserId,
-                ':action'      => 'import_reset_progress',
+                ':action'      => Action::ImportResetProgress->value,
                 ':entity'      => 'member_metric',
                 ':entity_id'   => $item['member_id'] . ':' . $showYearId . ':' . $item['metric'],
                 ':before_json' => self::json([
@@ -1739,7 +1740,7 @@ final class Importer
             . 'VALUES (:actor, :action, :entity, :entity_id, :after_json, :ip)'
         )->execute([
             ':actor'      => $actorUserId,
-            ':action'     => 'import_applied',
+            ':action'     => Action::ImportApplied->value,
             ':entity'     => 'import_batch',
             ':entity_id'  => (string) $batchId,
             ':after_json' => self::json($applied),

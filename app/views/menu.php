@@ -26,11 +26,12 @@ $tiles = [
     ['cap' => Capability::AssignOfficers,        'label' => 'Assign Officers',     'route' => 'assign', 'phase' => ''],
     ['cap' => Capability::ViewCommitteeDashboard, 'label' => 'Committee Dashboard', 'route' => 'committee', 'phase' => ''],
     ['cap' => Capability::ImportRoster,          'label' => 'Import Roster',       'route' => 'import', 'phase' => ''],
-    ['cap' => Capability::ExportRoster,          'label' => 'Export Roster',       'route' => null,     'phase' => 'Phase 8'],
-    ['cap' => Capability::ManageShowYear,        'label' => 'Show Year',           'route' => null,     'phase' => 'Phase 8'],
-    ['cap' => Capability::DesignateAllowedUser,  'label' => 'Designate Users',     'route' => null,     'phase' => 'Phase 8'],
-    ['cap' => Capability::ImportRoster,          'label' => 'Flagged for Purge',   'route' => null,     'phase' => 'Phase 8'],
-    ['cap' => Capability::ViewAuditLog,          'label' => 'Audit Log',           'route' => null,     'phase' => 'Phase 8'],
+    ['cap' => Capability::ExportRoster,          'label' => 'Export Roster',       'route' => 'export', 'phase' => ''],
+    ['cap' => Capability::ManageShowYear,        'label' => 'Show Year',           'route' => 'show-year', 'phase' => ''],
+    ['cap' => Capability::DesignateAllowedUser,  'label' => 'Designate Users',     'route' => 'designate', 'phase' => ''],
+    ['cap' => Capability::ImportRoster,          'label' => 'Flagged for Purge',   'route' => 'purge',  'phase' => ''],
+    ['cap' => Capability::ManageTeams,           'label' => 'Manage Teams',        'route' => 'teams',  'phase' => ''],
+    ['cap' => Capability::ViewAuditLog,          'label' => 'Audit Log',           'route' => 'audit',  'phase' => ''],
 ];
 ?>
 <h1>Menu</h1>

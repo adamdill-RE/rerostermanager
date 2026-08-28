@@ -103,6 +103,46 @@ final class Routes
         // only, everywhere-scoped; the setup-key era ended with Phase 3.
         'import'   => Capability::ImportRoster->value,
 
+        // ----- The Admin screens (spec 7.5), Phase 8 -----------------------
+
+        // Designate Users (spec 7.5, 4.4) — Senior Officer and above, and the
+        // first screen ever to write app_user.granted_level or a scope
+        // override. Both verbs on one route: the grant and revoke forms post
+        // back to the search they came from and 303 to it. Every write
+        // re-checks Access::allows() with a Subject AND Access::mayGrant()
+        // with the level, because the cap is on the LEVEL and the scope is on
+        // the MEMBER and they are two different questions.
+        'designate' => Capability::DesignateAllowedUser->value,
+
+        // Flagged for Purge (spec 6.5) — the second half of the import
+        // lifecycle, so it carries the import's capability rather than
+        // inventing a seventh: Admin, everywhere. A purge is a soft delete
+        // and Restore is on the same screen, because an import does not clear
+        // purged_at and without Restore a mistake needs somebody at the
+        // database.
+        'purge'    => Capability::ImportRoster->value,
+
+        // Export Roster (spec 7.5, Phase 8 decided 3) — Officer and above,
+        // SCOPED. One export, one code path, breadth decided by
+        // ScopedQuery::forUser(). The file itself is a POST: it is audited,
+        // and its body is ~85 people's home addresses, which is not something
+        // a GET an <img src> can send should produce.
+        'export'   => Capability::ExportRoster->value,
+
+        // Show Year (spec 5.1) — Admin. Create, set active, open/close, and
+        // the rollover that carries eligible assignments into a new year.
+        // 'show-year', hyphenated like 'log-contact'.
+        'show-year' => Capability::ManageShowYear->value,
+
+        // The Audit Log (spec 7.5) — Admin, read-only, filterable by actor,
+        // action and date. No write path at all, so no POST and no CSRF.
+        'audit'    => Capability::ViewAuditLog->value,
+
+        // Manage Teams (spec 7.3) — Admin. team.area only: it is display
+        // grouping, and a test holds Access, ScopedQuery, EligibleOfficers
+        // and AssignOfficers clean of the column, comments included.
+        'teams'    => Capability::ManageTeams->value,
+
         // Operational, key-guarded, unchanged from Phase 0.
         'status'   => self::STATUS_KEY,
         'setup'    => self::SETUP_KEY,

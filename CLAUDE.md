@@ -84,6 +84,14 @@ URL and cookie path is built from `app.base_path` (`/rerm/`) via
 - **Nothing ever deletes a member or a contact.** Purge is `purged_at`; every
   foreign key referencing `member` is `RESTRICT`, never `CASCADE`. Contact
   history must still be queryable years from now (`docs/spec-v1.md` §5.5).
+  Closing a show year **freezes**; a rollover **copies**; a revoked grant
+  **deactivates**. There is no `DELETE` in any Phase 8 write path and a test
+  asserts that by reading their source.
+- **An export is PII leaving the building.** It is built in `var/exports`
+  (0700, outside the document root), unlinked as soon as it has been sent, and
+  logged with the actor, the scope and the row count. Every cell is written as
+  a **string** — `Customer Number` 1234567 must not become 1234567.0, which is
+  the same rule `Spreadsheet::open()` enforces coming the other way.
 - **No member data in git — not the export, and not a row copied out of it.**
   **This repository is public and must stay public**, because cPanel's Deploy
   HEAD Commit reads it over HTTPS and this account has no SSH key. The database
@@ -186,7 +194,8 @@ area team names — `Reed Road`, `610`, `Emlr`, `Bus Ops`, `Ost-Smith Lands`,
 `Chuckwagon`, `Administration` — are the area list, and every other team takes
 the longest of those its name starts with. A team matching none keeps `NULL`
 and groups under **(No area)**, the same honest-placeholder pattern as
-`(No Division)`. The Admin editor is still Phase 8's (`docs/spec-v1.md` §7.3).
+`(No Division)`. Phase 8's **Manage Teams** makes it editable, one team at a
+time (`docs/spec-v1.md` §7.3).
 
 ### Scope is derived from title, not from placement
 
@@ -203,6 +212,12 @@ member's own division or team.
 Five levels. `Rerm\Auth\Level` is the enum; `Rerm\Auth\Capability` and
 `Rerm\Auth\Access` are the matrix, transcribed once and re-transcribed in
 `tests/access_test.php` so a change has to be made twice on purpose.
+
+One capability is **scoped rather than Admin-only, and deliberately**:
+`export_roster` is Officer / Scoped (§4.5). There is one export and every row
+of it goes through `ScopedQuery::forUser()`, so breadth is decided by who is
+asking rather than by which button they pressed — the same shape as
+`view_roster`, for the same reason.
 
 | Level | Sees | Titles that map here |
 | --- | --- | --- |
