@@ -568,7 +568,24 @@ function ad_teardown(PDO $pdo): void
     // app_user.granted_by references app_user, so one fixture account
     // granting another makes the table its own parent. Cleared first, or the
     // delete below trips fk_app_user_granted_by.
-    $pdo->exec("UPDATE app_user SET granted_by = NULL WHERE granted_by IN ({$users}) OR member_id IN ({$members})");
+    //
+    // The ids are read into PHP rather than left as a subquery, because
+    // MySQL refuses to UPDATE a table while SELECTing from it in the same
+    // statement — error 1093, "You can't specify target table 'app_user' for
+    // update in FROM clause". MariaDB materialises the subquery and allows
+    // it. Production is MySQL 8.0 (docs/hosting.md), so the engine that
+    // refuses is the one that counts; CI runs both, which is how this was
+    // caught.
+    $doomed = $pdo->query("SELECT id FROM app_user WHERE member_id IN ({$members})")
+        ->fetchAll(PDO::FETCH_COLUMN);
+
+    if ($doomed !== []) {
+        $ids = implode(', ', array_map('intval', $doomed));
+        $pdo->exec("UPDATE app_user SET granted_by = NULL WHERE granted_by IN ({$ids})");
+    }
+
+    // `member` is a different table, so this one is a plain subquery.
+    $pdo->exec("UPDATE app_user SET granted_by = NULL WHERE member_id IN ({$members})");
     $pdo->exec("DELETE FROM app_user WHERE member_id IN ({$members})");
     $pdo->exec("DELETE FROM member WHERE member_number LIKE 'AD%'");
     $pdo->exec("DELETE FROM import_warning WHERE import_batch_id IN (SELECT id FROM import_batch WHERE filename LIKE 'AD-%')");
