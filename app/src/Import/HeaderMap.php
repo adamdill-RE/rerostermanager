@@ -100,6 +100,48 @@ final class HeaderMap
     ];
 
     /**
+     * The imported columns the EXPORT writes back, in this order and with
+     * these spellings (Phase 8 decided 3). Rodeo Houston's own header row,
+     * so a file this application produces is a file this application — and
+     * theirs — can read; a test round-trips one through XlsxReader.
+     *
+     * KNOWN minus two, and each omission is a decision rather than an
+     * oversight:
+     *
+     *   Subcommittee 2  is junk in the observed export (`Tba 9` x1898) and is
+     *                   NOT imported, so there is no stored value to write
+     *                   back. A column of blanks would be a column of blanks.
+     *   Name            is "Last, First M." (docs/data-findings.md 1) and is
+     *                   likewise not imported — it is redundant with First
+     *                   Name and Last Name, and the middle initial is nowhere
+     *                   in this database. Reconstructing it would send Rodeo
+     *                   Houston a value we invented, in a column they own,
+     *                   with a middle initial silently dropped. That is the
+     *                   same objection spec 5.1a rule 2 makes about writing
+     *                   `(No Division)` back as text, and it gets the same
+     *                   answer.
+     *
+     * Everything the app itself generated is appended AFTER these by
+     * Rerm\Export\RosterExport, which is also the only place those column
+     * names are spelled.
+     *
+     * @var array<int, string>
+     */
+    public const EXPORTED = [
+        self::TITLE, self::CUSTOMER_NUMBER, self::FULL_NAME,
+        self::PREFIX, self::FIRST_NAME, self::LAST_NAME, self::PREFERRED_NAME,
+        self::LEGAL_NAME_VERIFIED, self::SUBCOMMITTEE_1, self::SUBCOMMITTEE_3,
+        self::ADDRESS, self::CITY, self::STATE, self::ZIP,
+        self::PHONE, self::PHONE_TYPE, self::EMAIL,
+        self::SHOW_DUES, self::COMMITTEE_DUES, self::INDEMNITY,
+        self::BACKGROUND_CHECK, self::HARASSMENT_TRAINING,
+        self::ROOKIE, self::BADGE_RELEASED, self::BADGE_RELEASED_DATE,
+        self::BADGE_ISSUE_DATE, self::BADGE_PICKUP_PERSON,
+        self::ELIGIBLE_SERVICE, self::ELIGIBILITY_UPDATED, self::LTC_APPLIED,
+        self::IN_OTHER_COMMITTEES,
+    ];
+
+    /**
      * @param array<string, int> $byKey     normalised header -> column index
      * @param array<int, string> $spelled   headers as the file spells them
      * @param array<int, string> $duplicate headers that appeared more than once

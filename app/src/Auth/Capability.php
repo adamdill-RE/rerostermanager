@@ -37,13 +37,31 @@ enum Capability: string
     case AssignOfficers      = 'assign_officers';
     case ViewStatusDashboard = 'view_status_dashboard';
 
+    // Officer and above, inside their scope — MOVED HERE BY PHASE 8, from
+    // Admin / Everywhere, deliberately (Phase 8 decided 3).
+    //
+    // There is ONE export and every row of it comes through
+    // ScopedQuery::forUser(), exactly like every other roster read, so
+    // breadth is decided by who is asking rather than by which button they
+    // pressed: an Admin gets the committee, a Senior Officer their division,
+    // an Officer their team. Kept at Admin / Everywhere the capability would
+    // have needed a second, scoped code path beside it — and two paths that
+    // must agree about who may read 1,954 home addresses is the arrangement
+    // this matrix exists to avoid.
+    //
+    // The floor is Officer because an Officer exporting their own team
+    // exports data they already read, row by row, on View My Roster. The
+    // shape is view_roster's, for view_roster's reason: the route guard
+    // answers "may they use this screen" and ScopedQuery answers "which
+    // rows". Spec 4.5 and 7.5 were updated in the same commit.
+    case ExportRoster        = 'export_roster';
+
     // Senior Officer and above, inside their scope.
     case ViewCommitteeDashboard = 'view_committee_dashboard';
     case DesignateAllowedUser   = 'designate_allowed_user';
 
     // Admin, everywhere.
     case ImportRoster   = 'import_roster';
-    case ExportRoster   = 'export_roster';
     case ManageShowYear = 'manage_show_year';
     case DesignateAdmin = 'designate_admin';
     case ManageTeams    = 'manage_teams';
@@ -63,13 +81,13 @@ enum Capability: string
             self::LogContact,
             self::SetMetricProgress,
             self::AssignOfficers,
-            self::ViewStatusDashboard     => Level::Officer,
+            self::ViewStatusDashboard,
+            self::ExportRoster            => Level::Officer,
 
             self::ViewCommitteeDashboard,
             self::DesignateAllowedUser    => Level::SeniorOfficer,
 
             self::ImportRoster,
-            self::ExportRoster,
             self::ManageShowYear,
             self::DesignateAdmin,
             self::ManageTeams,
@@ -89,10 +107,10 @@ enum Capability: string
             self::AssignOfficers,
             self::ViewStatusDashboard,
             self::ViewCommitteeDashboard,
-            self::DesignateAllowedUser    => Scope::Scoped,
+            self::DesignateAllowedUser,
+            self::ExportRoster            => Scope::Scoped,
 
             self::ImportRoster,
-            self::ExportRoster,
             self::ManageShowYear,
             self::DesignateAdmin,
             self::ManageTeams,

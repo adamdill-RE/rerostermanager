@@ -56,6 +56,56 @@ final class MemberReads
     }
 
     /**
+     * Who set a metric's progress and when, for the given members — the
+     * export's two extra columns per scored metric, and nothing else needs
+     * them.
+     *
+     * A SEPARATE query rather than two more columns and a join on
+     * metricsFor(): that one runs on every roster and dashboard page render
+     * against a 500ms budget, and an officer-name join it would never use is
+     * a cost paid a hundred times a day to serve one screen a few times a
+     * year.
+     *
+     * @param array<int, int> $memberIds
+     * @return array<int, array<string, array{by: string, at: string, note: string}>>
+     */
+    public function metricProgressFor(array $memberIds, int $showYearId): array
+    {
+        if ($memberIds === []) {
+            return [];
+        }
+
+        [$places, $bind] = self::idList($memberIds, 'progress_member');
+
+        $read = $this->pdo->prepare(
+            'SELECT mm.member_id, mm.metric, mm.progress_at, mm.progress_note,'
+            . ' om.preferred_name AS officer_preferred, om.first_name AS officer_first,'
+            . ' om.last_name AS officer_last, om.member_number AS officer_number'
+            . ' FROM member_metric mm'
+            . ' INNER JOIN app_user au ON au.id = mm.progress_by'
+            . ' INNER JOIN member om ON om.id = au.member_id'
+            . " WHERE mm.show_year_id = :year AND mm.member_id IN ({$places})"
+        );
+        $read->execute($bind + [':year' => $showYearId]);
+
+        $byMember = [];
+        foreach ($read->fetchAll() as $row) {
+            $byMember[(int) $row['member_id']][(string) $row['metric']] = [
+                'by' => RosterPage::displayName(
+                    (string) $row['officer_preferred'],
+                    (string) $row['officer_first'],
+                    (string) $row['officer_last'],
+                    (string) $row['officer_number']
+                ),
+                'at'   => (string) ($row['progress_at'] ?? ''),
+                'note' => (string) $row['progress_note'],
+            ];
+        }
+
+        return $byMember;
+    }
+
+    /**
      * The full contact history for the given members and show year — the
      * expansion needs every entry, so the newest-first list serves both it
      * and a row's "last contact" cell. One query.

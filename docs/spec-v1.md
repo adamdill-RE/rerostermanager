@@ -334,10 +334,10 @@ granted it.
 | `set_metric_progress` | Officer | Scoped |
 | `assign_officers` | Officer | Scoped |
 | `view_status_dashboard` | Officer | Scoped |
+| `export_roster` | Officer | Scoped |
 | `view_committee_dashboard` | Senior Officer | Scoped |
 | `designate_allowed_user` | Senior Officer | Scoped, capped at own level |
 | `import_roster` | Admin | Everywhere |
-| `export_roster` | Admin | Everywhere |
 | `manage_show_year` | Admin | Everywhere |
 | `designate_admin` | Admin | Everywhere |
 | `manage_teams` | Admin | Everywhere |
@@ -345,6 +345,16 @@ granted it.
 
 Encoded once in `Rerm\Auth\Capability` and `Rerm\Auth\Access`, transcribed
 again in `tests/access_test.php`.
+
+**`export_roster` moved from Admin / Everywhere to Officer / Scoped in Phase 8**
+(§7.5). There is one export and every row of it goes through
+`ScopedQuery::forUser()`, exactly like every other roster read, so breadth is
+decided by who is asking rather than by which button they pressed: an Admin or
+Executive Officer gets the whole committee, a Senior Officer their division, an
+Officer their team. The shape is `view_roster`'s and the reason is the same —
+the route guard answers "may they use this screen" and `ScopedQuery` answers
+"which rows". An Officer exporting their own team exports data they already
+read, row by row, on View My Roster.
 
 **A scoped capability requires a subject.** Asking "may this officer log a
 contact?" without naming the member is not a question with an answer, and
@@ -367,9 +377,26 @@ nobody would do. Metrics and contacts do **not** carry: they reset, because
 last year's dues and last year's phone calls say nothing about this year.
 
 Carried assignments are copied, not shared — new rows against the new show
-year, so editing this year's cannot rewrite last year's record. Any carried
-assignment whose officer is no longer eligible (§6.6) is carried anyway and
-flagged for reassignment rather than dropped.
+year, so editing this year's cannot rewrite last year's record.
+
+**Only assignments whose officer is still eligible are carried** (Phase 8
+decided 5). This supersedes the original rule, which carried an ineligible
+assignment anyway and flagged it for reassignment — a decision made before
+Phase 6 turned "officer no longer eligible" into a real, visible bucket that
+somebody works. Eligible means what `Rerm\Roster\EligibleOfficers` already
+means by it and nothing new: the officer is a visible member (not system, not
+purged, not absent-flagged), still on that member's team, and still at Officer
+level or above by effective level. Rank comparison in PHP, never a SQL `>=` on
+the ENUM.
+
+The consequence is deliberate. A member whose only officer no longer qualifies
+arrives in the new year **unassigned** — bucket 1 on the Assign screen, where
+somebody is already working — rather than pre-loaded into bucket 2 as invisible
+cleanup nobody asked for. A year rolls over into a clean state.
+
+It is never silent. The rollover reports both numbers before it runs and logs
+them after: how many assignments carried, and how many were dropped because
+their officer no longer qualifies.
 
 ### 5.1a Divisions, and the one that is ours
 
@@ -1069,22 +1096,87 @@ Removing an assignment sets `removed_at`; the row is never deleted.
 
 **Import Roster** — §6.
 
-**Export Full Roster by Show Year** — CSV of every imported column plus
+**Export Roster by Show Year** — `.xlsx`, not CSV (Phase 8 decided 3). Every
+imported column in `Rerm\Import\HeaderMap`'s order and spelling, then
 everything the app generated: effective status per metric, progress and who set
-it, assigned officers, contact count, last contact date/type/officer. Streamed
-with `fputcsv` to `php://output`, never assembled in memory: 1,954 rows × ~45
-columns against a 128M limit is survivable but pointless to risk.
+it and when, division, area, assigned officers, contact count, last contact
+date/type/officer. 55 columns.
 
-**Show Year** — create, set active, open/close. Closing warns how many
-in-progress items will freeze.
+It is **one export, not two**, and `export_roster` is Officer / Scoped
+accordingly (§4.5). Every row goes through `ScopedQuery::forUser()`, so breadth
+is decided by who is asking — an Admin gets the committee, a Senior Officer
+their division, an Officer their team — and a `team[]` filter (§7.2's shape,
+never a second spelling) intersects that predicate, so it can only ever narrow.
+The screen states the exact row count and the full column list *before* the
+file is built.
 
-**Designate Users** — search the whole roster, regardless of title, and set a
-level. The granter's own level caps what they may set. Shows current level,
-whether it came from title or grant, and who granted it. Revocation here.
+Two rules with tests behind them: **`(No Division)` writes back as blank**
+(§5.1a rule 2), and **the master administrator is never exported** (`is_system`,
+which falls out of `ScopedQuery` rather than being a special case).
 
-**Flagged for Purge** — §6.5.
+"Never assembled in memory" holds in spirit and changes in mechanism, because
+`ZipArchive` writes to a file path and not to `php://output`: the sheet XML is
+streamed to a temp file one row at a time, zipped, `readfile()`d out and
+unlinked. Measured at the real roster's size: **1,954 rows × 55 columns in
+0.45s using 4 MB**, against a 30s and 128M budget. The temp files live in
+`var/exports`, 0700 and outside the document root — an export is ~1,950
+people's home addresses, and it is logged with the actor, the scope and the row
+count.
 
-**Audit Log** — filterable by actor, action and date.
+Written with no Composer: `Rerm\Export\XlsxWriter` builds the five-part
+package with `ZipArchive` and escaped string concatenation. Every cell is an
+inline string (`t="inlineStr"`), so `Customer Number` 1234567 cannot become
+1234567.0 — the same rule `XlsxReader` enforces coming the other way, made
+structural rather than remembered.
+
+**Show Year** — create, set active, open/close, and carry assignments forward.
+Closing **warns and then closes** (Phase 8 decided 1): the screen says how many
+metric progress rows are still `in_progress` or `claimed_complete` and freezes
+them as they are, because a metric stuck mid-chase is the normal end-of-year
+state and refusing would mean faking edits in order to be allowed to close. The
+count is shown before the confirm and recorded in the audit row. Closing never
+clears anything (§5.5). The rollover carries only still-eligible assignments and
+reports both numbers before it runs — see §5.1.
+
+**Designate Users** — search the roster **regardless of title**, and set a
+level. That is the point of the search: 1,758 of 1,954 members have no account
+at all, and every one of them is a legitimate target for a grant. The granter's
+own level caps what they may set (§4.4, `Access::mayGrant()`). Shows current
+level, whether it came from title or grant, who granted it and when, and the
+state of the account. Revocation here, capped by the *granted* level so it is
+available to exactly the people who could have made the grant (Phase 8
+decided 2).
+
+The list itself still goes through `ScopedQuery::forUser()`, because
+`designate_allowed_user` is Scoped (§4.5): for an Admin or Executive Officer
+that *is* the whole roster, and for a Senior Officer it is the division they may
+actually act on — so the screen never offers a control the write path is obliged
+to refuse.
+
+An Admin may also set the **scope override** here (§4.4) — the `app_user`
+division and team columns that have existed since Phase 1 and that nothing wrote
+until now. It is the only mechanism that can point a Senior Officer at a
+division other than their own, which is how the 72 members in `(No Division)`
+come to have an owner (§5.1a).
+
+**Flagged for Purge** — §6.5. Per-member checkboxes, never a bulk sweep, plus a
+typed `CONFIRM`. A **Restore** control sits beside it, because an import does
+*not* clear `purged_at`: without it a mistaken purge is invisible forever and
+needs somebody at the database (Phase 8 decided 4). Both directions are logged;
+nothing cascades from either.
+
+**Manage Teams** — §7.3's `team.area`, editable by an Admin, one team at a time.
+It stays display grouping: `area` may appear here and must still never appear in
+`Access`, `ScopedQuery`, `EligibleOfficers` or `AssignOfficers`, which
+`tests/access_test.php` asserts for all four, comments included.
+
+**Audit Log** — filterable by actor, action and date, paginated at the two
+configured page sizes. Read-only: no POST, no CSRF, no write path, because an
+audit row is append-only and outlives whatever it describes. The action filter
+is why `Rerm\Audit\Action` exists — a filter over free text is a filter that
+silently matches nothing the first time somebody misspells a verb — and it also
+offers any string the table holds that the enum does not know, so history stays
+findable.
 
 ---
 
@@ -1214,7 +1306,10 @@ reach the team nobody is working in two taps, and every figure on the roll-up
 lands on exactly the people it counted. **Shipped 2026-08-27.**
 
 ### Phase 8 — Admin
-§7.5: designation, export, show-year control, purge confirmation, audit log.
+§7.5: designation and the scope override, purge and restore, the `.xlsx`
+export, show-year control and the rollover, the audit log, and `team.area`
+made editable. Widens `export_roster` to Officer / Scoped (§4.5) and changes
+what a rollover carries (§5.1).
 **Done when** a full round trip works: import → chase → export.
 
 ### Phase 9 — v2
@@ -1246,7 +1341,10 @@ stays findable.
 | OI-11 | Maximum officers per member | 3, matching the brief's "generally 2, sometimes 3" |
 | OI-12 | Multi-year contact history reporting (v2) | Deferred to v2, but v1 **retains the data unconditionally** (§5.5) so the report is a query rather than a migration |
 | ~~OI-13~~ | Which roll-up columns lead the Committee Dashboard? | **Decided: both, all sortable**, default sort never-contacted descending (§7.3). At 50–65% outstanding, compliance does not distinguish teams; contact and coverage do |
-| ~~OI-14~~ | Is `team.area` worth populating for the middle roll-up level? | **Decided: yes, seeded by migration in Phase 7**, Admin-editable in Phase 8, longest-prefix rule over the seven bare-area team names (§7.3) |
+| ~~OI-14~~ | Is `team.area` worth populating for the middle roll-up level? | **Closed: yes.** Seeded by migration 006 in Phase 7, Admin-editable from Phase 8's Manage Teams (§7.5), longest-prefix rule over the seven bare-area team names (§7.3) |
+| ~~OI-18~~ | Does the Designate Users search read through `ScopedQuery`? | **Decided: yes** (§7.5). "The whole roster" means regardless of title, not regardless of scope: `designate_allowed_user` is Scoped (§4.5), so an unscoped list would show a Senior Officer names their own roster refuses them and then offer a control the write path must refuse. For an Admin it is the whole roster either way |
+| ~~OI-19~~ | Does the scope override get a UI in v1? | **Decided: yes, in Phase 8**, on Designate Users, Admin only (§4.4, §7.5). It is the only mechanism that can point a Senior Officer at a division other than their own, which is what gives the 72 members of `(No Division)` an owner — so deferring it would have left §5.1a's central claim unimplementable |
+| ~~OI-20~~ | Does the audit vocabulary become a type? | **Decided: yes** — `Rerm\Audit\Action` (§7.5). The Audit Log filters by action, and a filter over free text silently matches nothing the first time somebody misspells a verb. Reading stays tolerant: an unknown historical string renders as itself and is still filterable |
 | ~~OI-15~~ | How does drill-down interact with §7.1's My members default? | **Decided: the link carries `mode=team` explicitly** (§7.3). Phase 6 made the default real, and it would otherwise hide the very people the drill-down counted |
 | ~~OI-16~~ | Does assignment coverage belong on the Committee Dashboard? | **Decided: beside the compliance numbers**, not in a panel of its own (§7.3). Unassigned changes what you do about a team's bad numbers |
 | ~~OI-17~~ | Does the Assign screen order by contact age or by title? | **Decided: by title, then name** (§7.4), superseding decided 5 for that screen. Never-contacted-first stays on §7.1, which is the screen for deciding who to call |

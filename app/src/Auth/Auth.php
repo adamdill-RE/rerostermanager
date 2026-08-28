@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Rerm\Auth;
 
 use Rerm\App;
+use Rerm\Audit\Action;
+use Rerm\Audit\AuditLog;
 use Rerm\Session;
 
 /**
@@ -160,7 +162,7 @@ final class Auth
         $result = $this->tokens->validateCookie($cookie);
 
         if ($result === TokenStore::REFUSED_MISMATCH) {
-            $this->audit('auth_token_refused', 'known selector, wrong verifier — refused, not revoked (spec 3.4)');
+            $this->audit(Action::AuthTokenRefused, 'known selector, wrong verifier — refused, not revoked (spec 3.4)');
 
             return null;
         }
@@ -172,7 +174,7 @@ final class Auth
         if ($fresh === null) {
             // Lost the compare-and-swap to a sibling request. Same treatment
             // as a mismatch, and for the same reason.
-            $this->audit('auth_token_refused', 'lost a rotation race — refused, not revoked (spec 3.4)');
+            $this->audit(Action::AuthTokenRefused, 'lost a rotation race — refused, not revoked (spec 3.4)');
 
             return null;
         }
@@ -236,17 +238,13 @@ final class Auth
         ]);
     }
 
-    private function audit(string $action, string $detail): void
+    /**
+     * No actor by design: the whole point of a refused token is that
+     * nobody was authenticated, so AuditLog is handed null.
+     */
+    private function audit(Action $action, string $detail): void
     {
-        $this->app->db()->prepare(
-            'INSERT INTO audit_log (actor_user_id, action, entity, entity_id, after_json, ip) '
-            . 'VALUES (NULL, :action, :entity, :entity_id, :after_json, :ip)'
-        )->execute([
-            ':action'     => $action,
-            ':entity'     => 'auth_token',
-            ':entity_id'  => '',
-            ':after_json' => json_encode(['detail' => $detail], JSON_UNESCAPED_SLASHES),
-            ':ip'         => substr((string) ($_SERVER['REMOTE_ADDR'] ?? ''), 0, 45),
-        ]);
+        (new AuditLog($this->app->db()))
+            ->record(null, $action, 'auth_token', '', null, ['detail' => $detail]);
     }
 }

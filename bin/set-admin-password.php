@@ -103,7 +103,7 @@ $pdo->prepare(
     'INSERT INTO audit_log (actor_user_id, action, entity, entity_id, after_json, ip) '
     . 'VALUES (NULL, :action, :entity, :entity_id, :after_json, :ip)'
 )->execute([
-    ':action'     => 'set_master_password',
+    ':action'     => Rerm\Audit\Action::SetMasterPassword->value,
     ':entity'     => 'app_user',
     ':entity_id'  => (string) (int) $account['id'],
     ':after_json' => '{"source":"bin/set-admin-password.php"}',

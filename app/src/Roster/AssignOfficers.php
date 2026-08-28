@@ -7,6 +7,8 @@ namespace Rerm\Roster;
 use PDO;
 use PDOException;
 use Rerm\App;
+use Rerm\Audit\Action;
+use Rerm\Audit\AuditLog;
 use Rerm\Auth\Access;
 use Rerm\Auth\Capability;
 use Rerm\Auth\Subject;
@@ -316,7 +318,7 @@ final class AssignOfficers
 
                 $assigned++;
                 $audit[] = [
-                    'action'    => 'assign_officer',
+                    'action'    => Action::AssignOfficer,
                     'entity_id' => (string) $this->pdo->lastInsertId(),
                     'before'    => null,
                     'after'     => [
@@ -485,7 +487,7 @@ final class AssignOfficers
 
             $stamped++;
             $audit[] = [
-                'action'    => 'remove_assignment',
+                'action'    => Action::RemoveAssignment,
                 'entity_id' => (string) $row['assignment_id'],
                 'before'    => [
                     'member_id'         => $row['member_id'],
@@ -500,45 +502,31 @@ final class AssignOfficers
     }
 
     /**
-     * The paper trail, batched. There is no removed_by column on assignment
-     * by design (Phase 6): the audit row carries the actor, the member, the
-     * officer and the time, and it is append-only, which a column on a row
-     * that can be superseded is not.
+     * The paper trail. There is no removed_by column on assignment by design
+     * (Phase 6): the audit row carries the actor, the member, the officer and
+     * the time, and it is append-only, which a column on a row that can be
+     * superseded is not.
+     *
+     * Since Phase 8 the INSERT itself lives in Rerm\Audit\AuditLog — one
+     * spelling of the JSON encoding and the actor, shared with the six
+     * screens that phase added.
      *
      * @param array<int, array<string, mixed>> $rows
      */
     private function writeAudit(User $user, array $rows): void
     {
-        if ($rows === []) {
-            return;
+        $entries = [];
+        foreach ($rows as $row) {
+            $entries[] = [
+                'action'    => $row['action'],
+                'entity'    => 'assignment',
+                'entity_id' => (string) $row['entity_id'],
+                'before'    => $row['before'],
+                'after'     => $row['after'],
+            ];
         }
 
-        $ip = substr((string) ($_SERVER['REMOTE_ADDR'] ?? ''), 0, 45);
-
-        // Chunked multi-row inserts: the database is on another machine, and
-        // one round trip per audit row would double the cost of assigning a
-        // team. Placeholders are numbered per chunk because a named
-        // placeholder cannot be reused within one statement here.
-        foreach (array_chunk($rows, 50) as $chunk) {
-            $places = [];
-            $bind   = [];
-            foreach (array_values($chunk) as $i => $row) {
-                $places[] = "(:actor_{$i}, :action_{$i}, 'assignment', :entity_{$i},"
-                    . " :before_{$i}, :after_{$i}, :ip_{$i})";
-                $bind[":actor_{$i}"]  = $user->id;
-                $bind[":action_{$i}"] = (string) $row['action'];
-                $bind[":entity_{$i}"] = (string) $row['entity_id'];
-                $bind[":before_{$i}"] = self::json($row['before']);
-                $bind[":after_{$i}"]  = self::json($row['after']);
-                $bind[":ip_{$i}"]     = $ip;
-            }
-
-            $this->pdo->prepare(
-                'INSERT INTO audit_log'
-                . ' (actor_user_id, action, entity, entity_id, before_json, after_json, ip)'
-                . ' VALUES ' . implode(', ', $places)
-            )->execute($bind);
-        }
+        (new AuditLog($this->pdo))->recordMany($user, $entries);
     }
 
     /** How many members this officer currently holds this show year. */
@@ -637,12 +625,5 @@ final class AssignOfficers
     {
         return $e->getCode() === '23000'
             && (int) ($e->errorInfo[1] ?? 0) === 1062;
-    }
-
-    private static function json(mixed $value): ?string
-    {
-        return $value === null
-            ? null
-            : (string) json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     }
 }
