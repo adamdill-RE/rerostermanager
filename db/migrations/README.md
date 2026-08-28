@@ -43,6 +43,9 @@ Every one of these is load-bearing on this host — see `docs/hosting.md`.
 | `004_import_staging.sql` | The staging half of the two-step apply (§6.3). |
 | `005_import_failure.sql` | What a half-applied import leaves behind, so it stays recoverable. |
 | `006_seed_team_area.sql` | `team.area` by the longest-prefix rule over the seven bare-area team names (§7.3), and the one line that ends "Master Administrator Administrator". Pure data, atomic. |
+| `007_rename_absent_to_dropped.sql` | "Absent" becomes "dropped", column, ENUM value and counter alike. |
+| `008_user_team_scope.sql` | `app_user_team` — a scope that is a SET of teams. |
+| `009_contact_history_import.sql` | The staging tables for a contact history load (§6.7), and `contact_log.contact_import_batch_id`. |
 
 `schema_migration` is created by the migrator itself rather than by a
 migration: something has to exist before the first migration can be recorded,

@@ -1990,6 +1990,170 @@ function import_act(Rerm\App $app, Rerm\Auth\User $actor): array
     return ['notices' => [], 'batch' => null];
 }
 
+/**
+ * Officers a contact history load can be attributed to.
+ *
+ * Every ACTIVE account, not only the chosen team's, because an officer who
+ * helped chase another team is not on it — and because the default is a
+ * choice the Admin makes once, before the file has even been read, when
+ * nothing yet knows which team it is about.
+ *
+ * @return array<int, array<string, mixed>>
+ */
+function contacts_officers(Rerm\App $app): array
+{
+    try {
+        return $app->db()->query(
+            'SELECT u.id, m.member_number, m.first_name, m.last_name, m.preferred_name,'
+            . ' t.name AS team_name'
+            . ' FROM app_user u JOIN member m ON m.id = u.member_id'
+            . ' LEFT JOIN team t ON t.id = m.team_id'
+            . ' WHERE u.is_active = 1 AND m.purged_at IS NULL'
+            . ' ORDER BY m.last_name, m.first_name'
+        )->fetchAll();
+    } catch (Throwable $e) {
+        return [];
+    }
+}
+
+/**
+ * The uploaded history file's temporary path, or a message saying what went
+ * wrong. The roster import's twin, against its own field name.
+ *
+ * @return array{0: ?string, 1: string} path, error
+ */
+function contacts_uploaded_file(): array
+{
+    $file = $_FILES['history'] ?? null;
+    if (!is_array($file) || ($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+        return [null, 'Choose a file first.'];
+    }
+
+    $error = (int) $file['error'];
+    if ($error !== UPLOAD_ERR_OK) {
+        return [null, match ($error) {
+            UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE => sprintf(
+                "That file is larger than %s, this server's upload ceiling. A contact history "
+                . 'is a few hundred rows of text, so a file that big is almost certainly the '
+                . 'roster export — which goes to Import Roster instead.',
+                (string) ini_get('upload_max_filesize')
+            ),
+            UPLOAD_ERR_PARTIAL   => 'The upload was cut off part way. Try again.',
+            UPLOAD_ERR_NO_TMP_DIR, UPLOAD_ERR_CANT_WRITE => 'The server could not write the upload to disk.',
+            default              => 'The upload failed (error ' . $error . ').',
+        }];
+    }
+
+    $path = (string) ($file['tmp_name'] ?? '');
+    if ($path === '' || !is_uploaded_file($path)) {
+        return [null, 'That was not an uploaded file.'];
+    }
+
+    return [$path, ''];
+}
+
+/**
+ * Runs the contact history action, if the request is one.
+ *
+ * The file is read straight from PHP's own temporary upload and never copied
+ * anywhere. Nothing needs it after parsing — the staged rows are what the
+ * apply reads — and it is a list of who called whom, which is the sort of
+ * thing best kept nowhere. The sha256 on the batch still answers "have we
+ * loaded this exact file before" without keeping a byte of it.
+ *
+ * @return array{notices: array<int, array{0: string, 1: string}>, batch: ?int}
+ */
+function contacts_act(Rerm\App $app, Rerm\Auth\User $actor): array
+{
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        return ['notices' => [], 'batch' => null];
+    }
+
+    // FIRST, before anything reads $_POST — see import_act(): past
+    // post_max_size, PHP discards the body and the request arrives looking
+    // like a form that was never submitted, and then like a CSRF failure.
+    if ($_POST === [] && $_FILES === [] && (int) ($_SERVER['CONTENT_LENGTH'] ?? 0) > 0) {
+        return ['notices' => [['danger', import_oversize_message()]], 'batch' => null];
+    }
+
+    $action = $_POST['action'] ?? '';
+    if ($action === '') {
+        return ['notices' => [], 'batch' => null];
+    }
+
+    if (!Rerm\Csrf::check()) {
+        return ['notices' => [stale_form_notice()], 'batch' => null];
+    }
+
+    $importer = Rerm\Import\ContactImporter::fromApp($app);
+
+    try {
+        if ($action === 'stage') {
+            [$path, $error] = contacts_uploaded_file();
+            if ($path === null) {
+                return ['notices' => [['danger', $error]], 'batch' => null];
+            }
+
+            $officerId = (int) ($_POST['officer_id'] ?? 0);
+            $teamId    = ($_POST['team_id'] ?? '') !== '' ? (int) $_POST['team_id'] : null;
+
+            $notices = [];
+            $already = $importer->appliedWithSameContents($path);
+            if ($already !== null) {
+                $notices[] = ['warn', sprintf(
+                    'This exact file was already loaded on %s UTC, as batch %s, writing %s '
+                    . 'contact(s). Loading it again is safe — every row it already wrote is '
+                    . 'recognised below as already logged — but it will probably do nothing.',
+                    (string) $already['applied_at'],
+                    (string) $already['id'],
+                    number_format((int) $already['rows_inserted'])
+                )];
+            }
+
+            // basename only: the browser sends whatever it likes here, and
+            // this string is stored and rendered.
+            $name    = basename((string) ($_FILES['history']['name'] ?? 'contacts'));
+            $batchId = $importer->stage($path, $name, $officerId, $teamId, $actor->id);
+
+            $notices[] = ['ok', 'Read and checked. NOTHING has been written to the contact log '
+                . 'yet — this is what would be, and the button at the bottom is what writes it.'];
+
+            return ['notices' => $notices, 'batch' => $batchId];
+        }
+
+        if ($action === 'apply') {
+            $batchId = (int) ($_POST['batch_id'] ?? 0);
+            $result  = $importer->apply($batchId, $actor->id);
+
+            return [
+                'notices' => [['ok', sprintf(
+                    'Loaded. %s contact(s) written, %s already logged, %s not landed.',
+                    number_format($result['inserted']),
+                    number_format($result['duplicate']),
+                    number_format($result['skipped'])
+                )]],
+                'batch'   => $batchId,
+            ];
+        }
+
+        if ($action === 'discard') {
+            $batchId = (int) ($_POST['batch_id'] ?? 0);
+            $importer->discard($batchId);
+
+            return [
+                'notices' => [['warn', "Batch {$batchId} was discarded. Nothing was written."]],
+                'batch'   => null,
+            ];
+        }
+    } catch (Rerm\Import\ImportException $e) {
+        return ['notices' => [['danger', $e->getMessage()]], 'batch' => null];
+    } catch (Throwable $e) {
+        return ['notices' => [['danger', 'The load failed: ' . $e->getMessage()]], 'batch' => null];
+    }
+
+    return ['notices' => [], 'batch' => null];
+}
+
 // ---------------------------------------------------------------------------
 // Dispatch. The guard first — Rerm\Routes names every route and what it
 // requires, and a path it does not name is a 404 before any handler runs.
@@ -2266,6 +2430,60 @@ switch ($path) {
             // import says it did.
             'failedBatches' => $importer->failedBatches(5),
             'teams'   => import_teams($app),
+        ]);
+        break;
+
+    case 'import-contacts':
+        // The same schema guard the roster import carries, for the same
+        // reason: this screen reads tables migration 009 adds, and a server
+        // running newer code against an older database would render a blank
+        // page rather than a sentence saying so.
+        $blocker = import_schema_blocker($app);
+        if ($blocker !== null) {
+            render($app, 'import-contacts', 'Import Contact History', [
+                'wide'      => false,
+                'blocked'   => $blocker,
+                'notices'   => [],
+                'preview'   => null,
+                'staged'    => [],
+                'applied'   => [],
+                'teams'     => [],
+                'officers'  => [],
+            ]);
+            break;
+        }
+
+        $contacts = Rerm\Import\ContactImporter::fromApp($app);
+        // A preview computed days ago was computed against a contact log that
+        // has moved since, so applying it would write a diff nobody has read.
+        $contacts->discardExpired();
+
+        $outcome = contacts_act($app, $user);
+
+        $batchId = $outcome['batch'] ?? null;
+        if ($batchId === null && isset($_GET['batch'])) {
+            $batchId = (int) $_GET['batch'];
+        }
+
+        $preview = null;
+        if ($batchId !== null && $batchId > 0) {
+            try {
+                $preview = $contacts->preview($batchId);
+            } catch (Rerm\Import\ImportException $e) {
+                $outcome['notices'][] = ['warn', $e->getMessage()];
+            }
+        }
+
+        render($app, 'import-contacts', 'Import Contact History', [
+            // A row-by-row diff is data, not a list of choices.
+            'wide'     => $preview !== null,
+            'blocked'  => null,
+            'notices'  => $outcome['notices'],
+            'preview'  => $preview,
+            'staged'   => $contacts->stagedBatches(5),
+            'applied'  => $contacts->appliedBatches(5),
+            'teams'    => import_teams($app),
+            'officers' => contacts_officers($app),
         ]);
         break;
 

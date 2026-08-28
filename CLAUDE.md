@@ -391,6 +391,35 @@ That boundary is what makes a designation **durable**: an import rewrites
 Effective level is `granted_level ?? title_level`, so a Committee Member made
 a Senior Officer stays one no matter what the next roster calls them.
 
+### Contact history is loaded by its own import, not by this one
+
+Contacts that predate the application come in through **`/import-contacts`**
+(spec 6.7) — a separate screen, separate tables, separate capability
+(`import_contact_history`), separate audit verb. It is the only thing in the
+application that writes `contact_log` from a file, and it is the counterpart to
+the boundary above rather than an exception to it: the roster import may never
+write a contact, and this one may never write a roster.
+
+Three rules make it safe to hand eighty permanent rows to a file:
+
+- **It back-dates, which is the entire point.** §7.1 sorts by never-contacted
+  then oldest-first, so a load that stamped everything "today" would be worse
+  than not loading at all. A date with no time lands at local noon — midnight
+  UTC is the previous evening in Chicago.
+- **The same file applied twice writes its rows once.** Member, moment and
+  type together identify a contact; a match is recognised at stage time and
+  again at apply time. `contact_log` is append-only forever, so recognising a
+  duplicate is the only protection there is.
+- **It refuses rather than guesses.** A name matching two members of the team,
+  an officer with no account, an unreadable date, a closed show year — each is
+  listed with its row number and skipped. Attributing one person's work to
+  another is a false entry in a permanent record, so a named officer is never
+  silently replaced by the batch default.
+
+Names are resolved **within one team**, once, at stage time, into an id. That
+is not a loosening of "never key on a name" — the name never becomes the key,
+and where it is not decisive the row is refused.
+
 ### The one exception, and it is deliberate — confirmed
 
 **When an import flips a metric's `imported` value from `N` to `Y`, that
@@ -434,6 +463,7 @@ Each phase ends shippable. `docs/spec-v1.md` carries the detail.
 | **8 · Admin** | Designate Admins and Allowed Users, export by show year, show-year start/stop | A full round trip: import → work → export |
 | **8.5 · Fit and finish** | Admin password reset, absent→dropped, import Team column, top nav, scoped Dropped Members, Vice Chairmen + team-set scope | Nobody's visibility changed who did not need it to |
 | **8.6 · Scope and controls** | Officer team sets, division control gated to the levels that read it, Grant opens on the level in force, desktop control sizing | An Admin cannot downgrade somebody by opening a row |
+| **8.7 · Contact history** | Bulk load of contacts made before the app existed: aliased headers, back-dated rows, per-row officer, two-step apply | Eighty real contacts land on their real dates, and loading the file twice writes them once |
 | **9 · v2** | Create Forms; recruiting and retention automation | out of scope for v1 |
 
 Phases 4 and 5 are the product. Everything before them is plumbing and
@@ -452,6 +482,12 @@ docker compose exec web php tests/run.php
 php bin/import-roster.php path/to/roster.xls   # parse, diff, stage — writes nothing
 php bin/import-roster.php --apply=<batch id>   # the step that writes
 php bin/import-roster.php --dry-run f.xls      # parse, diff, keep nothing
+
+# Contacts made before the app existed (spec 6.7). Two steps for the same
+# reason: contact_log is append-only, so a duplicate cannot be taken back out.
+php bin/import-contacts.php --officer=<number> --team="Bus Ops Team A" f.csv
+php bin/import-contacts.php --apply=<batch id>
+php bin/import-contacts.php --template        # a CSV header row it understands
 ```
 
 On the server there is no shell, so the roster goes in through **`/import`**,

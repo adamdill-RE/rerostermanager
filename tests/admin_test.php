@@ -174,6 +174,12 @@ test('nothing in the admin screens can delete a member, a contact or a record', 
         'Admin/ExportPage.php',
         'Export/RosterExport.php',
         'Roster/DroppedPage.php',
+        // Spec 6.7. Not an admin SCREEN, but the only write path in the
+        // application that inserts into contact_log from a file, so it is read
+        // here for the same DELETEs as the rest. Its own test
+        // (tests/contact_import_test.php) goes further and holds it to no
+        // UPDATE of those tables either.
+        'Import/ContactImporter.php',
     ] as $file) {
         $source = (string) file_get_contents(__DIR__ . '/../app/src/' . $file);
         assertTrue($source !== '', $file . ' is readable');
@@ -244,6 +250,12 @@ test('the audit vocabulary is a type, and every writer uses it', function (): vo
         'set_master_password', 'password_changed', 'password_reset_requested',
         'password_reset_completed', 'auth_token_refused',
         'import_applied', 'import_failed', 'import_reset_progress',
+        // Spec 6.7: a contact history loaded from a file. Deliberately NOT
+        // import_applied — that one means the roster was refreshed, this one
+        // means rows were added to the permanent contact record and
+        // attributed to officers who were not the person pressing the button.
+        // Different questions, different verbs, so a filter can ask either.
+        'import_contact_history',
         'assign_officer', 'remove_assignment',
         'grant_level', 'revoke_level', 'set_scope_override',
         // Phase 8.5: an Admin resetting somebody else's password. Distinct
@@ -283,6 +295,7 @@ test('the audit vocabulary is a type, and every writer uses it', function (): vo
     foreach ([
         'app/src/Auth/Auth.php',
         'app/src/Import/Importer.php',
+        'app/src/Import/ContactImporter.php',
         'app/src/Roster/AssignOfficers.php',
         'public/index.php',
         'bin/set-admin-password.php',

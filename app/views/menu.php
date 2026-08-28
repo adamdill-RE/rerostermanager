@@ -27,6 +27,7 @@ $tiles = [
     ['cap' => Capability::ViewCommitteeDashboard, 'label' => 'Committee Dashboard', 'route' => 'committee', 'phase' => ''],
     ['cap' => Capability::ViewRoster,            'label' => 'Dropped Members',     'route' => 'dropped', 'phase' => ''],
     ['cap' => Capability::ImportRoster,          'label' => 'Import Roster',       'route' => 'import', 'phase' => ''],
+    ['cap' => Capability::ImportContactHistory,  'label' => 'Import Contact History', 'route' => 'import-contacts', 'phase' => ''],
     ['cap' => Capability::ExportRoster,          'label' => 'Export Roster',       'route' => 'export', 'phase' => ''],
     ['cap' => Capability::ManageShowYear,        'label' => 'Show Year',           'route' => 'show-year', 'phase' => ''],
     ['cap' => Capability::DesignateAllowedUser,  'label' => 'Designate Users',     'route' => 'designate', 'phase' => ''],

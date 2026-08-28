@@ -70,6 +70,13 @@ test('the capability matrix matches spec 4.5, transcribed independently', functi
         'view_committee_dashboard' => ['senior_officer', Scope::Scoped],
         'designate_allowed_user'   => ['senior_officer', Scope::Scoped],
         'import_roster'            => ['admin', Scope::Everywhere],
+        // Spec 6.7. Admin / Everywhere like the roster import, and a SEPARATE
+        // row rather than a second use of import_roster: this one writes into
+        // contact_log, which no roster import may touch, and every row it
+        // writes attributes work to a named officer who is not the person
+        // pressing the button. Transcribed from the spec 4.5 table, which the
+        // same commit added it to.
+        'import_contact_history'   => ['admin', Scope::Everywhere],
         'manage_show_year'         => ['admin', Scope::Everywhere],
         'designate_admin'          => ['admin', Scope::Everywhere],
         'manage_teams'             => ['admin', Scope::Everywhere],

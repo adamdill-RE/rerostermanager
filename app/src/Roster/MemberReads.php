@@ -123,6 +123,7 @@ final class MemberReads
 
         $read = $this->pdo->prepare(
             'SELECT c.member_id, c.contact_type, c.occurred_at, c.notes,'
+            . ' c.contact_import_batch_id,'
             . ' om.preferred_name AS officer_preferred, om.first_name AS officer_first,'
             . ' om.last_name AS officer_last, om.member_number AS officer_number'
             . ' FROM contact_log c'
@@ -139,6 +140,12 @@ final class MemberReads
                 'contact_type' => (string) $row['contact_type'],
                 'occurred_at'  => (string) $row['occurred_at'],
                 'notes'        => (string) $row['notes'],
+                // Spec 6.7: was this typed on a screen as it happened, or
+                // loaded from a spreadsheet months afterwards? A reader is
+                // entitled to know how sure to be — the same distinction the
+                // application already draws between an imported metric value
+                // and a progress note somebody set.
+                'from_history' => $row['contact_import_batch_id'] !== null,
                 'officer_name' => RosterPage::displayName(
                     (string) $row['officer_preferred'],
                     (string) $row['officer_first'],

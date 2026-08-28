@@ -110,6 +110,17 @@ final class Routes
         // only, everywhere-scoped; the setup-key era ended with Phase 3.
         'import'   => Capability::ImportRoster->value,
 
+        // Import Contact History (spec 6.7) — Admin, and its OWN capability
+        // rather than import_roster's. The roster import refreshes what Rodeo
+        // Houston knows; this one writes rows into contact_log, which no
+        // roster import may ever touch, and attributes each of them to a named
+        // officer. Two different powers, two different names, so either can be
+        // held without the other.
+        //
+        // Both verbs on one route, like /teams and /assign: the upload, the
+        // apply and the discard all post back to the screen that drew them.
+        'import-contacts' => Capability::ImportContactHistory->value,
+
         // ----- The Admin screens (spec 7.5), Phase 8 -----------------------
 
         // Designate Users (spec 7.5, 4.4) — Senior Officer and above, and the
