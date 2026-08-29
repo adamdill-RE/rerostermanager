@@ -499,6 +499,47 @@ automatic — run `php bin/migrate.php --status` first.
 
 ---
 
+## Officer-facing guides
+
+Quickstart guides, and anything else written for officers rather than for us,
+follow the owner's naming. These are rules, not preferences:
+
+- **"the Rodeo"** — never `HLSR`, never `Rodeo Houston`. The first scored
+  metric is **Rodeo Dues** in prose.
+- **"RE"** — never `Rodeo Express` spelled out. The application is **RERM**.
+
+The rule is about what an officer reads. It does not reach this file, the
+spec, `docs/data-findings.md` or code comments, where the export's own
+vocabulary is what makes the sentence checkable.
+
+**The application itself still says otherwise, and that is a known gap.** An
+Officer meets the old wording in three places: `Rerm\Roster\Metric` labels
+the first metric `HLSR Dues` and `HLSR` (the roster chips and the dashboard
+card), `config.app.name` puts `Rodeo Express Roster` in the page header and on
+the login screen, and `MetricStatus::definition()` opens the Complete popover
+with "The official Rodeo Houston roster". Six more `Rodeo Houston` strings sit
+on Import, Manage Teams and Export, which an Officer never opens. So a guide
+written to these rules describes screens whose wording it does not match.
+Renaming the application is a separate decision; until somebody makes it,
+write the guide correctly and expect the screenshot to disagree.
+
+### Screenshots
+
+- **Blur PII before the document ships.** Member names, member numbers,
+  officer names and the signed-in user's name go under a Gaussian blur.
+  Team names, metric chips, contact-type labels and all UI chrome stay
+  sharp — a guide that hides the screen teaches nothing.
+- **Check the blur at 3x zoom, not at page scale.** A member number is seven
+  digits from a known range and a phone is a fixed shape, so a gentle blur on
+  either is a guess away from being read.
+- **`.github/check-no-pii.py` cannot see inside a `.docx`.** It skips anything
+  that is not UTF-8, so a screenshot pasted into Word is checked by nobody but
+  us. The blur is the only guard there is.
+- **Strip the authoring metadata too.** Word writes a real name into
+  `docProps/core.xml` as `dc:creator` and `cp:lastModifiedBy`.
+
+---
+
 ## Working on this
 
 - **Escape every rendered value** with `e()`. Bind every query parameter. No
