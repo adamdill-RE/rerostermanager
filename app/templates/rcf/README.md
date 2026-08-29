@@ -8,8 +8,11 @@ cell formats — 60 and 61, which is exactly the twenty-five ROOKIE cells and
 the twenty-five WAIT LIST cells — carry `<xfpb:xfComplement i="0"/>`. That is
 an *index into* `featurePropertyBag.xml`, and following it lands on
 `CellControl -> Checkbox`: those fifty cells are Excel checkboxes, which is
-why the blank form holds a numeric `0` in both columns of every row. It is an
-unchecked box, not a leftover.
+why the blank form holds a `0` in both columns of every row. It is an unchecked
+box, not a leftover — and in the workbook it is a **boolean** (`t="b"`), not
+the number nought. Excel draws a box for a boolean and prints the value for
+anything else, so writing it as a number puts the character 0 in every cell
+that should have been an empty box.
 
 Ship the style sheet without the bag and Excel resolves the index, finds
 nothing, and opens the form with *"Repaired Records: Format from

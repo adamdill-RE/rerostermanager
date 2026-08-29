@@ -44,13 +44,12 @@ use ZipArchive;
  * accident, and a member number that becomes 1234567.0 is the bug this whole
  * application keeps not having.
  *
- * `number()` is the single exception, and it exists for one reason rather
- * than for arithmetic: two columns of the Roster Change Form are Excel
- * CHECKBOXES, whose cells hold `1` or `0`. A checkbox cell carrying the
- * string "Yes" is a checkbox Excel stops drawing, so those fifty cells have
- * to be numeric. `number()` accepts nothing but an integer and
- * `RosterChangeForm` is its only caller, which is what keeps this from
- * quietly becoming a general numeric path and writing a member number as
+ * `boolean()` is the single exception, and it is not a number: two columns
+ * of the Roster Change Form are Excel CHECKBOXES, and Excel draws a box only
+ * for a cell whose value is a BOOLEAN — `t="b"`. The same `0` written as a
+ * plain number comes out as the character 0 in a cell that should have been
+ * an empty box. There is no `number()` beside it, on purpose: a general
+ * numeric cell is precisely the thing that would let a member number become
  * 1234567.0.
  *
  * The built file is unlinked by `close()`, and by the destructor if a caller
@@ -273,28 +272,28 @@ final class FormSheet
     }
 
     /**
-     * A literal number. The ONLY caller is `RosterChangeForm`, reproducing
-     * the `0` the blank Rodeo Houston form carries in its ROOKIE and WAIT
-     * LIST columns — see the class comment. $value is held to digits so that
-     * this cannot quietly become a general numeric path and start writing
-     * member numbers.
+     * A BOOLEAN cell — `t="b"`, with `1` or `0`.
+     *
+     * The only non-string cell this writer has, and it is not a number: it is
+     * how a tick box is stored. Excel's cell checkbox draws a box for a
+     * cell whose value is a BOOLEAN and prints the value for anything else,
+     * so the same `0` written without `t="b"` comes out as the character 0 in
+     * a cell that was supposed to be an empty box. That is not a subtle
+     * difference on a printed form, and it is exactly what shipped first.
+     *
+     * There is deliberately no `number()` beside this. Everything a person
+     * typed goes through `text()`, which is what keeps Customer Number
+     * 1234567 from becoming 1234567.0 — a general numeric cell is the thing
+     * that rule exists to not have.
      */
-    public function number(string $reference, int $style, string $value): void
+    public function boolean(string $reference, int $style, bool $ticked): void
     {
         $this->guard();
 
-        if (preg_match('/^-?[0-9]+$/', $value) !== 1) {
-            throw new RuntimeException(
-                "'{$value}' is not an integer. This writer has no general numeric cell: "
-                . 'everything a person typed is written as a string, so that a member '
-                . 'number cannot become a float.'
-            );
-        }
-
         [$row, $column] = self::split($reference);
 
-        $this->cells[$row][$column] = '<c r="' . $reference . '" s="' . $style . '"><v>'
-            . $value . '</v></c>';
+        $this->cells[$row][$column] = '<c r="' . $reference . '" s="' . $style . '" t="b"><v>'
+            . ($ticked ? '1' : '0') . '</v></c>';
     }
 
     /**

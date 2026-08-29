@@ -159,11 +159,18 @@ function rcf_sheet(array $form): string
 }
 
 /**
- * Every cell of a generated sheet, as `ref => ['s' => style, 'v' => value]`.
- * Parsed with the same XMLReader the application's own reader uses, so a file
- * this cannot parse is a file nothing can.
+ * Every cell of a generated sheet, as `ref => ['s' => style, 't' => type,
+ * 'v' => value]`. Parsed with the same XMLReader the application's own reader
+ * uses, so a file this cannot parse is a file nothing can.
  *
- * @return array<string, array{s: string, v: string}>
+ * **The type is captured, and that is not incidental.** The first comparison
+ * of a generated form against the source workbook read style and value and
+ * ignored `t`, and reported 558 cells with zero differences while all fifty
+ * checkbox cells were numbers where the workbook had booleans. Excel draws a
+ * box for `t="b"` and prints the value for anything else, so the form came out
+ * with a `0` sitting in every cell that should have been an empty box.
+ *
+ * @return array<string, array{s: string, t: string, v: string}>
  */
 function rcf_cells(string $xml): array
 {
@@ -177,7 +184,11 @@ function rcf_cells(string $xml): array
     while ($reader->read()) {
         if ($reader->nodeType === XMLReader::ELEMENT && $reader->name === 'c') {
             $current = $reader->getAttribute('r');
-            $cells[$current] = ['s' => (string) $reader->getAttribute('s'), 'v' => ''];
+            $cells[$current] = [
+                's' => (string) $reader->getAttribute('s'),
+                't' => (string) $reader->getAttribute('t'),
+                'v' => '',
+            ];
             if ($reader->isEmptyElement) {
                 $current = null;
             }
@@ -370,15 +381,19 @@ test('ROOKIE and WAIT LIST are checkbox cells: 1 or 0, on every row', function (
     // — which is exactly those fifty cells — carry an xfComplement resolving
     // through the workbook's feature property bag to CellControl -> Checkbox.
     // The 0 is an UNCHECKED BOX, so both columns carry an answer on every row.
+    // And they are BOOLEAN cells. Excel draws a box for t="b" and prints the
+    // value for anything else, so a plain numeric 0 here — which is what
+    // shipped first — is the character 0 sitting where an empty box belongs.
     for ($row = 27; $row <= 51; $row++) {
-        assertTrue(
-            in_array($cells['C' . $row]['v'], ['0', '1'], true),
-            'C' . $row . ' is a tick box, got ' . var_export($cells['C' . $row]['v'], true)
-        );
-        assertTrue(
-            in_array($cells['H' . $row]['v'], ['0', '1'], true),
-            'H' . $row . ' is a tick box, got ' . var_export($cells['H' . $row]['v'], true)
-        );
+        foreach (['C', 'H'] as $column) {
+            $cell = $cells[$column . $row];
+
+            assertSame('b', $cell['t'], $column . $row . ' is a boolean cell, or Excel draws no box');
+            assertTrue(
+                in_array($cell['v'], ['0', '1'], true),
+                $column . $row . ' is ticked or not, got ' . var_export($cell['v'], true)
+            );
+        }
     }
 
     // Ticked where the officer ticked, and unticked everywhere else.
@@ -456,11 +471,18 @@ test('every cell holding text is an inline string — there is no numeric path t
     assertTrue(str_contains($xml, 'RC000001'), 'the member number is on the form');
     assertSame(0, substr_count($xml, '<v>RC000001</v>'), 'and never as a numeric cell');
 
-    preg_match_all('/<v>([^<]*)<\/v>/', $xml, $matches);
-    assertSame(50, count($matches[1]), 'fifty numeric cells: the two checkbox columns, twenty-five rows');
-    foreach ($matches[1] as $value) {
-        assertTrue(in_array($value, ['0', '1'], true), 'and every one is a tick box, not a value');
+    // Fifty <v> cells, and every one of them is a BOOLEAN tick box. Nothing
+    // in this file is a number: a numeric cell is how a member number becomes
+    // 1234567.0, and `FormSheet` deliberately has no way to write one.
+    preg_match_all('/<c [^>]*>(?:<v>([^<]*)<\/v>)/', $xml, $matches, PREG_SET_ORDER);
+    assertSame(50, count($matches), 'fifty value cells: two checkbox columns, twenty-five rows');
+    assertSame(50, substr_count($xml, ' t="b">'), 'and all fifty are booleans');
+
+    foreach ($matches as $match) {
+        assertTrue(in_array($match[1], ['0', '1'], true), 'each one ticked or not');
     }
+
+    assertTrue(!method_exists(FormSheet::class, 'number'), 'there is no numeric cell writer at all');
 
     // A member number that is all digits is still a string.
     $digits = rcf_form();
@@ -474,16 +496,11 @@ test('every cell holding text is an inline string — there is no numeric path t
 test('the writer refuses to become a general numeric cell', function (): void {
     $sheet = rcf_form_sheet();
 
-    assertThrows(
-        static fn () => $sheet->number('A1', 0, '1234567.0'),
-        'not an integer',
-        'a float is refused'
-    );
-    assertThrows(
-        static fn () => $sheet->number('A1', 0, 'RC000001'),
-        'not an integer',
-        'a member number is refused'
-    );
+    // The only non-string cell is the tick box, and it takes a bool — there is
+    // no way to hand this writer a number at all, which is the point.
+    $sheet->boolean('A1', 0, true);
+    assertTrue(str_contains($sheet->sheet(), '<c r="A1" s="0" t="b"><v>1</v></c>'), 'a ticked box');
+
     assertThrows(
         static fn () => $sheet->text('nonsense', 0, 'x'),
         'not a cell reference',

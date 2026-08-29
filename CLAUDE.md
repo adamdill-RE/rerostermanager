@@ -478,8 +478,11 @@ Four rules, and the first is the whole feature:
   `CellControl -> Checkbox`: **those columns are Excel tick boxes, and the `0`
   in every row of the blank form is an unchecked one, not a leftover.** Ship
   the style sheet without the bag and Excel opens the form with "Repaired
-  Records: Format from /xl/styles.xml part" and drops the checkboxes.
-  `FormSheet::create()` refuses to build that package.
+  Records: Format from /xl/styles.xml part" and drops the checkboxes;
+  `FormSheet::create()` refuses to build that package. Write those fifty cells
+  as numbers rather than booleans (`t="b"`) and Excel prints `1` and `0` where
+  the boxes belong — which is why the comparison against the source workbook
+  reads the cell TYPE and not only its style and value.
 - **A form is PII leaving the building**, handled exactly like the export —
   built in `var/exports`, unlinked as soon as it is sent, logged with the
   actor, the sub-committee and the row count, and downloaded by POST rather

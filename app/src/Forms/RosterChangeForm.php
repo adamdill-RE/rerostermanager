@@ -52,7 +52,8 @@ use RuntimeException;
  * which is exactly those fifty cells and nothing else — carry an
  * `xfComplement` that resolves, through the workbook's feature property bag,
  * to `CellControl -> Checkbox`. The `0` is an unchecked box. So this writes
- * `1` or `0` into both columns of EVERY row, as the source workbook does, and
+ * a BOOLEAN — `t="b"`, the only thing Excel draws a box for — into both
+ * columns of EVERY row, as the source workbook does, and
  * `app/templates/rcf/featurePropertyBag.xml` ships beside the style sheet so
  * the reference resolves. Without it Excel repairs the file on open and the
  * checkboxes are gone — see `FormSheet::BAG_PART`.
@@ -579,16 +580,15 @@ final class RosterChangeForm
                     continue;
                 }
 
-                // A checkbox cell, on every row: `1` ticked, `0` not. Never
-                // a string — a checkbox format holding text is a checkbox
-                // Excel stops drawing.
+                // A checkbox cell, on every row. It has to be a BOOLEAN and
+                // not a number: Excel draws a box for `t="b"` and prints the
+                // value for anything else, so a plain `0` here is the
+                // character 0 sitting where an empty box belongs.
                 if (isset(self::CHECKBOX_COLUMNS[$column])) {
-                    $sheet->number(
+                    $sheet->boolean(
                         $reference,
                         $style,
                         (string) ($entry[self::CHECKBOX_COLUMNS[$column]] ?? '') === self::TICKED
-                            ? self::TICKED
-                            : self::UNTICKED
                     );
 
                     continue;
