@@ -44,12 +44,13 @@ use ZipArchive;
  * accident, and a member number that becomes 1234567.0 is the bug this whole
  * application keeps not having.
  *
- * `number()` is the single exception, and it exists for one honest reason
- * rather than for arithmetic: the blank form Rodeo Houston hands out has a
- * literal `0` sitting in two columns of all twenty-five entry rows. It is
- * plainly a leftover of theirs. Reproducing it is what "looks exactly like
- * the form" means for the rows nobody filled in, so the writer can emit it —
- * and `RosterChangeForm` is the only caller, on untouched rows only.
+ * `boolean()` is the single exception, and it is not a number: two columns
+ * of the Roster Change Form are Excel CHECKBOXES, and Excel draws a box only
+ * for a cell whose value is a BOOLEAN — `t="b"`. The same `0` written as a
+ * plain number comes out as the character 0 in a cell that should have been
+ * an empty box. There is no `number()` beside it, on purpose: a general
+ * numeric cell is precisely the thing that would let a member number become
+ * 1234567.0.
  *
  * The built file is unlinked by `close()`, and by the destructor if a caller
  * throws before reaching it. A filled-in Roster Change Form names members and
@@ -60,6 +61,24 @@ final class FormSheet
 {
     /** Column A is 1 here, matching `<col min= max=>`, not `columnName()`'s 0. */
     private const FIRST_COLUMN = 1;
+
+    /**
+     * The feature property bag, and the three strings a package needs to
+     * carry one. Spelled exactly as the source workbook spells them.
+     *
+     * A `<xf>` in a modern Excel style sheet can carry
+     * `<xfpb:xfComplement i="N"/>`, which is an INDEX into this part — it is
+     * how Excel records that a cell format is a **checkbox** rather than
+     * ordinary formatting. Ship the style sheet without the bag and Excel
+     * resolves the index, finds nothing, and opens the workbook with
+     * "Repaired Records: Format from /xl/styles.xml part (Styles)". The file
+     * still opens; the checkboxes are gone and the user has been told their
+     * form was damaged, which on a form is worse than a visual difference.
+     */
+    private const BAG_PART = 'xl/featurePropertyBag/featurePropertyBag.xml';
+    private const BAG_CONTENT_TYPE = 'application/vnd.ms-excel.featurepropertybag+xml';
+    private const BAG_RELATIONSHIP =
+        'http://schemas.microsoft.com/office/2022/11/relationships/FeaturePropertyBag';
 
     /**
      * A cell reference, split. `preg_match` rather than trust: every ref in
@@ -96,6 +115,7 @@ final class FormSheet
         private readonly string $sheetName,
         private readonly string $pageSetup,
         private readonly string $pageMargins,
+        private readonly ?string $featurePropertyBag,
     ) {
     }
 
@@ -112,6 +132,7 @@ final class FormSheet
         string $directory,
         string $stylesPath,
         string $sheetName,
+        ?string $featurePropertyBagPath = null,
         string $pageSetup = '<pageSetup scale="67" orientation="landscape"/>',
         string $pageMargins = '<pageMargins left="0.25" right="0.25" top="0.6437"'
             . ' bottom="0.6437" header="0.25" footer="0.25"/>'
@@ -131,12 +152,36 @@ final class FormSheet
             );
         }
 
+        $bag = null;
+
+        if ($featurePropertyBagPath !== null) {
+            $bag = @file_get_contents($featurePropertyBagPath);
+
+            if ($bag === false || $bag === '') {
+                throw new RuntimeException(
+                    "The feature property bag {$featurePropertyBagPath} could not be read. "
+                    . 'A style sheet whose cell formats carry an xfComplement CANNOT ship '
+                    . 'without it — Excel resolves the index, finds no bag, and repairs the file.'
+                );
+            }
+        }
+
+        if ($bag === null && str_contains($styles, 'xfComplement')) {
+            throw new RuntimeException(
+                'This style sheet references a feature property bag (xfComplement) and none '
+                . 'was given. Every part a shipped style sheet points at has to travel with '
+                . 'it, or Excel opens the workbook with "Repaired Records: Format from '
+                . '/xl/styles.xml part".'
+            );
+        }
+
         return new self(
             $directory,
             $styles,
             XlsxWriter::sheetName($sheetName),
             $pageSetup,
-            $pageMargins
+            $pageMargins,
+            $bag
         );
     }
 
@@ -227,28 +272,28 @@ final class FormSheet
     }
 
     /**
-     * A literal number. The ONLY caller is `RosterChangeForm`, reproducing
-     * the `0` the blank Rodeo Houston form carries in its ROOKIE and WAIT
-     * LIST columns — see the class comment. $value is held to digits so that
-     * this cannot quietly become a general numeric path and start writing
-     * member numbers.
+     * A BOOLEAN cell — `t="b"`, with `1` or `0`.
+     *
+     * The only non-string cell this writer has, and it is not a number: it is
+     * how a tick box is stored. Excel's cell checkbox draws a box for a
+     * cell whose value is a BOOLEAN and prints the value for anything else,
+     * so the same `0` written without `t="b"` comes out as the character 0 in
+     * a cell that was supposed to be an empty box. That is not a subtle
+     * difference on a printed form, and it is exactly what shipped first.
+     *
+     * There is deliberately no `number()` beside this. Everything a person
+     * typed goes through `text()`, which is what keeps Customer Number
+     * 1234567 from becoming 1234567.0 — a general numeric cell is the thing
+     * that rule exists to not have.
      */
-    public function number(string $reference, int $style, string $value): void
+    public function boolean(string $reference, int $style, bool $ticked): void
     {
         $this->guard();
 
-        if (preg_match('/^-?[0-9]+$/', $value) !== 1) {
-            throw new RuntimeException(
-                "'{$value}' is not an integer. This writer has no general numeric cell: "
-                . 'everything a person typed is written as a string, so that a member '
-                . 'number cannot become a float.'
-            );
-        }
-
         [$row, $column] = self::split($reference);
 
-        $this->cells[$row][$column] = '<c r="' . $reference . '" s="' . $style . '"><v>'
-            . $value . '</v></c>';
+        $this->cells[$row][$column] = '<c r="' . $reference . '" s="' . $style . '" t="b"><v>'
+            . ($ticked ? '1' : '0') . '</v></c>';
     }
 
     /**
@@ -274,12 +319,16 @@ final class FormSheet
             throw new RuntimeException("Could not open {$path} as a zip archive.");
         }
 
-        $zip->addFromString('[Content_Types].xml', self::contentTypes());
+        $zip->addFromString('[Content_Types].xml', self::contentTypes($this->featurePropertyBag !== null));
         $zip->addFromString('_rels/.rels', self::packageRels());
         $zip->addFromString('xl/workbook.xml', self::workbook($this->sheetName));
-        $zip->addFromString('xl/_rels/workbook.xml.rels', self::workbookRels());
+        $zip->addFromString('xl/_rels/workbook.xml.rels', self::workbookRels($this->featurePropertyBag !== null));
         $zip->addFromString('xl/styles.xml', $this->styles);
         $zip->addFromString('xl/worksheets/sheet1.xml', $this->sheet());
+
+        if ($this->featurePropertyBag !== null) {
+            $zip->addFromString(self::BAG_PART, $this->featurePropertyBag);
+        }
 
         if (!$zip->close()) {
             @unlink($path);
@@ -427,7 +476,7 @@ final class FormSheet
         }
     }
 
-    private static function contentTypes(): string
+    private static function contentTypes(bool $withBag): string
     {
         return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
             . '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
@@ -439,6 +488,10 @@ final class FormSheet
             . ' ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
             . '<Override PartName="/xl/styles.xml"'
             . ' ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'
+            . ($withBag
+                ? '<Override PartName="/' . self::BAG_PART . '"'
+                    . ' ContentType="' . self::BAG_CONTENT_TYPE . '"/>'
+                : '')
             . '</Types>';
     }
 
@@ -461,7 +514,7 @@ final class FormSheet
             . '</workbook>';
     }
 
-    private static function workbookRels(): string
+    private static function workbookRels(bool $withBag): string
     {
         return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
             . '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
@@ -471,6 +524,10 @@ final class FormSheet
             . '<Relationship Id="rId2"'
             . ' Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles"'
             . ' Target="styles.xml"/>'
+            . ($withBag
+                ? '<Relationship Id="rId3" Type="' . self::BAG_RELATIONSHIP . '"'
+                    . ' Target="featurePropertyBag/featurePropertyBag.xml"/>'
+                : '')
             . '</Relationships>';
     }
 }

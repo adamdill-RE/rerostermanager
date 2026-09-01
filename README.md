@@ -30,9 +30,14 @@ The requirement is fidelity, and it is asserted rather than eyeballed: a blank
 form this application generates was diffed against the workbook Rodeo Houston
 sends out, cell by cell — **558 cells, style id and value, zero differences**,
 all sixty merged ranges and every column width and row height identical. The
-style sheet ships as `app/templates/rcf/styles.xml`, byte for byte; everything
-else is transcribed in `Rerm\Forms\RosterChangeForm` and transcribed a second
-time in `tests/forms_test.php`. Design: `docs/spec-v2.md`.
+style sheet ships as `app/templates/rcf/styles.xml`, byte for byte, **with the
+feature property bag it points at** — two of its cell formats index into that
+bag and resolve to `CellControl -> Checkbox`, which is how the ROOKIE and WAIT
+LIST columns turn out to be Excel tick boxes rather than the `y/n` text their
+older printed instructions still ask for. Ship the style sheet alone and Excel
+repairs the file on open. Everything else is transcribed in
+`Rerm\Forms\RosterChangeForm` and transcribed a second time in
+`tests/forms_test.php`. Design: `docs/spec-v2.md`.
 
 A filled-in form names members and carries their member numbers, so it is
 handled exactly like the export — built outside the document root, unlinked as

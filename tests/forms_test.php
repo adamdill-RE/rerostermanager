@@ -85,12 +85,12 @@ function rcf_form(array $overrides = []): array
 
     $entries[0] = [
         'type'             => 'A',
-        'rookie'           => 'y',
+        'rookie'           => '1',
         'member_name'      => 'Jane Sample',
         'member_number'    => 'RC000001',
         'new_title'        => 'Committee Member',
         'previous_title'   => '',
-        'wait_list'        => 'Yes',
+        'wait_list'        => '1',
         'remove_reason'    => '',
         'new_subcommittee' => '',
         'sponsor'          => 'A. Officer',
@@ -98,12 +98,12 @@ function rcf_form(array $overrides = []): array
 
     $entries[1] = [
         'type'             => 'R',
-        'rookie'           => 'n',
+        'rookie'           => '0',
         'member_name'      => 'John Sample',
         'member_number'    => 'RC000002',
         'new_title'        => '',
         'previous_title'   => 'Captain',
-        'wait_list'        => 'No',
+        'wait_list'        => '0',
         'remove_reason'    => '4',
         'new_subcommittee' => '',
         'sponsor'          => '',
@@ -111,12 +111,12 @@ function rcf_form(array $overrides = []): array
 
     $entries[2] = [
         'type'             => 'S & T',
-        'rookie'           => 'n',
+        'rookie'           => '0',
         'member_name'      => 'Pat Sample',
         'member_number'    => 'RC000003',
         'new_title'        => 'Assistant Captain',
         'previous_title'   => 'Committee Member',
-        'wait_list'        => 'No',
+        'wait_list'        => '0',
         'remove_reason'    => '',
         'new_subcommittee' => 'RC Bus Ops Team A',
         'sponsor'          => '',
@@ -131,30 +131,46 @@ function rcf_form(array $overrides = []): array
     ];
 }
 
-/** The sheet XML for a form, with no database anywhere near it. */
-function rcf_sheet(array $form): string
+/**
+ * A sheet built from the shipped assets — the style sheet AND the feature
+ * property bag its cell formats point at. Never one without the other: that
+ * is the whole of the bug this pairing exists to prevent.
+ */
+function rcf_form_sheet(string $sheetName = 'Sheet1'): FormSheet
 {
     /** @var App $app */
     $app = $GLOBALS['rerm_app'];
 
-    $directory = sys_get_temp_dir();
-    $sheet     = FormSheet::create(
-        $directory,
+    return FormSheet::create(
+        sys_get_temp_dir(),
         $app->path('app/templates/rcf/styles.xml'),
-        'Sheet1'
+        $sheetName,
+        $app->path('app/templates/rcf/featurePropertyBag.xml')
     );
+}
 
+/** The sheet XML for a form, with no database anywhere near it. */
+function rcf_sheet(array $form): string
+{
+    $sheet = rcf_form_sheet();
     RosterChangeForm::draw($sheet, $form);
 
     return $sheet->sheet();
 }
 
 /**
- * Every cell of a generated sheet, as `ref => ['s' => style, 'v' => value]`.
- * Parsed with the same XMLReader the application's own reader uses, so a file
- * this cannot parse is a file nothing can.
+ * Every cell of a generated sheet, as `ref => ['s' => style, 't' => type,
+ * 'v' => value]`. Parsed with the same XMLReader the application's own reader
+ * uses, so a file this cannot parse is a file nothing can.
  *
- * @return array<string, array{s: string, v: string}>
+ * **The type is captured, and that is not incidental.** The first comparison
+ * of a generated form against the source workbook read style and value and
+ * ignored `t`, and reported 558 cells with zero differences while all fifty
+ * checkbox cells were numbers where the workbook had booleans. Excel draws a
+ * box for `t="b"` and prints the value for anything else, so the form came out
+ * with a `0` sitting in every cell that should have been an empty box.
+ *
+ * @return array<string, array{s: string, t: string, v: string}>
  */
 function rcf_cells(string $xml): array
 {
@@ -168,7 +184,11 @@ function rcf_cells(string $xml): array
     while ($reader->read()) {
         if ($reader->nodeType === XMLReader::ELEMENT && $reader->name === 'c') {
             $current = $reader->getAttribute('r');
-            $cells[$current] = ['s' => (string) $reader->getAttribute('s'), 'v' => ''];
+            $cells[$current] = [
+                's' => (string) $reader->getAttribute('s'),
+                't' => (string) $reader->getAttribute('t'),
+                'v' => '',
+            ];
             if ($reader->isEmptyElement) {
                 $current = null;
             }
@@ -332,12 +352,12 @@ test('a filled row carries its answers, in the columns the form puts them in', f
     // *TYPE, ROOKIE, MEMBER NAME, HLS&R NO, CHANGE/ADD TITLE, PREVIOUS TITLE,
     // WAIT LIST, REMOVE REASON, NEW SUB-COMMITTEE, INTERVIEW/SPONSOR.
     assertSame('A', $cells['B27']['v']);
-    assertSame('y', $cells['C27']['v']);
+    assertSame('1', $cells['C27']['v'], 'a ticked ROOKIE box');
     assertSame('Jane Sample', $cells['D27']['v']);
     assertSame('RC000001', $cells['E27']['v']);
     assertSame('Committee Member', $cells['F27']['v']);
     assertSame('', $cells['G27']['v']);
-    assertSame('Yes', $cells['H27']['v']);
+    assertSame('1', $cells['H27']['v'], 'a ticked WAIT LIST box');
     assertSame('', $cells['I27']['v']);
     assertSame('A. Officer', $cells['L27']['v']);
 
@@ -353,22 +373,38 @@ test('a filled row carries its answers, in the columns the form puts them in', f
     assertSame('', $cells['K29']['v'], 'K is the right half of the merged cell');
 });
 
-test('an untouched row prints exactly as the blank form does, zeros included', function (): void {
+test('ROOKIE and WAIT LIST are checkbox cells: 1 or 0, on every row', function (): void {
     $cells = rcf_cells(rcf_sheet(rcf_form()));
 
-    // Rows 4 to 25 were never filled in. The blank form Rodeo Houston sends
-    // carries a literal 0 in the ROOKIE and WAIT LIST cells of every row —
-    // theirs, plainly a leftover, and plainly what a blank RCF looks like on
-    // paper today. Reproducing it is what "exactly like the form" means.
-    for ($row = 30; $row <= 51; $row++) {
-        assertSame('0', $cells['C' . $row]['v'], 'C' . $row . ' keeps the form\'s own zero');
-        assertSame('0', $cells['H' . $row]['v'], 'H' . $row . ' keeps the form\'s own zero');
-        assertSame('', $cells['D' . $row]['v'], 'and no member name appears');
+    // The blank form carries a numeric 0 in both columns of all twenty-five
+    // rows. That reads like a leftover and is not one: cell formats 60 and 61
+    // — which is exactly those fifty cells — carry an xfComplement resolving
+    // through the workbook's feature property bag to CellControl -> Checkbox.
+    // The 0 is an UNCHECKED BOX, so both columns carry an answer on every row.
+    // And they are BOOLEAN cells. Excel draws a box for t="b" and prints the
+    // value for anything else, so a plain numeric 0 here — which is what
+    // shipped first — is the character 0 sitting where an empty box belongs.
+    for ($row = 27; $row <= 51; $row++) {
+        foreach (['C', 'H'] as $column) {
+            $cell = $cells[$column . $row];
+
+            assertSame('b', $cell['t'], $column . $row . ' is a boolean cell, or Excel draws no box');
+            assertTrue(
+                in_array($cell['v'], ['0', '1'], true),
+                $column . $row . ' is ticked or not, got ' . var_export($cell['v'], true)
+            );
+        }
     }
 
-    // A row that WAS filled in carries the answer instead.
-    assertSame('y', $cells['C27']['v']);
-    assertSame('Yes', $cells['H27']['v']);
+    // Ticked where the officer ticked, and unticked everywhere else.
+    assertSame('1', $cells['C27']['v']);
+    assertSame('1', $cells['H27']['v']);
+
+    for ($row = 30; $row <= 51; $row++) {
+        assertSame('0', $cells['C' . $row]['v'], 'C' . $row . ' is unticked');
+        assertSame('0', $cells['H' . $row]['v'], 'H' . $row . ' is unticked');
+        assertSame('', $cells['D' . $row]['v'], 'and no member name appears');
+    }
 });
 
 test('the merges, the widths and the page setup are the source workbook', function (): void {
@@ -409,6 +445,15 @@ test('the merges, the widths and the page setup are the source workbook', functi
         );
     }
 
+    // Thirteen column runs, against the workbook's fourteen. The one not
+    // reproduced is `min="1026" max="1026" width="8.5"` with NO style — a
+    // default-width run Excel left behind at column AMK, which carries no
+    // formatting and is the only reason that workbook's declared dimension
+    // reaches AMK51. Reproducing it would mean copying a quirk without
+    // copying the dimension it explains, so it is written down here instead.
+    assertSame(13, substr_count($xml, '<col '), 'thirteen column runs, A through the tail');
+    assertSame(0, substr_count($xml, 'min="1026"'), 'and not the stray one at AMK');
+
     // Landscape at 67%: this form is printed, and a portrait one is unusable.
     assertTrue(str_contains($xml, '<pageSetup scale="67" orientation="landscape"/>'), 'landscape at 67%');
 
@@ -426,10 +471,18 @@ test('every cell holding text is an inline string — there is no numeric path t
     assertTrue(str_contains($xml, 'RC000001'), 'the member number is on the form');
     assertSame(0, substr_count($xml, '<v>RC000001</v>'), 'and never as a numeric cell');
 
-    preg_match_all('/<v>([^<]*)<\/v>/', $xml, $matches);
-    foreach ($matches[1] as $value) {
-        assertSame('0', $value, 'the only numeric cell on the form is the blank rows\' zero');
+    // Fifty <v> cells, and every one of them is a BOOLEAN tick box. Nothing
+    // in this file is a number: a numeric cell is how a member number becomes
+    // 1234567.0, and `FormSheet` deliberately has no way to write one.
+    preg_match_all('/<c [^>]*>(?:<v>([^<]*)<\/v>)/', $xml, $matches, PREG_SET_ORDER);
+    assertSame(50, count($matches), 'fifty value cells: two checkbox columns, twenty-five rows');
+    assertSame(50, substr_count($xml, ' t="b">'), 'and all fifty are booleans');
+
+    foreach ($matches as $match) {
+        assertTrue(in_array($match[1], ['0', '1'], true), 'each one ticked or not');
     }
+
+    assertTrue(!method_exists(FormSheet::class, 'number'), 'there is no numeric cell writer at all');
 
     // A member number that is all digits is still a string.
     $digits = rcf_form();
@@ -441,20 +494,13 @@ test('every cell holding text is an inline string — there is no numeric path t
 });
 
 test('the writer refuses to become a general numeric cell', function (): void {
-    /** @var App $app */
-    $app   = $GLOBALS['rerm_app'];
-    $sheet = FormSheet::create(sys_get_temp_dir(), $app->path('app/templates/rcf/styles.xml'), 'Sheet1');
+    $sheet = rcf_form_sheet();
 
-    assertThrows(
-        static fn () => $sheet->number('A1', 0, '1234567.0'),
-        'not an integer',
-        'a float is refused'
-    );
-    assertThrows(
-        static fn () => $sheet->number('A1', 0, 'RC000001'),
-        'not an integer',
-        'a member number is refused'
-    );
+    // The only non-string cell is the tick box, and it takes a bool — there is
+    // no way to hand this writer a number at all, which is the point.
+    $sheet->boolean('A1', 0, true);
+    assertTrue(str_contains($sheet->sheet(), '<c r="A1" s="0" t="b"><v>1</v></c>'), 'a ticked box');
+
     assertThrows(
         static fn () => $sheet->text('nonsense', 0, 'x'),
         'not a cell reference',
@@ -466,7 +512,7 @@ test('the built file is a real workbook, with the shipped style sheet inside it'
     /** @var App $app */
     $app = $GLOBALS['rerm_app'];
 
-    $sheet = FormSheet::create(sys_get_temp_dir(), $app->path('app/templates/rcf/styles.xml'), 'Sheet1');
+    $sheet = rcf_form_sheet();
     RosterChangeForm::draw($sheet, rcf_form());
 
     $path = $sheet->finish();
@@ -484,8 +530,36 @@ test('the built file is a real workbook, with the shipped style sheet inside it'
             'xl/_rels/workbook.xml.rels',
             'xl/styles.xml',
             'xl/worksheets/sheet1.xml',
+            'xl/featurePropertyBag/featurePropertyBag.xml',
         ] as $part) {
             assertTrue($zip->locateName($part) !== false, $part . ' is in the package');
+        }
+
+        // EVERY PART THE WORKBOOK POINTS AT IS IN THE PACKAGE. This is the
+        // rule the first shipped version broke: styles.xml carried an
+        // xfComplement indexing into a feature property bag that was not
+        // shipped, and Excel opened the form with "Repaired Records: Format
+        // from /xl/styles.xml part (Styles)" and dropped the checkboxes.
+        $rels = (string) $zip->getFromName('xl/_rels/workbook.xml.rels');
+        preg_match_all('/Target="([^"]+)"/', $rels, $targets);
+        assertTrue($targets[1] !== [], 'the workbook declares relationships');
+
+        foreach ($targets[1] as $target) {
+            assertTrue(
+                $zip->locateName('xl/' . ltrim($target, '/')) !== false,
+                'xl/' . $target . ' is related by the workbook and must be in the package'
+            );
+        }
+
+        // And every part in the package is declared in [Content_Types].xml,
+        // which is the other half of the same rule.
+        $types = (string) $zip->getFromName('[Content_Types].xml');
+        foreach (['/xl/workbook.xml', '/xl/worksheets/sheet1.xml', '/xl/styles.xml',
+            '/xl/featurePropertyBag/featurePropertyBag.xml'] as $part) {
+            assertTrue(
+                str_contains($types, 'PartName="' . $part . '"'),
+                $part . ' is declared in [Content_Types].xml'
+            );
         }
 
         // The style sheet is the shipped asset, unmodified: the fourteen
@@ -530,6 +604,40 @@ test('the built file is a real workbook, with the shipped style sheet inside it'
     assertTrue(!is_file($path), 'and the file does not survive on disk — it names members');
 });
 
+test('a style sheet that points at a feature property bag cannot ship without one', function (): void {
+    /** @var App $app */
+    $app = $GLOBALS['rerm_app'];
+
+    // The bug this file exists to keep fixed. Cell formats 60 and 61 — the
+    // twenty-five ROOKIE cells and the twenty-five WAIT LIST cells — carry
+    // <xfpb:xfComplement i="0"/>, an INDEX into
+    // xl/featurePropertyBag/featurePropertyBag.xml that resolves to
+    // CellControl -> Checkbox. Shipped without the bag, Excel resolves the
+    // index, finds nothing, and opens the form with "Repaired Records: Format
+    // from /xl/styles.xml part (Styles)" — the checkboxes gone and the user
+    // told their form was damaged.
+    //
+    // The writer refuses rather than producing that file.
+    $styles = (string) file_get_contents($app->path('app/templates/rcf/styles.xml'));
+    assertTrue(str_contains($styles, 'xfComplement'), 'the style sheet does reference one');
+    assertSame(2, substr_count($styles, 'xfComplement'), 'in exactly the two checkbox formats');
+
+    assertThrows(
+        static fn () => FormSheet::create(
+            sys_get_temp_dir(),
+            $app->path('app/templates/rcf/styles.xml'),
+            'Sheet1'
+        ),
+        'feature property bag',
+        'a style sheet with a dangling reference is refused, not shipped'
+    );
+
+    // The bag itself is what says "checkbox", and it says so in as many words.
+    $bag = (string) file_get_contents($app->path('app/templates/rcf/featurePropertyBag.xml'));
+    assertTrue(str_contains($bag, 'type="Checkbox"'), 'the bag declares a checkbox');
+    assertTrue(str_contains($bag, 'k="CellControl"'), 'wired to a cell control');
+});
+
 test('the style sheet is self-contained: no theme part is needed and none is shipped', function (): void {
     /** @var App $app */
     $app    = $GLOBALS['rerm_app'];
@@ -551,9 +659,7 @@ test('more rows than the form has is refused, never silently trimmed', function 
     $form = rcf_form();
     $form['entries'][] = RosterChangeForm::emptyEntry();
 
-    /** @var App $app */
-    $app   = $GLOBALS['rerm_app'];
-    $sheet = FormSheet::create(sys_get_temp_dir(), $app->path('app/templates/rcf/styles.xml'), 'Sheet1');
+    $sheet = rcf_form_sheet();
 
     // draw() takes what it is given; build() is where the ceiling lives, and
     // it throws rather than dropping row twenty-six — somebody quietly not
@@ -609,6 +715,13 @@ test('a blank entry is blank, and one answer is enough to stop it being', functi
 
     assertTrue(!RosterChangeForm::entryIsBlank(['sponsor' => 'A. Officer']));
     assertTrue(!RosterChangeForm::entryIsBlank(['member_name' => 'Jane Sample']));
+
+    // The two tick boxes carry an answer on every row of the blank form, so
+    // they cannot decide whether a row says anything: a tick with no name
+    // beside it is not a change request.
+    assertTrue(RosterChangeForm::entryIsBlank([
+        'rookie' => RosterChangeForm::TICKED, 'wait_list' => RosterChangeForm::TICKED,
+    ]), 'a tick alone is not a change request');
 });
 
 // ---------------------------------------------------------------------------
@@ -949,7 +1062,7 @@ test('a submitted form is resolved against the lists, never taken as typed', fun
 
     // Row two: every invented value is dropped, and the name still goes on.
     assertSame('', $form['entries'][1]['type'], 'a type code that does not exist is not written');
-    assertSame('', $form['entries'][1]['rookie']);
+    assertSame(RosterChangeForm::UNTICKED, $form['entries'][1]['rookie'], 'and "maybe" is not a tick');
     assertSame('', $form['entries'][1]['remove_reason']);
     assertSame('Somebody Unknown', $form['entries'][1]['member_name'], 'the typed name survives');
     assertSame('', $form['entries'][1]['member_number']);
@@ -978,26 +1091,32 @@ test('a typed previous title wins over the roster, and a sub-committee outside t
         'what an officer typed is never overwritten');
 });
 
-test('the wait-list tick box does not make an untouched row look answered', function (): void {
+test('the two tick boxes carry an answer on every row without making one look filled', function (): void {
     $f    = rcf_fixture();
     $page = new RcfPage(rcf_pdo());
 
     $form = $page->formFromInput(rcf_captain(), [
         'subcommittee' => 't:' . $f['teams']['a'],
         'row'          => [
-            0 => ['member' => $f['members']['m1']['number'], 'wait_list' => 'Yes'],
+            0 => [
+                'member'    => $f['members']['m1']['number'],
+                'wait_list' => RosterChangeForm::TICKED,
+                'rookie'    => RosterChangeForm::TICKED,
+            ],
             1 => ['member' => $f['members']['m2']['number']],
         ],
     ]);
 
-    // An unticked box submits NOTHING, so a row that collected a "No" would
-    // stop being blank — and twenty-three blank rows would print "No"
-    // twenty-three times.
-    assertSame('Yes', $form['entries'][0]['wait_list'], 'ticked is Yes');
-    assertSame('No', $form['entries'][1]['wait_list'], 'a row with content and no tick is No');
-    assertSame('', $form['entries'][5]['wait_list'], 'and a row with nothing on it stays blank');
+    assertSame(RosterChangeForm::TICKED, $form['entries'][0]['wait_list']);
+    assertSame(RosterChangeForm::TICKED, $form['entries'][0]['rookie']);
+    assertSame(RosterChangeForm::UNTICKED, $form['entries'][1]['wait_list'], 'not ticked is 0');
+    assertSame(RosterChangeForm::UNTICKED, $form['entries'][5]['rookie'], 'on every row, as the blank form is');
 
-    assertTrue(RosterChangeForm::entryIsBlank($form['entries'][5]));
+    // An unticked box submits NOTHING, so every row would otherwise collect a
+    // 0 and stop being blank — twenty-three untouched rows all looking filled
+    // in. entryIsBlank ignores both columns for exactly that reason.
+    assertTrue(RosterChangeForm::entryIsBlank($form['entries'][5]), 'row six is still blank');
+    assertTrue(!RosterChangeForm::entryIsBlank($form['entries'][0]), 'row one is not');
 });
 
 /** The whole page, layout included, as a signed-in officer would receive it. */
@@ -1047,6 +1166,14 @@ test('the screen renders, escapes what it shows and shares its three long lists'
     assertSame(1, substr_count($html, '<datalist id="rcf-subcommittees">'));
     assertSame(1, substr_count($html, '<datalist id="rcf-officers">'));
     assertSame(RcfPage::VISIBLE_ROWS, substr_count($html, 'list="rcf-members"'), 'one field per drawn row');
+
+    // Both tick boxes are tick boxes on the screen because both are tick
+    // boxes on the paper.
+    assertSame(
+        RcfPage::VISIBLE_ROWS * 2,
+        substr_count($html, '<input type="checkbox"'),
+        'rookie and wait list, one pair per drawn row'
+    );
 
     // No script anywhere: the host has no build step and render() forbids it.
     assertSame(0, substr_count($html, '<script'), 'there is no JavaScript in this application');

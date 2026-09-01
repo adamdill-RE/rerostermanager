@@ -19,6 +19,13 @@ declare(strict_types=1);
  * needs anyway, because "pick somebody off the roster, or type in somebody
  * who is not on it yet" is a text box with suggestions and not a menu.
  *
+ * **RE rookie and Wait list are tick boxes because the cells they land in
+ * ARE tick boxes** — Excel checkboxes, established from the workbook's own
+ * feature property bag (`Rerm\Forms\RosterChangeForm`). The form's older
+ * printed instructions still say `y/n` and 'Please enter "Yes" or "No"'
+ * beside them; the cells are what Rodeo Houston processes, so the screen
+ * matches the cells.
+ *
  * There is no JavaScript, here or anywhere in this application: the host has
  * no build step, and the Content-Security-Policy render() sets forbids script
  * outright.
@@ -35,6 +42,7 @@ declare(strict_types=1);
  */
 
 use Rerm\Csrf;
+use Rerm\Forms\RosterChangeForm;
 
 /** @var array<int, array<string, mixed>> $officers */
 $officers = $rcf['officers'];
@@ -223,8 +231,6 @@ foreach ($subcommittees as $option) {
         $reasonChoices[$number] = $number . ') ' . $reason;
     }
 
-    $rookieChoices = ['y' => 'y', 'n' => 'n'];
-
     /** A text field in a grid cell. Never given an id: nothing points at one. */
     $field = static function (
         int $i,
@@ -273,8 +279,9 @@ foreach ($subcommittees as $option) {
 <tr><td class="n" data-label="Row"><?= e((string) $n) ?>)</td>
 <td data-label="*Type"><select name="row[<?= $i ?>][type]" aria-label="Type, row <?= $n ?>"><?=
     $options($typeChoices, (string) $entry['type']) ?></select></td>
-<td data-label="RE rookie"><select name="row[<?= $i ?>][rookie]" aria-label="Rookie, row <?= $n ?>"><?=
-    $options($rookieChoices, (string) $entry['rookie']) ?></select></td>
+<td class="tick" data-label="RE rookie"><input type="checkbox" name="row[<?= $i ?>][rookie]"
+    value="<?= e(RosterChangeForm::TICKED) ?>" aria-label="Rodeo Express rookie, row <?= $n ?>"<?=
+    (string) $entry['rookie'] === RosterChangeForm::TICKED ? ' checked' : '' ?>></td>
 <td data-label="Member"><?= $field($i, $n, 'member', 'Member', (string) $entry['member'],
     'rcf-members', '1234567 - Jane Smith') ?></td>
 <td data-label="Change/add title"><?= $field($i, $n, 'new_title', 'New title',
@@ -282,8 +289,8 @@ foreach ($subcommittees as $option) {
 <td data-label="Previous title"><?= $field($i, $n, 'previous_title', 'Previous title',
     (string) $entry['previous_title'], '', 'from the roster') ?></td>
 <td class="tick" data-label="Wait list"><input type="checkbox" name="row[<?= $i ?>][wait_list]"
-    value="Yes" aria-label="On the wait list, row <?= $n ?>"<?=
-    (string) $entry['wait_list'] === 'Yes' ? ' checked' : '' ?>></td>
+    value="<?= e(RosterChangeForm::TICKED) ?>" aria-label="On the wait list, row <?= $n ?>"<?=
+    (string) $entry['wait_list'] === RosterChangeForm::TICKED ? ' checked' : '' ?>></td>
 <td data-label="**Remove reason"><select name="row[<?= $i ?>][remove_reason]"
     aria-label="Remove reason, row <?= $n ?>"><?=
     $options($reasonChoices, (string) $entry['remove_reason']) ?></select></td>
@@ -357,7 +364,8 @@ foreach ($subcommittees as $option) {
     </p>
     <h3>RE rookie</h3>
     <p class="hint">
-        <strong>y</strong> if they have never been on Rodeo Express before.
+        Tick it if they have never been on Rodeo Express before. It is a tick
+        box on the form itself, which is why it is one here.
     </p>
 </details>
 
