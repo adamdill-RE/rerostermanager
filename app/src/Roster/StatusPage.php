@@ -43,6 +43,17 @@ use Rerm\Auth\User;
  * unfiltered scope: it answers "does this officer hold anybody at all", which
  * is what the toggle's default rule means. Computing it after would make an
  * officer's default mode depend on which team they happened to drill into.
+ *
+ * WHAT A ROW CARRIES (spec-v2 §6)
+ *
+ * Beside the four chips each row now carries the member's IMPORTED TITLE, the
+ * RESULT of the last contact, and the whole show year's contact history for
+ * the expansion. The first two are the ones worth naming here: the title is
+ * Rodeo Houston's, rewritten by every import and never the level this
+ * application derived from it; and the result is `ContactOutcome::summarise()`
+ * over the statuses THIS class already derived, never a second read — a word
+ * for what the conversation produced cannot be allowed to disagree with the
+ * chips printed beside it.
  */
 final class StatusPage
 {
@@ -470,10 +481,10 @@ final class StatusPage
     }
 
     /**
-     * The full rows for the one page being shown: contact details, history
-     * and assigned officers, batched — the derivation pass above carried
-     * only ids and names, so the heavy columns are fetched for these members
-     * alone.
+     * The full rows for the one page being shown: title, contact details,
+     * history, assigned officers and the contact outcome, batched — the
+     * derivation pass above carried only ids and names, so the heavy columns
+     * are fetched for these members alone.
      *
      * @param array<int, array<string, mixed>> $candidates
      * @return array<int, array<string, mixed>>
@@ -488,8 +499,13 @@ final class StatusPage
 
         [$places, $bind] = MemberReads::idList($ids, 'detail_member');
 
+        // m.title is Rodeo Houston's word for what this member is, rewritten
+        // by every import (spec 6.6) — the roster's title, never the level
+        // this application derived from it. The two differ often enough to
+        // matter: an officer working a list of calls needs to know which of
+        // these people already hold a job.
         $read = $this->pdo->prepare(
-            'SELECT m.id, m.phone, m.phone_e164, m.phone_type, m.email, t.name AS team_name'
+            'SELECT m.id, m.title, m.phone, m.phone_e164, m.phone_type, m.email, t.name AS team_name'
             . ' FROM member m LEFT JOIN team t ON t.id = m.team_id'
             . " WHERE m.id IN ({$places})"
         );
@@ -509,6 +525,8 @@ final class StatusPage
             $member = $candidate['member'];
             $detail = $details[$id] ?? [];
 
+            $history = $contacts[$id] ?? [];
+
             $rows[] = [
                 'id'            => $id,
                 'member_number' => (string) $member['member_number'],
@@ -518,12 +536,14 @@ final class StatusPage
                     (string) $member['last_name'],
                     (string) $member['member_number']
                 ),
-                'team_name'  => (string) ($detail['team_name'] ?? ''),
-                'statuses'   => $candidate['statuses'],
-                'fully'      => $candidate['fully'],
-                'phone'      => (string) ($detail['phone'] ?? ''),
-                'phone_e164' => (string) ($detail['phone_e164'] ?? ''),
-                'email'      => trim((string) ($detail['email'] ?? '')),
+                // The imported title, as Rodeo Houston spells it.
+                'title'         => (string) ($detail['title'] ?? ''),
+                'team_name'     => (string) ($detail['team_name'] ?? ''),
+                'statuses'      => $candidate['statuses'],
+                'fully'         => $candidate['fully'],
+                'phone'         => (string) ($detail['phone'] ?? ''),
+                'phone_e164'    => (string) ($detail['phone_e164'] ?? ''),
+                'email'         => trim((string) ($detail['email'] ?? '')),
 
                 // The suppression flags, decided in PHP so they are testable
                 // without rendering — the same rules as View My Roster: sms:
@@ -533,8 +553,21 @@ final class StatusPage
                     && (string) ($detail['phone_type'] ?? '') === 'CELL PHONE',
                 'can_email' => trim((string) ($detail['email'] ?? '')) !== '',
 
-                'last_contact' => ($contacts[$id] ?? [])[0] ?? null,
+                // The WHOLE history for the show year, not just the newest:
+                // the row expansion lists every entry, the same shape View My
+                // Roster reads, and it is already in hand from the one
+                // batched read above.
+                'contacts'     => $history,
+                'last_contact' => $history[0] ?? null,
                 'officers'     => $officers[$id] ?? [],
+
+                // What the last contact PRODUCED (spec-v2 §6), derived from
+                // the statuses immediately above and nothing else — so the
+                // word cannot disagree with the chips beside it.
+                'outcome'      => ContactOutcome::summarise(
+                    $candidate['statuses'],
+                    $history !== []
+                ),
             ];
         }
 

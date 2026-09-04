@@ -6,14 +6,16 @@ namespace Rerm;
 
 use DateTimeImmutable;
 use DateTimeZone;
+use Rerm\Roster\ContactOutcome;
 use Rerm\Roster\MetricStatus;
 
 /**
- * The two rendering fragments every roster-shaped screen repeats: the status
- * chip and the relative timestamp. Promoted out of app/views/roster.php when
- * Phase 5's dashboard became the second screen to need them — one spelling of
- * each, because a chip that renders differently on two screens is a status
- * that reads differently on two screens.
+ * The rendering fragments the roster-shaped screens repeat: the status chip,
+ * the contact-outcome chip, the stacked proportion bar and the relative
+ * timestamp. Promoted out of app/views/roster.php when Phase 5's dashboard
+ * became the second screen to need them — one spelling of each, because a
+ * chip that renders differently on two screens is a status that reads
+ * differently on two screens.
  *
  * Everything here returns ALREADY-ESCAPED HTML or plain strings the caller
  * still escapes; each method says which it is.
@@ -35,6 +37,44 @@ final class View
             : e($status->label());
 
         return '<span class="chip ' . e($class) . '">' . $word . '</span>';
+    }
+
+    /**
+     * The contact-outcome chip (spec-v2 §6): one word for what the last
+     * contact produced, with the coverage note when the member's answer
+     * reached only some of what is open. Never contacted renders as the same
+     * em dash the other empty cells use — the "Last contact" cell beside it
+     * already carries the words, and fifty duplicate chips are bytes the
+     * spec 10 budget does not have.
+     *
+     * Returns escaped HTML, safe to echo.
+     *
+     * @param array{outcome: ContactOutcome, at: int, open: int} $summary
+     *        exactly what ContactOutcome::summarise() decided
+     */
+    public static function outcome(array $summary): string
+    {
+        $outcome = $summary['outcome'];
+
+        if ($outcome === ContactOutcome::NotContacted) {
+            return '&mdash;';
+        }
+
+        $class = $outcome->chipClass();
+        $word  = str_contains($class, 'chip-fill')
+            ? '<span class="chip-word">' . e($outcome->label()) . '</span>'
+            : e($outcome->label());
+
+        $html = '<span class="chip ' . e($class) . '">' . $word . '</span>';
+
+        // Said only when the answer did not cover everything still open: a
+        // "3 of 3" on every row is a qualifier that qualifies nothing.
+        if ($summary['at'] > 0 && $summary['at'] < $summary['open']) {
+            $html .= ' <span class="why">' . e((string) $summary['at']) . ' of '
+                . e((string) $summary['open']) . '</span>';
+        }
+
+        return $html;
     }
 
     /**

@@ -30,11 +30,13 @@ return [
         //
         // MINOR IS THE BUILD PHASE, so the footer answers that question in
         // the vocabulary the specs and CLAUDE.md already use: 1.9.0 is the
-        // application as Phase 9 left it, 1.10.0 is Phase 10, and a patch
-        // release is a fix that landed inside a phase. Bump it in the commit
-        // that closes the phase, and nowhere else — a version that moves on
-        // every commit tells a user nothing they can repeat back.
-        'version' => '1.10.0',
+        // application as Phase 9 left it, 1.10.0 is Phase 10. The patch
+        // position is a numbered sub-phase or a fix that landed inside one —
+        // 1.10.1 is Phase 10.1, the same shape Phases 8.5 to 8.7 already
+        // used. Bump it in the commit that closes the phase, and nowhere
+        // else: a version that moves on every commit tells a user nothing
+        // they can repeat back.
+        'version' => '1.10.1',
 
         // The app is served from https://www.reshiftmanager.com/rerm/, never
         // the domain root — that is the landing page in site/index.html, and

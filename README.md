@@ -18,6 +18,18 @@ file copy.
 
 ## Where this build stands
 
+**Phase 10.1 — what the call produced.** My Roster Status now answers the
+question an officer rings back to find out. Each row carries the member's
+**imported title** — Rodeo Houston's word, never the level derived from it —
+and a **Result** column saying what the last contact actually produced:
+*Reported Complete*, *Member Handling*, *No commitment yet*, or the em dash of
+somebody nobody has reached. It is derived from the four status chips beside
+it and nothing else, so it cannot claim a commitment none of them shows; a
+test walks all 2,592 combinations to prove it. Under each row a closed
+expansion holds the show year's whole contact history, the same move View My
+Roster makes, on the screen where the calls are made. Design and the byte
+measurements behind what it leaves out: `docs/spec-v2.md` §6.
+
 **Phase 9 — Create Forms, complete.** The phrase that survived the whole of v1
 undefined now means something: Create Forms produces the committee's own
 paperwork, filled in from the roster the officer can already see, and downloads

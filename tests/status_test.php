@@ -23,11 +23,13 @@ use Rerm\App;
 use Rerm\Auth\Capability;
 use Rerm\Auth\Level;
 use Rerm\Auth\User;
+use Rerm\Roster\ContactOutcome;
 use Rerm\Roster\LogContact;
 use Rerm\Roster\Metric;
 use Rerm\Roster\MetricStatus;
 use Rerm\Roster\StatusPage;
 use Rerm\Routes;
+use Rerm\View;
 
 // ---------------------------------------------------------------------------
 // Routes and labels — no database needed
@@ -902,6 +904,305 @@ test('a closed show year refuses the contact and the progress write alike', func
         $pdo->prepare('UPDATE show_year SET is_open = 1 WHERE id = :y')
             ->execute([':y' => $fixture['year']]);
     }
+});
+
+// ---------------------------------------------------------------------------
+// The Result column (spec-v2 §6) — what the last contact PRODUCED
+//
+// The derivation is re-transcribed here rather than called, the same ritual
+// the permission matrix and the effective-status table get: a change to what
+// a contact result means has to be made twice, on purpose.
+// ---------------------------------------------------------------------------
+
+test('the outcome table, transcribed: one word for what the member actually said', function (): void {
+    $c = MetricStatus::Complete;
+    $r = MetricStatus::Reported;
+    $h = MetricStatus::InProgress;
+    $t = MetricStatus::Contacted;
+    $o = MetricStatus::Outstanding;
+    $n = MetricStatus::NotReported;
+
+    /** @var array<string, array{0: array<int, MetricStatus>, 1: bool, 2: ContactOutcome, 3: int, 4: int}> $cases */
+    $cases = [
+        // four statuses, contacted?, outcome, at, open
+        'all four met'                => [[$c, $c, $c, $c], true,  ContactOutcome::Settled, 0, 0],
+        'all met, never rung'         => [[$c, $c, $c, $c], false, ContactOutcome::Settled, 0, 0],
+        'nothing said, nobody rang'   => [[$o, $o, $o, $c], false, ContactOutcome::NotContacted, 0, 3],
+        'rung, nothing committed'     => [[$t, $t, $c, $c], true,  ContactOutcome::NoCommitment, 2, 2],
+        'handling one of three'       => [[$h, $t, $t, $c], true,  ContactOutcome::Handling, 1, 3],
+        'handling everything open'    => [[$h, $h, $c, $c], true,  ContactOutcome::Handling, 2, 2],
+        'reported beats handling'     => [[$r, $h, $c, $c], true,  ContactOutcome::Reported, 1, 2],
+        'reported everything open'    => [[$r, $r, $r, $c], true,  ContactOutcome::Reported, 3, 3],
+        'reported one, two untouched' => [[$r, $t, $t, $c], true,  ContactOutcome::Reported, 1, 3],
+
+        // Not reported is OPEN, because the cards call every status but
+        // Complete outstanding and the working list keeps these members. A
+        // Result reading "Nothing outstanding" beside four grey chips would
+        // contradict the list that put them on the screen.
+        'unknown is open, and grey'   => [[$n, $n, $n, $n], true,  ContactOutcome::NoCommitment, 4, 4],
+        'unknown alongside a met one' => [[$c, $c, $n, $n], false, ContactOutcome::NotContacted, 0, 2],
+        'handling, two unknown'       => [[$n, $h, $n, $c], true,  ContactOutcome::Handling, 1, 3],
+
+        // What they SAID stands whether or not a contact was logged beside
+        // it: an import may clear progress, and the two are written together
+        // but read apart.
+        'said it is done, no log'     => [[$r, $o, $o, $c], false, ContactOutcome::Reported, 1, 3],
+        'said they are on it, no log' => [[$h, $o, $o, $o], false, ContactOutcome::Handling, 1, 4],
+    ];
+
+    foreach ($cases as $why => [$statuses, $contacted, $outcome, $at, $open]) {
+        $map = [];
+        foreach (Metric::scored() as $i => $metric) {
+            $map[$metric->value] = $statuses[$i];
+        }
+
+        $got = ContactOutcome::summarise($map, $contacted);
+
+        assertSame($outcome, $got['outcome'], $why);
+        assertSame($at, $got['at'], $why . ' — how many sit at that word');
+        assertSame($open, $got['open'], $why . ' — how many are open at all');
+    }
+});
+
+test('every combination obeys the rules, not just the twelve written down', function (): void {
+    // 6 statuses ^ 4 metrics x contacted-or-not = 2,592 combinations. The
+    // table above says what the interesting ones ARE; this says what none of
+    // them may be.
+    $all     = MetricStatus::cases();
+    $scored  = Metric::scored();
+    $counted = 0;
+
+    foreach ($all as $a) {
+        foreach ($all as $b) {
+            foreach ($all as $cc) {
+                foreach ($all as $d) {
+                    foreach ([true, false] as $contacted) {
+                        $map = [];
+                        foreach ([$a, $b, $cc, $d] as $i => $status) {
+                            $map[$scored[$i]->value] = $status;
+                        }
+
+                        $got     = ContactOutcome::summarise($map, $contacted);
+                        $outcome = $got['outcome'];
+                        $counted++;
+
+                        $open      = 0;
+                        $committed = 0;
+                        foreach ([$a, $b, $cc, $d] as $status) {
+                            if ($status !== MetricStatus::Complete) {
+                                $open++;
+                            }
+                            if ($status === MetricStatus::Reported || $status === MetricStatus::InProgress) {
+                                $committed++;
+                            }
+                        }
+
+                        assertSame($open, $got['open'], 'open is everything but Complete');
+                        assertTrue($got['at'] <= $got['open'], 'a word can never cover more than is open');
+
+                        // Nothing open is Settled whatever anybody did, and
+                        // Settled is nothing else — it is the row's own Fully
+                        // Complete flag arrived at from the same statuses.
+                        assertTrue(
+                            ($open === 0) === ($outcome === ContactOutcome::Settled),
+                            'Settled means, and only means, all four met'
+                        );
+
+                        // The word never contradicts the chips: it claims a
+                        // commitment only where one of them shows one.
+                        $claims = $outcome === ContactOutcome::Reported
+                            || $outcome === ContactOutcome::Handling;
+                        assertTrue(
+                            $claims === ($committed > 0),
+                            'a commitment is claimed exactly when a chip shows one'
+                        );
+
+                        // Reached-but-silent needs the contact; not reached
+                        // needs its absence. Neither may appear where the
+                        // member committed to something.
+                        if ($outcome === ContactOutcome::NoCommitment) {
+                            assertTrue($contacted, 'reached and non-committal needs a contact');
+                            assertSame($open, $got['at'], 'no commitment covers everything open');
+                        }
+                        if ($outcome === ContactOutcome::NotContacted) {
+                            assertTrue(!$contacted, 'no contact means no contact');
+                            assertSame(0, $got['at'], 'nothing was committed to count');
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    assertSame(2592, $counted, 'every combination was walked');
+});
+
+test('the Result words are the chips\' words — one spelling, from the one enum', function (): void {
+    // Two of the five delegate. A rename that moved the chip and not the
+    // outcome would put two spellings of one state in one row.
+    assertSame(MetricStatus::Reported->label(), ContactOutcome::Reported->label());
+    assertSame(MetricStatus::InProgress->label(), ContactOutcome::Handling->label());
+    assertSame(MetricStatus::Reported->chipClass(), ContactOutcome::Reported->chipClass());
+    assertSame(MetricStatus::InProgress->chipClass(), ContactOutcome::Handling->chipClass());
+
+    // And the three this column has of its own still explain themselves —
+    // the definitions at the foot of the screen render every case.
+    foreach (ContactOutcome::cases() as $outcome) {
+        assertTrue($outcome->label() !== '', $outcome->value . ' has a word');
+        assertTrue($outcome->definition() !== '', $outcome->value . ' has a definition');
+    }
+});
+
+test('the chip carries the coverage only when the answer did not cover everything', function (): void {
+    $render = static function (ContactOutcome $outcome, int $at, int $open): string {
+        return View::outcome(['outcome' => $outcome, 'at' => $at, 'open' => $open]);
+    };
+
+    // Never contacted is the em dash the empty cells already use — the cell
+    // beside it says "Never contacted" and fifty repeats of that is bytes.
+    assertSame('&mdash;', $render(ContactOutcome::NotContacted, 0, 3));
+
+    $partial = $render(ContactOutcome::Reported, 1, 3);
+    assertTrue(str_contains($partial, MetricStatus::Reported->label()), 'the word is there');
+    assertTrue(str_contains($partial, '1 of 3'), 'and how far it reached');
+
+    $whole = $render(ContactOutcome::Handling, 2, 2);
+    assertTrue(str_contains($whole, MetricStatus::InProgress->label()));
+    assertTrue(!str_contains($whole, ' of '), 'a qualifier that qualifies nothing is not drawn');
+
+    // The filled chip keeps its inner span, exactly as the metric chip does,
+    // because the word has to take the page colour off a filled background.
+    assertTrue(str_contains($whole, 'chip-word'), 'Member Handling is the filled chip');
+});
+
+// ---------------------------------------------------------------------------
+// What a row carries — title, result, history (spec-v2 §6)
+// ---------------------------------------------------------------------------
+
+test('every row carries the title the last import gave the member', function (): void {
+    $rows = st_all_rows(st_officer1(), ['mode' => 'team', 'show' => 'all']);
+
+    $byNumber = [];
+    foreach ($rows as $row) {
+        assertTrue(array_key_exists('title', $row), 'the row has a title at all');
+        $byNumber[$row['member_number']] = $row;
+    }
+
+    // The officer is a member of their own team, and the fixture gives them
+    // Rodeo Houston's word for the job: Captain. It is the TITLE, not the
+    // level derived from it — the two are different sentences (spec 6.6).
+    assertSame('Captain', $byNumber['STOFF01']['title'] ?? null);
+
+    // Everybody else in the fixture arrived with no title, which is a blank
+    // string and never a null: a row that has to be tested for null before it
+    // can be printed is a row every screen gets wrong once.
+    $fixture = st_fixture();
+    assertSame('', $byNumber[$fixture['members']['opena']['number']]['title'] ?? null);
+});
+
+test('the result of the contact rides on the row, and agrees with the chips', function (): void {
+    $fixture = st_fixture();
+    $rows    = st_all_rows(st_officer1(), ['mode' => 'team', 'show' => 'all']);
+
+    $byNumber = [];
+    foreach ($rows as $row) {
+        $byNumber[$row['member_number']] = $row;
+    }
+
+    // The fixture as the write tests above have left it: opena has been
+    // walked through the whole lifecycle and now claims its indemnity is
+    // done, and norow has one contact and a progress row an import has never
+    // spoken about. openb is the one nobody has touched.
+    /** @var array<string, ContactOutcome> $expected */
+    $expected = [
+        // All four imported Y: nothing to chase, and nobody rang them.
+        'fully'     => ContactOutcome::Settled,
+        // Two met, two open, never rung.
+        'mixed'     => ContactOutcome::NotContacted,
+        // All N, never contacted: the calls still to make.
+        'openb'     => ContactOutcome::NotContacted,
+        // Rung, and committed to nothing on any of the four.
+        'contact5'  => ContactOutcome::NoCommitment,
+        'contact20' => ContactOutcome::NoCommitment,
+        'assigned'  => ContactOutcome::NoCommitment,
+        // Progress set with no contact_log row beside it — what the member
+        // SAID stands on its own, and the chip says so too.
+        'claimed'   => ContactOutcome::Reported,
+        'handling'  => ContactOutcome::Handling,
+        // Walked Contacted -> Member Handling -> Reported Complete above.
+        'opena'     => ContactOutcome::Reported,
+        // No import has covered them, so all four chips are Not reported —
+        // open, exactly as the cards count them, and rung once with nothing
+        // committed. Never "Nothing outstanding": the list is showing them.
+        'norow'     => ContactOutcome::NoCommitment,
+    ];
+
+    foreach ($expected as $key => $outcome) {
+        $number = $fixture['members'][$key]['number'];
+        $row    = $byNumber[$number] ?? null;
+        assertTrue($row !== null, $key . ' is in the officer\'s team view');
+        assertSame($outcome, $row['outcome']['outcome'], $key);
+
+        // The word is derived from the very chips printed beside it, so it
+        // can never name a state none of them is in.
+        if ($outcome === ContactOutcome::Reported || $outcome === ContactOutcome::Handling) {
+            $want = $outcome === ContactOutcome::Reported
+                ? MetricStatus::Reported
+                : MetricStatus::InProgress;
+            $found = 0;
+            foreach (Metric::scored() as $metric) {
+                if ($row['statuses'][$metric->value] === $want) {
+                    $found++;
+                }
+            }
+            assertSame($found, $row['outcome']['at'], $key . ': the count is the chips\' count');
+        }
+    }
+
+    // And across the whole view, "Nothing outstanding" is the same members
+    // the banner counts as Fully Complete — two readings of one fact.
+    foreach ($rows as $row) {
+        assertSame(
+            (bool) $row['fully'],
+            $row['outcome']['outcome'] === ContactOutcome::Settled,
+            $row['member_number'] . ': Settled is Fully Complete'
+        );
+    }
+});
+
+test('the row carries the whole show year of contacts, newest first', function (): void {
+    $fixture = st_fixture();
+    $officer = st_officer1();
+    $target  = (int) $fixture['members']['openb']['id'];
+
+    // Two contacts, logged one after the other. contact_log is append-only,
+    // so this is also the shape a correction takes.
+    assertSame('logged', st_log($officer, [
+        'member_id' => $target, 'contact_type' => 'call', 'note' => 'First call',
+    ])['outcome']);
+    assertSame('logged', st_log($officer, [
+        'member_id' => $target, 'contact_type' => 'email', 'note' => 'Then an email',
+    ])['outcome']);
+
+    $rows = st_all_rows($officer, ['mode' => 'team', 'show' => 'all']);
+    $row  = null;
+    foreach ($rows as $candidate) {
+        if ((int) $candidate['id'] === $target) {
+            $row = $candidate;
+        }
+    }
+
+    assertTrue($row !== null, 'the member is in the view');
+    assertSame(2, count($row['contacts']), 'the expansion gets every entry, not just the newest');
+    assertSame('Then an email', (string) $row['contacts'][0]['notes'], 'newest first');
+    assertSame('First call', (string) $row['contacts'][1]['notes']);
+
+    // The row's own "last contact" cell reads the same list, so the summary
+    // and the expansion cannot disagree about when they last spoke.
+    assertSame($row['contacts'][0], $row['last_contact']);
+
+    // And a contact with nothing committed is a contact: the result says so.
+    assertSame(ContactOutcome::NoCommitment, $row['outcome']['outcome']);
 });
 
 // ---------------------------------------------------------------------------

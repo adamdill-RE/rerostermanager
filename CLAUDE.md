@@ -347,6 +347,18 @@ being tracked has happened, and the clearing is written to `audit_log` with the
 batch that caused it. An import that leaves it `N` **keeps** progress, so an
 officer's work is not erased by a roster refresh.
 
+**One member's four statuses also read as one word**, in My Roster Status's
+Result column: what the last contact actually produced. `Rerm\Roster\
+ContactOutcome` derives it from the four effective statuses already on the row
+and nothing else, so it can never claim a commitment the chips beside it do
+not show. Three rules decide it, and `docs/spec-v2.md` §6 carries the
+reasoning: the word is the **furthest** the member committed rather than the
+least, with a `2 of 3` note when their answer covered only part of what is
+open; **open means "not Complete"**, Not reported included, exactly as the
+cards mean outstanding; and **what was said outranks whether a call was
+logged**, so a member whose progress says Reported Complete is never labelled
+"No contact yet".
+
 `contact_log` is untouched by any of this, ever. Progress is a status flag;
 the contact history is the record, it is retained across every show year, and
 producing a member's history going back years is a v2 feature that v1 exists
@@ -554,6 +566,7 @@ Each phase ends shippable. `docs/spec-v1.md` carries the detail through 8.7,
 | **8.7 · Contact history** | Bulk load of contacts made before the app existed: aliased headers, back-dated rows, per-row officer, two-step apply | Eighty real contacts land on their real dates, and loading the file twice writes them once |
 | **9 · Create Forms** | The forms menu, and the Roster Change Form: officer and sub-committee pickers, twenty-five rows, `.xlsx` out | A generated blank RCF is the Rodeo Houston workbook cell for cell — 558 cells, zero differences |
 | **10 · History and scope** | `import_change` and the Import History screen; the team default on My Roster Status and the export; the version footer; the RE tab icon | "When did this person disappear" is answered without keeping a single spreadsheet |
+| **10.1 · What the call produced** | My Roster Status carries the imported title, a Result column saying what the last contact produced, and a per-row expansion holding the show year's contact history | An officer reads what a member actually said without opening anything, and the whole conversation by opening one row |
 | **10.x · v2** | Recruiting and retention automation; multi-year contact history (OI-12) | see `docs/spec-v2.md` |
 
 Phases 4 and 5 are the product. Everything before them is plumbing and
