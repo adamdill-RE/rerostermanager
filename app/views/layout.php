@@ -285,6 +285,11 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
    rows stay inside one border instead of splitting into two cards. */
 .roster .who { font-weight: 700; }
 .roster .who .sub { display: block; font-weight: 400; color: var(--muted); font-size: .85rem; }
+/* The quiet notes a roster row carries beside a value rather than instead of
+   one: the Result column's "2 of 3" coverage, and "loaded from history" on a
+   contact that came out of a spreadsheet. Muted and small, because each
+   qualifies the thing in front of it. */
+.roster .why { color: var(--muted); font-size: .88rem; }
 .roster td.actions a {
     display: inline-flex;
     align-items: center;
@@ -326,10 +331,12 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
     .roster td.actions a { margin-right: .75rem; min-height: 44px; padding: 0 .25rem; }
     /* The expansion row reads as part of the row above it: the member's own
        row keeps a light rule, the expansion carries the section one. On the
-       dashboard a tbody may hold only the entry row (the sheet renders for
-       one member at a time), so the LAST row carries the rule, whichever
-       row that is. */
-    .roster tr.detail td { padding-top: 0; }
+       dashboard a tbody may hold TWO detail rows — the details expansion and,
+       for the one member being worked, the log-contact sheet — so no detail
+       row draws a rule of its own and the LAST row of the tbody carries it,
+       whichever row that turns out to be. A rule between them would split one
+       member into two cards. */
+    .roster tr.detail td { padding-top: 0; border-bottom: 0; }
     .roster tr.entry td { border-bottom: 0; }
     .roster tbody.member tr:last-child td { border-bottom: 1px solid var(--border); }
 }
@@ -432,6 +439,10 @@ button.deflink:focus-visible { outline: 3px solid var(--rodeo-orange); outline-o
    support — there the deflink buttons are inert. */
 details.defs { margin-top: 1.5rem; }
 details.defs summary { color: var(--muted); }
+/* The Result column's words sit under their own heading in here, beside the
+   metric statuses'. A page h2's 2rem of air would open a hole inside a small
+   box that is already one paragraph long. */
+details.defs h2 { font-size: 1rem; margin: 1.25rem 0 .25rem; }
 details.defs dt { font-weight: 700; margin-top: .5rem; }
 details.defs dd { margin: 0; color: var(--muted); font-size: .9rem; }
 

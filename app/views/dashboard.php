@@ -16,10 +16,15 @@ declare(strict_types=1);
  *
  *   * The working list: outstanding-on-any-metric by default, never
  *     contacted first, then oldest contact first — the top of the list is
- *     always the next call to make. Each row carries the four chips, the
- *     last contact, and Call / Text / Email / Log contact; the log-contact
+ *     always the next call to make. Each row carries the member's imported
+ *     TITLE, the four chips, the last contact, the RESULT that contact
+ *     produced, and Call / Text / Email / Log contact; the log-contact
  *     sheet is its own small per-row <form> (decided 2), so a submit posts
- *     only that row's fields and max_input_vars stays distant.
+ *     only that row's fields and max_input_vars stays distant. Under each
+ *     row a closed <details> holds the whole show year's contact history
+ *     and the member's assigned officers — the move View My Roster makes,
+ *     without its facts list, for the reason recorded at the row loop
+ *     (spec-v2 §6).
  *
  * Everything here was decided in StatusPage: the view renders decided
  * values and never derives a status — MetricStatus::derive() ran once, in
@@ -39,6 +44,7 @@ declare(strict_types=1);
  */
 
 use Rerm\Csrf;
+use Rerm\Roster\ContactOutcome;
 use Rerm\Roster\LogContact;
 use Rerm\Roster\Metric;
 use Rerm\Roster\MetricStatus;
@@ -486,6 +492,7 @@ $fully = (int) $dash['fully_complete'];
                 <?php } ?>
                 <th>Last contact</th>
                 <th>By</th>
+                <th>Result</th>
                 <th>Actions</th>
             </tr>
         </thead>
@@ -529,8 +536,14 @@ $fully = (int) $dash['fully_complete'];
 
     foreach ($statusPage['rows'] as $row) {
         echo '<tbody class="member" id="m', e((string) $row['id']), '"><tr class="entry">';
+        // Number, then the TITLE the last import gave them, then the team.
+        // The title is Rodeo Houston's word — Captain, Committee Member — and
+        // not the level this application derived from it: an officer working
+        // a list of calls needs to know which of these people already hold a
+        // job, and the two are not the same sentence (CLAUDE.md, spec 6.6).
         echo '<td class="who">', e($row['display_name']),
             ' <span class="sub">', e($row['member_number']),
+            $row['title'] !== '' ? ' &middot; ' . e($row['title']) : '',
             $row['team_name'] !== '' ? ' &middot; ' . e($row['team_name']) : '',
             '</span></td>';
 
@@ -549,6 +562,15 @@ $fully = (int) $dash['fully_complete'];
                 ' &middot; ', e($contactTypes[$row['last_contact']['contact_type']]
                     ?? (string) $row['last_contact']['contact_type']), '</td>';
         }
+
+        // WHAT THE CONTACT PRODUCED (spec-v2 §6). The two cells above say a
+        // call happened and who made it; this one says whether it got
+        // anywhere, which is what decides whether to ring again today. It is
+        // ContactOutcome::summarise() over the very statuses printed to the
+        // left — never a second read, so the word cannot contradict the chips
+        // — and it carries "2 of 3" when the member's answer reached only
+        // some of what is still open.
+        echo '<td class="result" data-label="Result">', View::outcome($row['outcome']), '</td>';
 
         // Absent, never disabled (spec 8.4): Text only for CELL PHONE,
         // Email only when an address exists — decided in StatusPage. Log
@@ -574,12 +596,93 @@ $fully = (int) $dash['fully_complete'];
         }
         echo '</td></tr>';
 
+        // THE EXPANSION (spec-v2 §6) — the same move View My Roster makes, on
+        // the screen where the calls are actually made: the whole show year's
+        // contact history with every note, and who else is chasing this
+        // member. Closed by default, because this is a working list first and
+        // a reference second; <details> opens it with no round trip and no
+        // JavaScript, so the CSP is untouched.
+        //
+        // IT CARRIES LESS THAN VIEW MY ROSTER'S DOES, and the difference is
+        // the byte budget rather than an oversight. That screen's expansion
+        // opens with a facts list — phone, email, division, harassment
+        // training; here every one of those is either already on the row (the
+        // name cell now names the title and the team) or one tap away (Call,
+        // Text and Email are the row's own actions), and harassment training
+        // is deliberately not on this screen at all: the four cards above are
+        // exactly the four SCORED metrics, and a fifth appearing underneath
+        // them would be the first place in the application that scored it.
+        // Fifty of those lists measured ~16KB against spec 10's 100KB
+        // first-paint budget, buying repetition. The reference view is one
+        // link away at the foot of the page and carries all of it.
+        //
+        // Unlike the log-contact sheet below, this is rendered for EVERY row:
+        // collapsed, it is its summary plus its contents, a few hundred bytes
+        // for a member with a couple of contacts. The sheet is ~1.6KB of
+        // repeated <option> text and stays one row at a time.
+        $contactCount = count($row['contacts']);
+        $officerCount = count($row['officers']);
+
+        echo '<tr class="detail"><td class="expand" colspan="9"><details><summary>Details &middot; ',
+            $contactCount === 0
+                ? 'no contacts'
+                : e($number($contactCount)) . ' contact' . ($contactCount === 1 ? '' : 's'),
+            ' &middot; ',
+            $officerCount === 0
+                ? 'no officer assigned'
+                : e($number($officerCount)) . ' officer' . ($officerCount === 1 ? '' : 's'),
+            '</summary>';
+
+        // The show year is named once, in the lede at the top of the screen,
+        // rather than fifty times here.
+        echo '<h2>Contact history</h2>';
+        if ($row['contacts'] === []) {
+            echo '<p class="hint">Never contacted this show year.</p>';
+        } else {
+            echo '<ul class="rows">';
+            foreach ($row['contacts'] as $entry) {
+                [$words, $absolute] = View::when($app, (string) $entry['occurred_at']);
+                echo '<li><span title="', e($absolute), '">', e($words), '</span> &middot; ',
+                    e($contactTypes[$entry['contact_type']] ?? (string) $entry['contact_type']),
+                    ' &middot; ', e((string) $entry['officer_name']);
+                if (trim((string) $entry['notes']) !== '') {
+                    echo ' &mdash; ', e((string) $entry['notes']);
+                }
+                // Loaded from a spreadsheet rather than logged here as it
+                // happened (spec 6.7). Said quietly and said anyway: the date
+                // is the officer's word for when it was, not this
+                // application's record of when it was typed.
+                if ($entry['from_history'] ?? false) {
+                    echo ' <span class="why">loaded from history</span>';
+                }
+                echo '</li>';
+            }
+            echo '</ul>';
+        }
+
+        echo '<h2>Assigned officers</h2>';
+        if ($row['officers'] === []) {
+            echo '<p class="hint">No officer assigned yet.</p>';
+        } else {
+            echo '<ul class="rows">';
+            foreach ($row['officers'] as $officer) {
+                echo '<li>', e((string) $officer['officer_name']);
+                if ((string) $officer['officer_title'] !== '') {
+                    echo ' &middot; ', e((string) $officer['officer_title']);
+                }
+                echo '</li>';
+            }
+            echo '</ul>';
+        }
+
+        echo '</details></td></tr>';
+
         // The log-contact sheet (decided 2): type, optional note and
         // per-metric progress, its own small form, so a submit posts only
         // this row's fields. Absent entirely on a closed year — the server
         // refuses regardless; this just stops offering the form.
         if ($year['is_open'] && $row['id'] === $openSheet) {
-            echo '<tr class="detail"><td class="expand" colspan="8">',
+            echo '<tr class="detail"><td class="expand" colspan="9">',
                 '<details open><summary>Log contact &mdash; ', e($row['display_name']), '</summary>';
             echo '<form method="post" action="', $lcAction, '">',
                 $lcShared,
@@ -650,6 +753,24 @@ foreach (MetricStatus::cases() as $s) {
         <dt>Fully Complete</dt><dd><?= e($fullyDefinition) ?></dd>
         <?php foreach (MetricStatus::cases() as $s) { ?>
             <dt><?= e($s->label()) ?></dt><dd><?= e($s->definition()) ?></dd>
+        <?php } ?>
+    </dl>
+
+    <?php /* The Result column's own words. Two of them are the metric
+             statuses' — one spelling, from the one enum — and the rest name
+             states only this column has. "2 of 3" beside one of them says the
+             member's answer covered two of the three requirements still open
+             for them. */ ?>
+    <h2>What the Result column means</h2>
+    <p class="hint">
+        The result of the last contact: what the member actually said, across
+        everything still outstanding for them. A count beside it &mdash;
+        &ldquo;2 of 3&rdquo; &mdash; is how much of what is open their answer
+        covered.
+    </p>
+    <dl>
+        <?php foreach (ContactOutcome::cases() as $o) { ?>
+            <dt><?= e($o->label()) ?></dt><dd><?= e($o->definition()) ?></dd>
         <?php } ?>
     </dl>
 </details>

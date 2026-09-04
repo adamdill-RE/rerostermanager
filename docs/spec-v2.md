@@ -573,7 +573,100 @@ beside us.
 
 ---
 
-## 6. Open items
+## 6. What the call produced
+
+My Roster Status is the screen an officer works from, and it could say who was
+called, when, and by whom — and not the one thing they ring back to find out:
+**what the member actually said.** Four chips carried it, per requirement, in
+colour; nothing on the row carried it in a word. This phase adds three things
+to that screen, and only to that screen.
+
+### 6.1 The title, because a list of calls is a list of people
+
+Each row's name cell now reads `number · title · team`. The title is
+**`member.title`, Rodeo Houston's own word** — Captain, Committee Member,
+Lifetime Committeemen — rewritten unconditionally by every import (spec-v1
+§6.6), and never the level this application derived from it. The two are
+different sentences and one of them is ours: `TitleMap` turns `Captain` into
+Officer, an Allowed User grant can replace that, and none of it changes what
+the roster calls the person. An officer working down a call list wants the
+roster's word.
+
+### 6.2 The Result column, derived and never stored
+
+`contact_log` records that a conversation happened; it has no outcome column
+and gains none. What a member committed to already lives in
+`member_metric.progress`, written by the same `LogContact` call that writes
+the contact — so the result is a **pure function of the four effective
+statuses already on the row**, computed by `Rerm\Roster\ContactOutcome` and
+rendered by `View::outcome()`.
+
+That it is derived from the chips beside it is the whole safety property: the
+word cannot claim a commitment none of them shows. A test walks all 2,592
+combinations to assert exactly that, and the table itself is re-transcribed in
+`tests/status_test.php`, the ritual the permission matrix and the
+effective-status table already get.
+
+Five words, of which two are the chips' own so a rename moves both at once:
+
+| Word | When |
+| --- | --- |
+| **Nothing outstanding** | all four scored metrics Complete — the row's own Fully Complete, reached from the same statuses |
+| **Reported Complete** | the member says at least one open requirement is done |
+| **Member Handling** | the member says they are taking care of at least one |
+| **No commitment yet** | reached this show year, and committed to nothing |
+| **No contact yet** | not reached, and committed to nothing — rendered as the em dash the empty cells already use, because the cell beside it says "Never contacted" |
+
+**The word is the FURTHEST the member committed, not the least.** Somebody who
+said "dues are paid, I'll get to the background check" reads *Reported
+Complete · 1 of 3*. Reporting the worst rung instead would make every partial
+answer read as though the call had produced nothing, which is the single
+distinction this column exists to draw; the coverage note is what keeps it
+honest, and the four chips hold the detail. The note is drawn **only** when
+the answer did not cover everything open — a "3 of 3" on every row qualifies
+nothing and costs fifty rows of bytes.
+
+**Open means "not Complete", exactly as the cards mean outstanding.** Not
+reported is open here. A card's outstanding figure is every effective status
+but Complete, and the working list deliberately keeps a member no import has
+covered, "so nobody vanishes"; a Result reading *Nothing outstanding* beside
+four grey chips would contradict, on the same row, the list that put them
+there.
+
+**What was said outranks whether a call was logged.** The two commitment
+questions are asked before the contact question, so a member whose progress
+says *Reported Complete* can never be labelled *No contact yet* — the one
+contradiction this column must not produce. `contacted` then decides only
+between the two ways of having committed to nothing, which is the same
+question that separates `Contacted` from `Open/No Contact` in spec-v1 §5.4.
+
+### 6.3 The expansion, and what it deliberately leaves out
+
+Under every row is a closed `<details>` holding the show year's whole contact
+history — every entry with its type, note, officer and timestamp, newest
+first, and "loaded from history" on the ones a spreadsheet brought in (§6.7 of
+spec-v1) — and the member's assigned officers. It is the same move View My
+Roster makes, on the screen where the calls are actually made, and it opens
+with no round trip and no JavaScript.
+
+**It carries less than View My Roster's does, and the difference is the byte
+budget rather than an oversight.** That screen's expansion opens with a facts
+list: phone, email, division, harassment training. Here every one of those is
+either already on the row — the name cell names the title and the team — or
+one tap away, because Call, Text and Email are the row's own actions. Fifty
+copies of that list measured **~16KB** against spec-v1 §10's 100KB
+first-paint budget, and the reference view is one link away at the foot of the
+page. Measured at the default page size of fifty rows, with every member
+contacted and assigned: **55.6KB before, 84.3KB after**.
+
+Harassment training is left out for a second reason that is not about bytes:
+the four cards above the list are exactly the four **scored** metrics, and a
+fifth appearing underneath them would be the first place in the application
+that scored it.
+
+---
+
+## 7. Open items
 
 Carried from spec-v1 §12 where they bear on v2, plus those this document
 raises.
@@ -587,6 +680,7 @@ raises.
 | V2-6 | ROOKIE and WAIT LIST are checkboxes in the cells but the form's printed instructions beside them still say `y/n` and 'Please enter "Yes" or "No"'. Which does Rodeo Houston actually read? | The cells, because that is what their workbook now holds and what a reader ticks. Worth one question to the membership office; if they want text, it is a two-line change and the checkbox formats stay. |
 | V2-5 | Should the sub-committee heading at `G5` carry the division (`Division - Team`) or the team alone, as `Subcommittee 1` does? | It carries the division. The field is six columns wide, it names what the whole form is about, and the per-row column — the one Rodeo Houston reads as `Subcommittee 1` — carries the team alone. |
 | V2-6 | Should `import_change` be **retained forever**, or aged out with the show year? A full first import writes 1,954 rows and a monthly refresh a few hundred; ten years is comfortably inside a table this shape. | Retained forever, like every other import record. Revisit only if it is measured to be a problem, and a roll-up would then have to keep `dropped` and `returned` in full — they are the reason it exists. |
+| V2-8 | Should the **Result** column (§6.2) appear on View My Roster too? | Not yet. That screen is a reference view sorted by name, not a working list, and its expansion already carries the history the word summarises. The column earns its width where the next call is being chosen. |
 | V2-7 | Should the team default apply to **View My Roster** as well? Its team filter is Senior Officer and above, and unchanged by this phase. | Not yet. That screen is a search over a roster rather than a working list, and starting it narrowed would make a search that finds nobody look like a member who is gone. |
 | OI-12 | Multi-year contact history reporting (spec-v1 §12) | Still deferred; the data is retained unconditionally. `import_change` is the shape the answer will take when it lands. |
 | OI-4 | Retention rule for dropped members (spec-v1 §12) | Flag only; an Admin confirms the purge. |
