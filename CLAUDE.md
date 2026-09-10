@@ -347,6 +347,17 @@ being tracked has happened, and the clearing is written to `audit_log` with the
 batch that caused it. An import that leaves it `N` **keeps** progress, so an
 officer's work is not erased by a roster refresh.
 
+**Log contact is one sheet and one write, wherever it is offered.** Two
+screens carry it — My Roster Status, and since Phase 10.2 View My Roster —
+and both render `View::logContactSheet()` and post to `/log-contact`, where
+`Rerm\Roster\LogContact` re-checks `Access::allows()` with a Subject per
+member. The screens differ only in where the 303 lands, which the form's
+`screen` field decides and each screen's own return whitelist bounds. A test
+reads both views for a sheet of their own and fails on one. In the other
+direction, the **search** is one clause: `RosterPage::searchClause()` and its
+three-character floor serve both screens, so the same word finds the same
+people on either.
+
 **One member's four statuses also read as one word**, in My Roster Status's
 Result column: what the last contact actually produced. `Rerm\Roster\
 ContactOutcome` derives it from the four effective statuses already on the row
@@ -567,6 +578,7 @@ Each phase ends shippable. `docs/spec-v1.md` carries the detail through 8.7,
 | **9 · Create Forms** | The forms menu, and the Roster Change Form: officer and sub-committee pickers, twenty-five rows, `.xlsx` out | A generated blank RCF is the Rodeo Houston workbook cell for cell — 558 cells, zero differences |
 | **10 · History and scope** | `import_change` and the Import History screen; the team default on My Roster Status and the export; the version footer; the RE tab icon | "When did this person disappear" is answered without keeping a single spreadsheet |
 | **10.1 · What the call produced** | My Roster Status carries the imported title, a Result column saying what the last contact produced, and a per-row expansion holding the show year's contact history | An officer reads what a member actually said without opening anything, and the whole conversation by opening one row |
+| **10.2 · Find and log** | My Roster Status gains spec 7.2's search box, under either half of the toggle; View My Roster gains Log contact on the row, through the one sheet and the one write | An officer finds one member on the working list without paging, and logs a call from the screen that found them by name |
 | **10.x · v2** | Recruiting and retention automation; multi-year contact history (OI-12) | see `docs/spec-v2.md` |
 
 Phases 4 and 5 are the product. Everything before them is plumbing and

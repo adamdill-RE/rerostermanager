@@ -666,7 +666,97 @@ that scored it.
 
 ---
 
-## 7. Open items
+## 7. Find, and log where you found them
+
+Two screens, two small gaps, and each one had the other's answer. My Roster
+Status is the working list — the cards, the toggle, the next call first, and
+Log contact on every row — and it had no way to find one person in it but to
+page. View My Roster is the reference view, and it could find anybody in
+scope from three characters, and then offer nothing to do about them but
+Call, Text and Email. An officer ringing somebody back was leaving one screen
+for the other and carrying a name across by hand. Phase 10.2 closes both gaps
+by borrowing, not by inventing.
+
+### 7.1 The search box, on the working list
+
+My Roster Status gains spec-v1 §7.2's search — **name or member number,
+matching from the third character**, against preferred name, first name,
+last name and member number — as a GET form under the toggle and the team
+picker. Three rules, and each is a rule the screen already had:
+
+- **It is the same search.** `RosterPage::searchClause()` and
+  `RosterPage::SEARCH_MIN_CHARS` are now public and both screens call them;
+  a word finds the same people on either, and the LIKE escaping that keeps
+  a member named `100%` findable is spelled once.
+- **It narrows the same predicate everything else does.** The clause is
+  ANDed onto the `$where` the cards and the list share, so spec-v1 §7.1's
+  rule — every figure equals the list filtered to it — survives a search:
+  the four cards above a searched list describe exactly the people in it.
+  It narrows *within* the toggle, never around it: "Smith" on My members
+  finds the Smiths assigned to the caller, and on My team the Smiths in
+  scope. It is offered under a Committee Dashboard drill-down too, unlike
+  the team picker, because it can only subtract and the term is printed
+  beside the box — nothing about the group is altered quietly.
+- **It never widens `show`.** A match who is fully complete still falls out
+  of the default outstanding-only list, and the list's own empty state says
+  so with "show everyone anyway" beside it. Quietly switching to `show=all`
+  because a search was typed would be a filter the officer did not set, and
+  V2-7's concern — a search that finds nobody must never look like a member
+  who is gone — is met by the banner counting the match and the sentence
+  saying why the row is not drawn.
+
+The term travels everywhere the toggle does: on every `$href` link, in the
+team picker's hidden fields, and in the log-contact sheet's return state,
+through `dashboard_return_query()` as bounded text (the rule Designate Users'
+own search already used). An officer who finds one member, logs the call and
+lands back on fifty rows has lost the thing they typed; a test reads the
+rendered screen for the term on both halves of the toggle and in the sheet.
+
+The empty states are ordered so the truest one wins: with a term in the box,
+"no members are assigned to you" would be false and "your roster is empty"
+would send an officer to an Admin over a search they can clear themselves.
+"Nobody matches" comes first, and offers the wider place to look — My team
+from My members, all teams from one — and the way out.
+
+### 7.2 Log contact, on the reference view
+
+View My Roster gains **Log contact** as the fourth action on every row, on
+exactly My Roster Status's terms: a link that re-renders the page with *this*
+row's sheet open (`?log=id`, one row at a time — the sheet is ~1.6KB of
+repeated `<option>` text, and a hundred copies would be spec-v1 §10's whole
+first-paint budget by themselves), absent on a closed show year, and a
+`<tbody id="m…">` anchor the link scrolls to.
+
+**One sheet, one write.** The sheet moved out of `dashboard.php` into
+`View::logContactSheet()` and both screens render it, because a sheet that
+posted different fields from two screens would be a contact that logs from
+one and 404s from the other. Both post to `/log-contact`; `LogContact`
+re-checks `Access::allows()` with a Subject built from the member's own row,
+whichever screen the form came from, so View My Roster's rows gaining a
+write does not relax anything — the guard the route table already carried
+and the per-member check the handler already made are what decide it. A
+test reads both views and fails on one that builds a `contact_type` select
+of its own.
+
+**The 303 comes back to the screen that sent it.** The form carries a
+`screen` field — `roster`, or anything else for the dashboard, which is what
+every older form says by saying nothing — and `log_contact_act()` picks the
+return path from it. View My Roster gets its own whitelist,
+`roster_return_query()`: the search term as bounded text, `team[]` as ints,
+the sort key from `RosterPage`'s own four, the direction, the page and the
+size. Not `log`: the sheet just submitted must not come back open. The flash
+that says "Contact with … is logged" is read by the roster screen too, so
+the confirmation lands where the officer is.
+
+What it deliberately does not do: put the Result column on View My Roster
+(V2-8 stands — the expansion already carries the history the word
+summarises), or move the team default there (V2-7 stands, for the reason
+above). The reference view is still the reference view; it has simply
+stopped being read-only on the one row an officer has just found.
+
+---
+
+## 8. Open items
 
 Carried from spec-v1 §12 where they bear on v2, plus those this document
 raises.
@@ -680,7 +770,8 @@ raises.
 | V2-6 | ROOKIE and WAIT LIST are checkboxes in the cells but the form's printed instructions beside them still say `y/n` and 'Please enter "Yes" or "No"'. Which does Rodeo Houston actually read? | The cells, because that is what their workbook now holds and what a reader ticks. Worth one question to the membership office; if they want text, it is a two-line change and the checkbox formats stay. |
 | V2-5 | Should the sub-committee heading at `G5` carry the division (`Division - Team`) or the team alone, as `Subcommittee 1` does? | It carries the division. The field is six columns wide, it names what the whole form is about, and the per-row column — the one Rodeo Houston reads as `Subcommittee 1` — carries the team alone. |
 | V2-6 | Should `import_change` be **retained forever**, or aged out with the show year? A full first import writes 1,954 rows and a monthly refresh a few hundred; ten years is comfortably inside a table this shape. | Retained forever, like every other import record. Revisit only if it is measured to be a problem, and a roll-up would then have to keep `dropped` and `returned` in full — they are the reason it exists. |
-| V2-8 | Should the **Result** column (§6.2) appear on View My Roster too? | Not yet. That screen is a reference view sorted by name, not a working list, and its expansion already carries the history the word summarises. The column earns its width where the next call is being chosen. |
+| V2-8 | Should the **Result** column (§6.2) appear on View My Roster too? | Not yet. That screen is a reference view sorted by name, not a working list, and its expansion already carries the history the word summarises. The column earns its width where the next call is being chosen. Unchanged by §7, which gave that screen the write and not the word. |
+| V2-9 | Should a search on My Roster Status (§7.1) **include the complete** automatically, so a found member is always drawn? | No. The banner counts the match and the list's empty state says why the row is not there, with the way to draw it beside the sentence. Widening `show` because a word was typed is a filter the officer did not set. Revisit if the sentence is measured to be missed. |
 | V2-7 | Should the team default apply to **View My Roster** as well? Its team filter is Senior Officer and above, and unchanged by this phase. | Not yet. That screen is a search over a roster rather than a working list, and starting it narrowed would make a search that finds nobody look like a member who is gone. |
 | OI-12 | Multi-year contact history reporting (spec-v1 §12) | Still deferred; the data is retained unconditionally. `import_change` is the shape the answer will take when it lands. |
 | OI-4 | Retention rule for dropped members (spec-v1 §12) | Flag only; an Admin confirms the purge. |

@@ -16,11 +16,14 @@ declare(strict_types=1);
  *
  *   * The working list: outstanding-on-any-metric by default, never
  *     contacted first, then oldest contact first — the top of the list is
- *     always the next call to make. Each row carries the member's imported
- *     TITLE, the four chips, the last contact, the RESULT that contact
- *     produced, and Call / Text / Email / Log contact; the log-contact
- *     sheet is its own small per-row <form> (decided 2), so a submit posts
- *     only that row's fields and max_input_vars stays distant. Under each
+ *     always the next call to make; and, since Phase 10.2, a search box
+ *     (spec 7.2's, by the same clause) so one member can be found under
+ *     either half of the toggle without leaving the screen. Each row
+ *     carries the member's imported TITLE, the four chips, the last
+ *     contact, the RESULT that contact produced, and Call / Text / Email /
+ *     Log contact; the log-contact sheet is its own small per-row <form>
+ *     (decided 2), rendered by View::logContactSheet() and shared with View
+ *     My Roster, so a submit posts only that row's fields. Under each
  *     row a closed <details> holds the whole show year's contact history
  *     and the member's assigned officers — the move View My Roster makes,
  *     without its facts list, for the reason recorded at the row loop
@@ -45,7 +48,6 @@ declare(strict_types=1);
 
 use Rerm\Csrf;
 use Rerm\Roster\ContactOutcome;
-use Rerm\Roster\LogContact;
 use Rerm\Roster\Metric;
 use Rerm\Roster\MetricStatus;
 use Rerm\Roster\TeamFilter;
@@ -80,21 +82,8 @@ $popId = [
 $fullyDefinition = 'Members whose official roster shows all four requirements met: '
     . 'HLSR dues, committee dues, indemnity and background check.';
 
-$contactTypes = [
-    'call'      => 'Call',
-    'text'      => 'Text',
-    'email'     => 'Email',
-    'in_person' => 'In person',
-    'other'     => 'Other',
-];
-
-/** The choices a per-metric progress select offers, spelled as the chips are. */
-$progressChoices = [
-    ''                 => 'No change',
-    'in_progress'      => MetricStatus::InProgress->label() . ' — they are taking care of it',
-    'claimed_complete' => MetricStatus::Reported->label() . ' — they say it is done',
-    'not_started'      => 'Not started — clear a status set by mistake',
-];
+/** What a contact type is called — View's table, shared with View My Roster. */
+$contactTypes = View::CONTACT_TYPES;
 
 $defaultMode = $statusPage['has_assignments'] ? 'mine' : 'team';
 
@@ -128,6 +117,13 @@ $href = static function (array $overrides = []) use ($app, $statusPage, $default
         'size' => $statusPage['size'],
         'page' => 1,
     ];
+
+    // The search rides on every link too (Phase 10.2): turning a page or
+    // flipping the toggle with the term dropped would hand back fifty rows
+    // where the officer had asked for one.
+    if ($statusPage['search'] !== '') {
+        $params['q'] = $statusPage['search'];
+    }
 
     // Written before the overrides so a caller can drop one by passing null.
     if ($filters['division'] !== null) {
@@ -205,7 +201,8 @@ $fully = (int) $dash['fully_complete'];
     Show year <?= e((string) $year['label']) ?> &middot;
     <?= $statusPage['mode'] === 'mine'
         ? 'members assigned to you'
-        : ($teams['all'] ? 'everyone in your scope' : 'everyone on the team below') ?>.
+        : ($teams['all'] ? 'everyone in your scope' : 'everyone on the team below') ?><?php
+    if ($statusPage['search_applied']) { ?>, matching &ldquo;<?= e((string) $statusPage['search']) ?>&rdquo;<?php } ?>.
     The list below is <?= $statusPage['show'] === 'outstanding'
         ? 'the working set: outstanding on at least one requirement, next call first'
         : 'everyone in this view, next call first' ?>.
@@ -296,6 +293,9 @@ $fully = (int) $dash['fully_complete'];
     if ($filters['assigned'] !== null) {
         $carry['assigned'] = (string) $filters['assigned'];
     }
+    if ($statusPage['search'] !== '') {
+        $carry['q'] = (string) $statusPage['search'];
+    }
 
     $selectedTeams = $teams['selected'];
     $inScope       = 0;
@@ -357,9 +357,101 @@ $fully = (int) $dash['fully_complete'];
     </form>
 <?php } ?>
 
+<?php
+/*
+ * FIND ONE MEMBER (Phase 10.2) — spec 7.2's search box, on the screen where
+ * the calls are made. An officer ringing somebody back should not page
+ * through fifty rows to find them, and should not have to leave for View My
+ * Roster, which has no Log contact of its own on the row until this phase
+ * and carries no cards at all.
+ *
+ * A GET form, like every filter in this application: the term lands in the
+ * URL, survives a page turn and the back button, and the server enforces
+ * the floor. It narrows WITHIN whatever is already in force — the toggle,
+ * the team, a drill-down — never around it, so everything else on screen
+ * travels in hidden fields: a search that dropped "My members" would find
+ * a Smith the officer is not chasing, with no error and no way to tell.
+ * It is offered under a drill-down too, unlike the team picker: it can only
+ * subtract, and the term is printed beside the box, so nothing about the
+ * group is altered quietly.
+ */
+$findCarry = [];
+if ($statusPage['mode'] !== $defaultMode) {
+    $findCarry['mode'] = (string) $statusPage['mode'];
+}
+if ($statusPage['show'] !== 'outstanding') {
+    $findCarry['show'] = (string) $statusPage['show'];
+}
+if ((int) $statusPage['size'] !== (int) $statusPage['size_default']) {
+    $findCarry['size'] = (string) $statusPage['size'];
+}
+if ($filters['division'] !== null) {
+    $findCarry['division'] = (string) $filters['division'];
+}
+if ($filters['contact'] !== null) {
+    $findCarry['contact'] = (string) $filters['contact'];
+}
+if ($filters['assigned'] !== null) {
+    $findCarry['assigned'] = (string) $filters['assigned'];
+}
+// The team selection in whichever of its shapes is in force — the ALL
+// token, or ids — for the same reason $href carries it: left out, it is
+// re-derived at the other end as the caller's own team.
+$findTeam = $teams['may_choose'] || $filters['teams'] !== [] ? TeamFilter::param($teams) : null;
+?>
+<form class="quick find" method="get" action="<?= e($app->url('dashboard')) ?>">
+    <?php foreach ($findCarry as $name => $value) { ?>
+        <input type="hidden" name="<?= e($name) ?>" value="<?= e($value) ?>">
+    <?php } ?>
+    <?php if (is_string($findTeam)) { ?>
+        <input type="hidden" name="team" value="<?= e($findTeam) ?>">
+    <?php } elseif (is_array($findTeam)) { ?>
+        <?php foreach ($findTeam as $teamId) { ?>
+            <input type="hidden" name="team[]" value="<?= e((string) $teamId) ?>">
+        <?php } ?>
+    <?php } ?>
+
+    <label for="q">Find a member &mdash; name or member number</label>
+    <input type="search" id="q" name="q" value="<?= e((string) $statusPage['search']) ?>"
+        inputmode="search" autocomplete="off"
+        placeholder="From <?= e((string) $statusPage['search_min_chars']) ?> characters">
+    <button type="submit" class="quiet">Find</button>
+
+    <?php if ($statusPage['search_too_short']) { ?>
+        <p class="hint">
+            <span class="chip chip-warn"><span class="chip-word">Note</span></span>
+            Search starts at <?= e((string) $statusPage['search_min_chars']) ?> characters
+            &mdash; showing everyone in this view instead.
+        </p>
+    <?php } elseif ($statusPage['search_applied']) { ?>
+        <p class="hint">
+            Showing only members matching <strong>&ldquo;<?= e((string) $statusPage['search']) ?>&rdquo;</strong>
+            &middot; <a href="<?= e($href(['q' => null])) ?>">Clear the search</a>
+        </p>
+    <?php } ?>
+</form>
+
 <?php if ($total === 0) { ?>
     <div class="card">
-        <?php if ($statusPage['mode'] === 'mine') { ?>
+        <?php if ($statusPage['search_applied']) { ?>
+            <?php /* Said first: with a term in the box, "no members are
+                     assigned to you" would be false, and "your roster is
+                     empty" would send an officer to an Admin over a search
+                     they can clear themselves. */ ?>
+            <h2>Nobody matches</h2>
+            <p>
+                No member in this view matches
+                &ldquo;<?= e((string) $statusPage['search']) ?>&rdquo;.
+                <?php if ($statusPage['mode'] === 'mine') { ?>
+                    They may be on your team without being assigned to you &mdash;
+                    <a href="<?= e($href(['mode' => 'team'])) ?>">search My team</a>, or
+                <?php } elseif (!$teams['all'] && $teams['may_choose'] && !$filters['drilled']) { ?>
+                    They may be on another team &mdash;
+                    <a href="<?= e($href(['team' => TeamFilter::ALL])) ?>">search all teams you can see</a>, or
+                <?php } ?>
+                <a href="<?= e($href(['q' => null])) ?>">clear the search</a>.
+            </p>
+        <?php } elseif ($statusPage['mode'] === 'mine') { ?>
             <h2>No members are assigned to you yet</h2>
             <p>
                 Assignments arrive with the Assign Officers screen. Until then,
@@ -503,7 +595,7 @@ $fully = (int) $dash['fully_complete'];
     // Everything identical across rows is built ONCE here — the same token
     // serves every form in this session, and fifty copies of the option
     // lists are the bytes the budget does not have.
-    $lcAction = e($app->url('log-contact'));
+    $lcAction = $app->url('log-contact');
 
     // The filters travel too, whitelisted again on the way back by
     // dashboard_return_query() — a 303 that dropped them would land the
@@ -521,16 +613,17 @@ $fully = (int) $dash['fully_complete'];
             : null,
         'contact'  => $filters['contact'],
         'assigned' => $filters['assigned'],
+        // The search term as typed (Phase 10.2), so the officer comes back
+        // to the one member they found rather than to the whole list.
+        'q'        => $statusPage['search'] !== '' ? $statusPage['search'] : null,
         'page'     => $statusPage['page'] > 1 ? $statusPage['page'] : null,
         'size'     => $statusPage['size'] !== $statusPage['size_default'] ? $statusPage['size'] : null,
     ]));
+    // `screen` names the screen to come back to; log_contact_act() reads it
+    // through a whitelist and View My Roster's sheet says 'roster'.
     $lcShared = Rerm\Csrf::field()
+        . '<input type="hidden" name="screen" value="dashboard">'
         . '<input type="hidden" name="return" value="' . e($returnState) . '">';
-
-    $typeOptions = '';
-    foreach (LogContact::TYPES as $type) {
-        $typeOptions .= '<option value="' . e($type) . '">' . e($contactTypes[$type]) . '</option>';
-    }
 
     $openSheet = (int) ($statusPage['log_open'] ?? 0);
 
@@ -679,36 +772,18 @@ $fully = (int) $dash['fully_complete'];
 
         // The log-contact sheet (decided 2): type, optional note and
         // per-metric progress, its own small form, so a submit posts only
-        // this row's fields. Absent entirely on a closed year — the server
-        // refuses regardless; this just stops offering the form.
+        // this row's fields. View::logContactSheet() since Phase 10.2 — the
+        // same sheet View My Roster now offers, from one renderer. Absent
+        // entirely on a closed year — the server refuses regardless; this
+        // just stops offering the form.
         if ($year['is_open'] && $row['id'] === $openSheet) {
-            echo '<tr class="detail"><td class="expand" colspan="9">',
-                '<details open><summary>Log contact &mdash; ', e($row['display_name']), '</summary>';
-            echo '<form method="post" action="', $lcAction, '">',
+            echo View::logContactSheet(
+                $lcAction,
                 $lcShared,
-                '<input type="hidden" name="member_id" value="', e((string) $row['id']), '">',
-                '<p class="lc"><select name="contact_type" aria-label="How the contact happened">',
-                $typeOptions,
-                '</select><textarea name="note" rows="2" maxlength="1000" aria-label="Note"',
-                ' placeholder="Note &mdash; optional, kept forever"></textarea></p>';
-
-            $pending = array_filter(
-                Metric::scored(),
-                static fn (Metric $m): bool => $row['statuses'][$m->value] !== MetricStatus::Complete
+                (int) $row['id'],
+                (string) $row['display_name'],
+                $row['statuses']
             );
-            if ($pending !== []) {
-                echo '<p class="pgh">What they said &mdash; optional</p>';
-                foreach ($pending as $metric) {
-                    echo '<label class="pg">', e($metric->shortLabel()),
-                        '<select name="progress[', e($metric->value), ']">';
-                    foreach ($progressChoices as $value => $label) {
-                        echo '<option value="', e((string) $value), '">', e($label), '</option>';
-                    }
-                    echo '</select></label>';
-                }
-            }
-
-            echo '<button type="submit">Log this contact</button></form></details></td></tr>';
         }
         echo '</tbody>', "\n";
     }

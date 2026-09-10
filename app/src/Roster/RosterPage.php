@@ -45,7 +45,11 @@ final class RosterPage
         'number'  => 'm.member_number',
     ];
 
-    private const SEARCH_MIN_CHARS = 3;
+    /**
+     * The search floor, public since Phase 10.2: My Roster Status carries the
+     * same search box, and a second constant would be a second floor.
+     */
+    public const SEARCH_MIN_CHARS = 3;
 
     public function __construct(
         private readonly PDO $pdo,
@@ -89,21 +93,9 @@ final class RosterPage
         $search    = $tooShort ? '' : $searchRaw;
 
         if ($search !== '') {
-            // %, _ and \ typed by a person are literals, not operators: a
-            // member named 100% must be findable and %%% must match nobody.
-            // Four columns means four placeholders — a named placeholder
-            // cannot be reused within one statement here.
-            $like = '%' . self::escapeLike($search) . '%';
-
-            $where .= " AND (m.preferred_name LIKE :search_preferred ESCAPE '\\\\'"
-                . " OR m.first_name LIKE :search_first ESCAPE '\\\\'"
-                . " OR m.last_name LIKE :search_last ESCAPE '\\\\'"
-                . " OR m.member_number LIKE :search_number ESCAPE '\\\\')";
-
-            $bind[':search_preferred'] = $like;
-            $bind[':search_first']     = $like;
-            $bind[':search_last']      = $like;
-            $bind[':search_number']    = $like;
+            [$clause, $searchBind] = self::searchClause($search);
+            $where .= ' AND ' . $clause;
+            $bind  += $searchBind;
         }
 
         // The team filter is for Senior Officer and above only — an Officer's
@@ -245,7 +237,43 @@ final class RosterPage
             'can_filter_teams' => $canFilterTeams,
             'selected_teams'   => $selectedTeams,
             'teams'            => $canFilterTeams ? $this->teamsInScope($user) : [],
+
+            // Which row's log-contact sheet is open (?log=id), the same one
+            // row at a time rule My Roster Status keeps (Phase 10.2): the
+            // sheet is ~1.6KB of repeated <option> text, and a hundred copies
+            // would be the spec 10 first-paint budget by themselves.
+            'log_open'         => (int) ($input['log'] ?? 0),
         ];
+    }
+
+    /**
+     * The search as a SQL fragment over `m`, with its bindings — ONE spelling
+     * for the two screens that search a roster (spec 7.2 and, since Phase
+     * 10.2, spec 7.1). The caller has already applied the floor.
+     *
+     * %, _ and \ typed by a person are literals, not operators: a member
+     * named 100% must be findable and %%% must match nobody. Four columns
+     * means four placeholders — a named placeholder cannot be reused within
+     * one statement here.
+     *
+     * @return array{0: string, 1: array<string, string>} the parenthesised
+     *         clause, and the bindings it needs
+     */
+    public static function searchClause(string $search): array
+    {
+        $like = '%' . self::escapeLike($search) . '%';
+
+        $clause = "(m.preferred_name LIKE :search_preferred ESCAPE '\\\\'"
+            . " OR m.first_name LIKE :search_first ESCAPE '\\\\'"
+            . " OR m.last_name LIKE :search_last ESCAPE '\\\\'"
+            . " OR m.member_number LIKE :search_number ESCAPE '\\\\')";
+
+        return [$clause, [
+            ':search_preferred' => $like,
+            ':search_first'     => $like,
+            ':search_last'      => $like,
+            ':search_number'    => $like,
+        ]];
     }
 
     /**

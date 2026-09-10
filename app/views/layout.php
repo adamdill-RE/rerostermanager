@@ -515,6 +515,14 @@ form.quick button { margin-top: .5rem; }
     form.quick.teams select { min-height: 48px; }
     form.quick.teams button { width: auto; min-width: 12rem; min-height: 48px; margin: 0; }
     form.quick.teams p.hint { grid-column: 1 / -1; margin: 0; }
+
+    /* The dashboard's search box (Phase 10.2): the same one-control shape as
+       the team picker above it, for the same reason. */
+    form.quick.find { display: grid; grid-template-columns: 1fr auto; gap: .5rem .75rem; align-items: center; }
+    form.quick.find label { grid-column: 1 / -1; margin: 0; }
+    form.quick.find input[type="search"] { min-height: 48px; }
+    form.quick.find button { width: auto; min-width: 12rem; min-height: 48px; margin: 0; }
+    form.quick.find p.hint { grid-column: 1 / -1; margin: 0; }
 }
 
 /* Visible to a screen reader, not to the eye: the checkbox column header and
@@ -677,7 +685,7 @@ summary { cursor: pointer; min-height: 44px; padding: .4rem 0; }
 ul.rows { margin: .25rem 0 .75rem; padding-left: 1.1rem; color: var(--muted); font-size: .92rem; }
 ul.rows li { margin: .15rem 0; }
 
-input[type="password"], input[type="text"], input[type="date"] {
+input[type="password"], input[type="text"], input[type="search"], input[type="date"] {
     width: 100%;
     min-height: 56px;
     padding: 0 .75rem;

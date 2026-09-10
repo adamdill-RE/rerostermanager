@@ -44,6 +44,11 @@ use Rerm\Auth\User;
  * is what the toggle's default rule means. Computing it after would make an
  * officer's default mode depend on which team they happened to drill into.
  *
+ * Phase 10.2 added a fifth narrowing, the SEARCH — spec 7.2's box, by
+ * RosterPage's own clause, ANDed onto the same $where — so an officer can
+ * find one member under either half of the toggle without leaving the screen
+ * the calls are made from.
+ *
  * WHAT A ROW CARRIES (spec-v2 §6)
  *
  * Beside the four chips each row now carries the member's IMPORTED TITLE, the
@@ -205,6 +210,37 @@ final class StatusPage
             [$hasAny, $bindHasAny] = EligibleOfficers::memberHasAssignment('m', 'flt', $showYearId);
             $where .= " AND NOT {$hasAny}";
             $bind  += $bindHasAny;
+        }
+
+        // ------------------------------------------------------------------
+        // The search (Phase 10.2): the same box View My Roster has, on the
+        // screen where the calls are made — a name, or a member number, so an
+        // officer ringing back one person does not page through fifty to find
+        // them. RosterPage's own clause and floor, so the two screens cannot
+        // find different people for the same word.
+        //
+        // It NARROWS the same $where the cards and the list share, like every
+        // other filter here, so spec 7.1's rule survives it: the four cards
+        // above a searched list describe exactly the people in it. And it
+        // narrows under the toggle, never around it — "Smith" on My members
+        // finds the Smiths assigned to you, on My team the Smiths in scope.
+        //
+        // A match who is fully complete still falls out of the default
+        // outstanding-only list, and the list's own empty state says so in
+        // words with "show everyone anyway" beside it: a search that finds
+        // somebody must never look like a member who is gone (spec-v2 §8,
+        // V2-7's concern), and quietly widening `show` would be a filter the
+        // officer did not set.
+        // ------------------------------------------------------------------
+
+        $searchRaw = trim(is_string($input['q'] ?? null) ? $input['q'] : '');
+        $tooShort  = $searchRaw !== '' && mb_strlen($searchRaw) < RosterPage::SEARCH_MIN_CHARS;
+        $search    = $tooShort ? '' : $searchRaw;
+
+        if ($search !== '') {
+            [$clause, $searchBind] = RosterPage::searchClause($search);
+            $where .= ' AND ' . $clause;
+            $bind  += $searchBind;
         }
 
         // My members narrows the scoped WHERE; every read below shares it so
@@ -385,6 +421,15 @@ final class StatusPage
             // selects are ~1KB of repeated <option> text, and fifty copies
             // is half the spec 10 first-paint budget by themselves.
             'log_open'     => (int) ($input['log'] ?? 0),
+
+            // The search as it was actually applied (Phase 10.2): the term
+            // as typed, whether it reached the query, and the floor it has
+            // to clear — the view renders decided values and never re-derives
+            // the floor.
+            'search'           => $searchRaw,
+            'search_applied'   => $search !== '',
+            'search_too_short' => $tooShort,
+            'search_min_chars' => RosterPage::SEARCH_MIN_CHARS,
 
             // The team picker's own state: the options, the caller's own team,
             // what is selected and whether that was chosen or defaulted. The

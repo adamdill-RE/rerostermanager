@@ -27,6 +27,7 @@ use Rerm\Roster\ContactOutcome;
 use Rerm\Roster\LogContact;
 use Rerm\Roster\Metric;
 use Rerm\Roster\MetricStatus;
+use Rerm\Roster\RosterPage;
 use Rerm\Roster\StatusPage;
 use Rerm\Routes;
 use Rerm\View;
@@ -1203,6 +1204,214 @@ test('the row carries the whole show year of contacts, newest first', function (
 
     // And a contact with nothing committed is a contact: the result says so.
     assertSame(ContactOutcome::NoCommitment, $row['outcome']['outcome']);
+});
+
+// ---------------------------------------------------------------------------
+// The search (Phase 10.2) — spec 7.2's box, on the screen the calls are
+// made from. It narrows the SAME predicate the cards and the list share,
+// under the toggle and inside the scope, by RosterPage's own clause.
+// ---------------------------------------------------------------------------
+
+/**
+ * The fixture's members are named by their position: member n has last name
+ * St00000n and number ST00000n, so a search for either finds exactly one.
+ */
+function st_number_of(string $key): string
+{
+    return st_fixture()['members'][$key]['number'];
+}
+
+test('a search narrows the list AND the cards to the members it matches', function (): void {
+    $officer = st_officer1();
+
+    // 'mixed' — two Y, two N — is one member of team 1, and outstanding, so
+    // the working list shows them.
+    $result = st_page($officer, ['mode' => 'team', 'q' => st_number_of('mixed')]);
+
+    assertSame(true, $result['search_applied']);
+    assertSame(false, $result['search_too_short']);
+    assertSame(st_number_of('mixed'), $result['search']);
+
+    assertSame(1, $result['dashboard']['total'], 'the banner counts the one match');
+    assertSame(1, $result['total'], 'and so does the list');
+    assertSame(st_number_of('mixed'), $result['rows'][0]['member_number']);
+
+    // Every card describes exactly that one person: spec 7.1's rule that a
+    // figure equals the list filtered to it has to survive a search too.
+    foreach ($result['dashboard']['cards'] as $metric => $card) {
+        assertSame(1, $card['complete'] + $card['outstanding'], "{$metric} counts one member");
+    }
+    assertSame(1, $result['dashboard']['cards']['hlsr_dues']['complete'], 'HLSR Y');
+    assertSame(0, $result['dashboard']['cards']['indemnity']['complete'], 'indemnity N');
+});
+
+test('a search finds by last name and by member number, from three characters', function (): void {
+    $officer = st_officer1();
+    $fixture = st_fixture();
+
+    $byLast = st_page($officer, ['mode' => 'team', 'q' => $fixture['members']['opena']['last']]);
+    assertSame(1, $byLast['total']);
+    assertSame(st_number_of('opena'), $byLast['rows'][0]['member_number']);
+
+    // The officer's own row, by their real surname.
+    $byName = st_page($officer, ['mode' => 'team', 'show' => 'all', 'q' => 'Stofficer']);
+    assertSame(1, $byName['total']);
+    assertSame('STOFF01', $byName['rows'][0]['member_number']);
+
+    // Below the floor is not an error: the whole view, and a flag the
+    // screen turns into a sentence.
+    $whole = st_page($officer, ['mode' => 'team']);
+    $short = st_page($officer, ['mode' => 'team', 'q' => 'St']);
+    assertSame(true, $short['search_too_short']);
+    assertSame(false, $short['search_applied']);
+    assertSame('St', $short['search'], 'the term as typed comes back for the box');
+    assertSame($whole['total'], $short['total'], 'nothing was filtered');
+    assertSame($whole['dashboard']['total'], $short['dashboard']['total']);
+    assertSame(RosterPage::SEARCH_MIN_CHARS, $short['search_min_chars'], 'one floor, RosterPage\'s');
+});
+
+test('a search stays inside scope and under the toggle — it only ever subtracts', function (): void {
+    $officer = st_officer1();
+
+    // The outsider is in the other division; t2open is on the other team of
+    // the officer's own division. Neither is theirs, and a search for either
+    // finds nobody rather than somebody.
+    foreach (['outsider', 't2open'] as $key) {
+        $result = st_page($officer, ['mode' => 'team', 'show' => 'all', 'q' => st_number_of($key)]);
+        assertSame(true, $result['search_applied']);
+        assertSame(0, $result['dashboard']['total'], "{$key} is not in this officer's scope");
+        assertSame(0, $result['total']);
+    }
+
+    // Under My members the search finds the one assigned member and NOT a
+    // team-mate who is not assigned — the toggle still narrows first.
+    $mine = st_page($officer, ['mode' => 'mine', 'q' => st_number_of('assigned')]);
+    assertSame(1, $mine['total']);
+    assertSame(st_number_of('assigned'), $mine['rows'][0]['member_number']);
+
+    $notMine = st_page($officer, ['mode' => 'mine', 'q' => st_number_of('opena')]);
+    assertSame(0, $notMine['total'], 'on the team, not assigned: absent from My members');
+    assertSame(1, st_page($officer, ['mode' => 'team', 'q' => st_number_of('opena')])['total'],
+        'and present on My team');
+
+    // has_assignments is computed on the UNFILTERED scope, so a search that
+    // matches nobody assigned does not flip the default toggle.
+    assertSame(true, $notMine['has_assignments']);
+});
+
+test('a fully complete match is counted, and the outstanding-only list says why it is not shown', function (): void {
+    $officer = st_officer1();
+
+    $result = st_page($officer, ['mode' => 'team', 'q' => st_number_of('fully')]);
+    assertSame(1, $result['dashboard']['total'], 'found');
+    assertSame(1, $result['dashboard']['fully_complete']);
+    assertSame(0, $result['total'], 'but the default list is outstanding-only');
+
+    // The list's own empty state carries "show everyone anyway"; asking for
+    // everyone shows the one row. The search never widens `show` by itself.
+    $all = st_page($officer, ['mode' => 'team', 'show' => 'all', 'q' => st_number_of('fully')]);
+    assertSame(1, $all['total']);
+    assertSame(st_number_of('fully'), $all['rows'][0]['member_number']);
+});
+
+test('the dashboard search treats typed wildcards as literals, like View My Roster', function (): void {
+    $officer = st_officer1();
+
+    assertSame(0, st_page($officer, ['mode' => 'team', 'show' => 'all', 'q' => '%%%'])['total']);
+    assertSame(0, st_page($officer, ['mode' => 'team', 'show' => 'all', 'q' => '___'])['total']);
+    assertSame(0, st_page($officer, ['mode' => 'team', 'show' => 'all', 'q' => 'St%'])['total']);
+
+    // And a non-string `q` is nothing, never an error.
+    $odd = st_page($officer, ['mode' => 'team', 'q' => ['St000001']]);
+    assertSame('', $odd['search']);
+    assertSame(false, $odd['search_applied']);
+});
+
+/**
+ * My Roster Status rendered for officer one, the way index.php renders it —
+ * body then layout — so the search box's hidden fields and the sheet's return
+ * state can be read off the HTML.
+ *
+ * @param array<string, mixed> $input
+ */
+function st_render(array $input): string
+{
+    /** @var App $app */
+    $app = $GLOBALS['rerm_app'];
+
+    $_SESSION ??= [];
+    $user       = st_officer1();
+    $year       = ['id' => (int) st_fixture()['year'], 'label' => 'ST-2027', 'is_open' => true];
+    $wide       = true;
+    $title      = 'My Roster Status';
+    $notices    = [];
+    $statusPage = StatusPage::fromApp($app)->page($user, (int) st_fixture()['year'], $input);
+
+    ob_start();
+    require $app->path('app/views/dashboard.php');
+    $body = (string) ob_get_clean();
+
+    ob_start();
+    require $app->path('app/views/layout.php');
+
+    return (string) ob_get_clean();
+}
+
+test('the search box is on the screen, and the term rides on every link and the sheet', function (): void {
+    $target = st_fixture()['members']['opena'];
+    $html   = st_render([
+        'mode' => 'team', 'show' => 'all', 'q' => $target['number'], 'log' => (string) $target['id'],
+    ]);
+
+    // The box, with the term still in it, and the way out beside it.
+    assertSame(1, preg_match('/<input type="search" id="q" name="q" value="([^"]*)"/', $html, $m));
+    assertSame($target['number'], html_entity_decode($m[1], ENT_QUOTES));
+    assertTrue(str_contains($html, 'Clear the search'), 'the search says it is on and offers the way out');
+    assertTrue(str_contains($html, 'Find a member'), 'the label');
+
+    // The form carries the toggle and the filter in hidden fields: a search
+    // that dropped "My team" or "show=all" would be a quiet subtraction.
+    assertSame(1, preg_match('/<form class="quick find"(.*?)<\/form>/s', $html, $form), 'the find form');
+    assertTrue(str_contains($form[1], 'name="mode" value="team"'), 'mode travels — officer one defaults to mine');
+    assertTrue(str_contains($form[1], 'name="show" value="all"'), 'show travels');
+
+    // Every dashboard link keeps the term: the toggle, and the list controls.
+    assertSame(1, preg_match('/<nav class="toggle"(.*?)<\/nav>/s', $html, $nav));
+    assertSame(2, preg_match_all('/href="[^"]*q=' . preg_quote($target['number'], '/') . '[^"]*"/', $nav[1]),
+        'both halves of the toggle carry the search');
+
+    // And the log-contact sheet's return state, so the 303 after the write
+    // lands on the one member that was found.
+    assertSame(1, preg_match('/name="return" value="([^"]*)"/', $html, $r), 'the sheet is open on the row');
+    $state = urldecode(html_entity_decode($r[1], ENT_QUOTES));
+    assertTrue(str_contains($state, 'q=' . $target['number']), "the return state lost the search: {$state}");
+    assertTrue(str_contains($html, 'name="screen" value="dashboard"'), 'the sheet names its screen');
+
+    // The sheet is View's — one renderer for the two screens.
+    assertSame(1, substr_count($html, 'name="contact_type"'), 'exactly one sheet, on the one row');
+});
+
+test('a search that matches nobody says so — not "no members are assigned to you"', function (): void {
+    $html = st_render(['mode' => 'mine', 'q' => st_number_of('opena')]);
+
+    assertTrue(str_contains($html, 'Nobody matches'), 'the search empty state');
+    assertTrue(str_contains($html, 'search My team'), 'and the wider place to look');
+    assertTrue(!str_contains($html, 'No members are assigned to you yet'),
+        'the assignment empty state would be false: one member is assigned');
+
+    $short = st_render(['mode' => 'team', 'q' => 'St']);
+    assertTrue(str_contains($short, 'Search starts at 3 characters'), 'below the floor, the sentence');
+});
+
+test('the return whitelist carries the search term, bounded, like Designate Users\' own', function (): void {
+    $source = (string) file_get_contents(__DIR__ . '/../public/index.php');
+
+    assertSame(1, preg_match(
+        '/function dashboard_return_query\(array \$input\): string\s*\{(.*?)\n\}/s',
+        $source,
+        $matches
+    ), 'the dashboard return whitelist is where it was');
+    assertTrue(str_contains($matches[1], "'q'        => ['text' => 120]"), 'q travels as bounded text');
 });
 
 // ---------------------------------------------------------------------------

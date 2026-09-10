@@ -832,6 +832,173 @@ test('sms: is offered only for CELL PHONE, and mailto: only when an address exis
 });
 
 // ---------------------------------------------------------------------------
+// Log contact on the row (Phase 10.2) — the dashboard's fourth action, on
+// the same terms: one sheet at a time, one renderer, absent on a closed year,
+// and a 303 that comes back HERE with the search, sort and page intact.
+// ---------------------------------------------------------------------------
+
+function rt_member_id(string $number): int
+{
+    $read = rt_pdo()->prepare('SELECT id FROM member WHERE member_number = :n');
+    $read->execute([':n' => $number]);
+
+    return (int) $read->fetchColumn();
+}
+
+/**
+ * View My Roster rendered for the team-10 Officer the way index.php renders
+ * it — body then layout.
+ *
+ * @param array<string, mixed> $input
+ */
+function rt_render(array $input, bool $open = true): string
+{
+    /** @var App $app */
+    $app = $GLOBALS['rerm_app'];
+    $f   = rt_fixture();
+
+    $_SESSION ??= [];
+    $user    = rt_user(Level::Officer, $f['division10'], $f['team10']);
+    $year    = ['id' => (int) $f['year'], 'label' => 'RT-2027', 'is_open' => $open];
+    $wide    = true;
+    $title   = 'View My Roster';
+    $notices = [];
+    $roster  = rt_pager()->page($user, (int) $f['year'], $input);
+
+    ob_start();
+    require $app->path('app/views/roster.php');
+    $body = (string) ob_get_clean();
+
+    ob_start();
+    require $app->path('app/views/layout.php');
+
+    return (string) ob_get_clean();
+}
+
+test('which row\'s sheet is open is decided in RosterPage, as an int, like the dashboard', function (): void {
+    $f       = rt_fixture();
+    $officer = rt_user(Level::Officer, $f['division10'], $f['team10']);
+
+    assertSame(0, rt_page($officer)['log_open'], 'nothing open by default');
+    assertSame(42, rt_page($officer, ['log' => '42'])['log_open']);
+    assertSame(0, rt_page($officer, ['log' => 'abc'])['log_open'], 'not a number: nothing open');
+});
+
+test('every row offers Log contact on an open year, and none does on a closed one', function (): void {
+    $f       = rt_fixture();
+    $officer = rt_user(Level::Officer, $f['division10'], $f['team10']);
+    $rows    = rt_page($officer)['rows'];
+
+    $html = rt_render([]);
+    assertSame(count($rows), substr_count($html, '>Log contact</a>'), 'one link per row on the page');
+    foreach ($rows as $row) {
+        assertTrue(str_contains($html, 'id="m' . $row['id'] . '"'), 'the row is an anchor the link lands on');
+        assertTrue(
+            str_contains($html, 'log=' . $row['id'] . '#m' . $row['id']),
+            'the link opens THIS row\'s sheet and scrolls to it'
+        );
+    }
+    assertSame(0, substr_count($html, 'name="contact_type"'), 'no sheet until a row is chosen');
+
+    // Closed: the server would refuse anyway; the screen stops offering it.
+    $closed = rt_render(['log' => (string) $rows[0]['id']], false);
+    assertSame(0, substr_count($closed, '>Log contact</a>'));
+    assertSame(0, substr_count($closed, 'name="contact_type"'), 'not even the row that asked');
+    assertTrue(str_contains($closed, 'Read-only'), 'and says why');
+});
+
+test('the open sheet posts the same fields as the dashboard\'s, names its screen, and carries the list state', function (): void {
+    $special = rt_fixture()['special'];
+    $id      = rt_member_id($special['metricY']);
+
+    $html = rt_render(['sort' => 'contact', 'dir' => 'desc', 'size' => '100', 'log' => (string) $id]);
+
+    assertSame(1, substr_count($html, 'name="contact_type"'), 'exactly one sheet');
+    assertTrue(str_contains($html, 'name="member_id" value="' . $id . '"'));
+    assertTrue(str_contains($html, 'name="screen" value="roster"'), 'the 303 has to come back here');
+    assertTrue(str_contains($html, 'name="' . Rerm\Csrf::FIELD . '"'), 'the token travels');
+
+    // metricY is Complete on HLSR dues and nothing else: the sheet asks
+    // about the three that are open and not about the one that is done —
+    // the same rule View::logContactSheet applies on the dashboard.
+    assertSame(0, substr_count($html, 'name="progress[hlsr_dues]"'), 'nothing to say about a Complete metric');
+    foreach (['committee_dues', 'indemnity', 'background_check'] as $metric) {
+        assertSame(1, substr_count($html, 'name="progress[' . $metric . ']"'), "{$metric} is open");
+    }
+
+    // The return state: sort, direction and size, so logging one call does
+    // not land the officer on page one of the default sort.
+    assertSame(1, preg_match('/name="return" value="([^"]*)"/', $html, $m));
+    $state = urldecode(html_entity_decode($m[1], ENT_QUOTES));
+    foreach (['sort=contact', 'dir=desc', 'size=100'] as $needle) {
+        assertTrue(str_contains($state, $needle), "the return state lost {$needle}: {$state}");
+    }
+    assertTrue(!str_contains($state, 'log='), 'the sheet just submitted must not come back open');
+
+    // And with a search in force, the term — the whole point of logging
+    // from this screen is that the member was FOUND here.
+    $found = rt_render(['q' => 'Zebulon', 'log' => (string) rt_member_id($special['search'])]);
+    assertSame(1, preg_match('/name="return" value="([^"]*)"/', $found, $m));
+    assertTrue(str_contains(urldecode(html_entity_decode($m[1], ENT_QUOTES)), 'q=Zebulon'));
+});
+
+test('the sheet is View\'s, once, for both screens — neither view spells its own', function (): void {
+    foreach (['app/views/roster.php', 'app/views/dashboard.php'] as $file) {
+        $view = (string) file_get_contents(__DIR__ . '/../' . $file);
+        assertTrue(str_contains($view, 'View::logContactSheet('), "{$file} renders the shared sheet");
+        assertTrue(!str_contains($view, 'name="contact_type"'), "{$file} does not build a sheet of its own");
+        assertTrue(!str_contains($view, "'in_person' => 'In person'"), "{$file} takes the type labels from View");
+    }
+
+    // The renderer itself: a select only for what is open, the name escaped,
+    // the member id on the form.
+    $allDone = [];
+    foreach (Metric::scored() as $metric) {
+        $allDone[$metric->value] = MetricStatus::Complete;
+    }
+    $sheet = Rerm\View::logContactSheet('/x/log-contact', '<i>shared</i>', 7, 'Ann <Smith>', $allDone);
+    assertTrue(str_contains($sheet, 'name="member_id" value="7"'));
+    assertTrue(str_contains($sheet, 'Ann &lt;Smith&gt;'), 'the name is escaped');
+    assertTrue(str_contains($sheet, '<i>shared</i>'), 'the shared block is passed through as HTML');
+    assertSame(0, substr_count($sheet, 'name="progress['), 'nothing to ask when everything is Complete');
+    assertTrue(!str_contains($sheet, 'What they said'));
+
+    $oneOpen = $allDone;
+    $oneOpen['indemnity'] = MetricStatus::Outstanding;
+    $sheet = Rerm\View::logContactSheet('/x/log-contact', '', 7, 'Ann', $oneOpen);
+    assertSame(1, substr_count($sheet, 'name="progress['));
+    assertTrue(str_contains($sheet, 'name="progress[indemnity]"'));
+    // Five contact types and four progress choices: nine options, no more.
+    assertSame(count(Rerm\Roster\LogContact::TYPES) + 4, substr_count($sheet, '<option value="'));
+});
+
+test('log-contact comes back to the roster through its own whitelist, with the search term bounded', function (): void {
+    $source = (string) file_get_contents(__DIR__ . '/../public/index.php');
+
+    assertSame(1, preg_match(
+        '/function roster_return_query\(array \$input\): string\s*\{(.*?)\n\}/s',
+        $source,
+        $matches
+    ), 'the roster return whitelist exists');
+    foreach (["'q'    => ['text' => 120]", "'team' => ['ints' => 0]", "'sort' =>", "'dir'  => ['desc']",
+        "'page' => ['int' => 1]", "'size' => ['int' => 0]"] as $needle) {
+        assertTrue(str_contains($matches[1], $needle), "the whitelist does not carry {$needle}");
+    }
+    assertTrue(!str_contains($matches[1], "'log'"), 'the sheet just submitted must not come back open');
+
+    // The sort keys the whitelist admits are exactly RosterPage's own.
+    assertSame(1, preg_match("/'sort' => \[([^\]]*)\]/", $matches[1], $sorts));
+    preg_match_all("/'(\w+)'/", $sorts[1], $keys);
+    sort($keys[1]);
+    assertSame(['contact', 'name', 'number', 'team'], $keys[1]);
+
+    // And the handler reads `screen` and routes on it.
+    assertTrue(str_contains($source, "'roster' . roster_return_query(\$state)"), 'the roster return path');
+    assertTrue(str_contains($source, "(\$_POST['screen'] ?? '') === 'roster'"), 'chosen by the screen field');
+    assertTrue(str_contains($source, "'notices' => flash_take(),\n            'roster'"), 'and the roster screen shows the flash');
+});
+
+// ---------------------------------------------------------------------------
 // Cleanup — always last in this file
 // ---------------------------------------------------------------------------
 
