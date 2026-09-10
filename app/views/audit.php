@@ -55,7 +55,7 @@ $filtered = $audit['actor'] !== '' || $audit['action'] !== ''
 <p class="lede">
     Every grant, import, purge, password reset and export, with who did it and
     when. Nothing here can be edited or removed &mdash; that is the point of it.
-    Times are UTC.
+    Times are Houston's; the exact instant is in each row.
 </p>
 
 <form method="get" action="<?= e($app->url('audit')) ?>">
@@ -127,20 +127,19 @@ $filtered = $audit['actor'] !== '' || $audit['action'] !== ''
 <table>
     <thead>
         <tr>
-            <th>When</th>
-            <th>Who</th>
-            <th>What</th>
-            <th>On</th>
-            <th>Detail</th>
+            <th scope="col">When</th>
+            <th scope="col">Who</th>
+            <th scope="col">What</th>
+            <th scope="col">On</th>
+            <th scope="col">Detail</th>
         </tr>
     </thead>
     <tbody>
     <?php foreach ($audit['rows'] as $row) { ?>
-        <?php [$words, $absolute] = View::when($app, (string) $row['occurred_at']); ?>
         <tr>
             <td data-label="When">
-                <span title="<?= e($absolute) ?>"><?= e($words) ?></span>
-                <span class="sub"><?= e((string) $row['occurred_at']) ?> UTC</span>
+                <?= View::time($app, (string) $row['occurred_at']) ?>
+                <span class="sub"><?= View::timeFull($app, (string) $row['occurred_at']) ?></span>
             </td>
             <td data-label="Who">
                 <?php if ($row['actor'] !== null) { ?>

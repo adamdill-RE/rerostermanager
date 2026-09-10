@@ -1290,6 +1290,33 @@ test('Phase 5 comes alive: My Roster Status defaults to mine once an assignment 
     assertSame($f['members']['never1']['id'], (int) $after['rows'][0]['id']);
 });
 
+test('the chooser puts the most unassigned first, and any column sorts from a whitelist', function (): void {
+    // Phase 10.4. The chooser's job is to pick the team that needs the work.
+    $f    = as_fixture();
+    $page = as_page(as_senior(), []);
+    assertSame('unassigned', $page['team_sort']);
+    assertSame('desc', $page['team_dir']);
+    $unassigned = array_map(static fn (array $t): int => (int) $t['unassigned'], $page['teams']);
+    $sorted     = $unassigned;
+    rsort($sorted);
+    assertSame($sorted, $unassigned, 'the most unassigned first');
+
+    $byName = as_page(as_senior(), ['tsort' => 'name']);
+    assertSame('asc', $byName['team_dir'], 'a name leads ascending');
+    $names = array_map(static fn (array $t): string => (string) $t['name'], $byName['teams']);
+    $sortedNames = $names;
+    usort($sortedNames, 'strcasecmp');
+    assertSame($sortedNames, $names);
+
+    $bad = as_page(as_senior(), ['tsort' => 'm.name; DROP TABLE team', 'tdir' => 'sideways']);
+    assertSame('unassigned', $bad['team_sort'], 'an unknown key is the default, never the input');
+
+    // The scope-wide "no officer" count is no longer a bucket in the toggle.
+    $source = (string) file_get_contents(__DIR__ . '/../app/views/assign.php');
+    assertSame(0, substr_count($source, '<a href="#thin">'), 'not in the toggle');
+    assertTrue(str_contains($source, '<h2 id="thin">'), 'still on the page, under its own heading');
+});
+
 test('assign fixtures are cleaned up', function (): void {
     as_teardown(as_pdo());
 

@@ -32,11 +32,11 @@ return [
         // the vocabulary the specs and CLAUDE.md already use: 1.9.0 is the
         // application as Phase 9 left it, 1.10.0 is Phase 10. The patch
         // position is a numbered sub-phase or a fix that landed inside one —
-        // 1.10.1 is Phase 10.1 and 1.10.3 is Phase 10.3, the same shape
+        // 1.10.1 is Phase 10.1 and 1.10.4 is Phase 10.4, the same shape
         // Phases 8.5 to 8.7 already used. Bump it in the commit that closes
         // the phase, and nowhere else: a version that moves on every commit
         // tells a user nothing they can repeat back.
-        'version' => '1.10.3',
+        'version' => '1.10.4',
 
         // The app is served from https://www.reshiftmanager.com/rerm/, never
         // the domain root — that is the landing page in site/index.html, and
@@ -101,6 +101,19 @@ return [
         // Null uses <app_root>/var/sessions rather than the cPanel-wide
         // directory that RESM would otherwise share with us.
         'save_path' => null,
+    ],
+
+    'contact' => [
+        // What a Text and an Email start with when an officer taps them
+        // (Phase 10.4, spec-v2 §9.3). Filled in per member: {first} is the
+        // member's given name as the roster shows it, {officer} the signed-in
+        // officer's name, {team} the member's team. Nothing is SENT by this
+        // application — the officer's own phone opens Messages or Mail with
+        // the text in place, and they press send or do not. Empty means a
+        // bare link, as before.
+        'sms_body'     => "Hi {first}, it's {officer} from Rodeo Express {team}. "
+            . 'Can I call you about your committee paperwork for this show year?',
+        'mail_subject' => 'Rodeo Express {team} — your committee paperwork',
     ],
 
     'auth' => [

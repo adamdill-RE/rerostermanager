@@ -80,6 +80,7 @@ $number = static fn (int $n): string => number_format($n);
 $href = static function (array $overrides = []) use ($app, $committee): string {
     $params = [
         'level'    => $committee['level'],
+        'by'       => $committee['by'],
         'sort'     => $committee['sort'],
         'dir'      => $committee['dir'],
         'division' => $committee['open_division'],
@@ -89,9 +90,13 @@ $href = static function (array $overrides = []) use ($app, $committee): string {
         $params[$key] = $value;
     }
 
-    // The tree is the default and stays out of the URL (Phase 10.3).
+    // The tree is the default and stays out of the URL (Phase 10.3); so
+    // does sorting a requirement by its count (Phase 10.4).
     if ($params['level'] !== 'teams') {
         unset($params['level']);
+    }
+    if ($params['by'] !== 'share') {
+        unset($params['by']);
     }
     if ($params['sort'] === CommitteePage::DEFAULT_SORT) {
         unset($params['sort']);
@@ -150,6 +155,11 @@ $sortHeader = static function (string $key, string $word) use ($committee, $href
         . e($word) . '</a>' . e($marker);
 };
 
+/** The header cell's aria-sort (Phase 10.4): the arrow, said. */
+$sortState = static fn (string $key): string => $committee['sort'] === $key
+    ? ' aria-sort="' . ($committee['dir'] === 'asc' ? 'ascending' : 'descending') . '"'
+    : '';
+
 /** What each level's rows are called, in the cell and in the card. */
 $levelWord = ['division' => 'Division', 'area' => 'Area', 'team' => 'Team'];
 
@@ -188,6 +198,20 @@ $flat = $committee['level'] === 'teams';
         <span class="n"><?= e($number((int) $committee['teams'])) ?></span></a>
 </nav>
 
+<?php /* What a requirement column sorts by (Phase 10.4): its outstanding
+         count, as decided, or the share complete. Only the metric columns
+         read it; the triage columns are counts of people either way. */ ?>
+<p class="hint">
+    A requirement column sorts by
+    <?php if ($committee['by'] === 'share') { ?>
+        <strong>share complete</strong> &middot;
+        <a href="<?= e($href(['by' => 'count'])) ?>">sort by outstanding count instead</a>
+    <?php } else { ?>
+        <strong>outstanding count</strong> &middot;
+        <a href="<?= e($href(['by' => 'share'])) ?>">sort by share complete instead</a>
+    <?php } ?>
+</p>
+
 <table class="committee<?= $flat ? ' flat' : '' ?>">
     <caption>
         <?php if ($flat) { ?>
@@ -202,14 +226,14 @@ $flat = $committee['level'] === 'teams';
     </caption>
     <thead>
         <tr>
-            <th><?= $sortHeader('name', 'Group') ?></th>
-            <th class="num"><?= $sortHeader('members', 'Members') ?></th>
+            <th scope="col"<?= $sortState('name') ?>><?= $sortHeader('name', 'Group') ?></th>
+            <th scope="col" class="num"<?= $sortState('members') ?>><?= $sortHeader('members', 'Members') ?></th>
             <?php foreach (Metric::scored() as $metric) { ?>
-                <th class="num"><?= $sortHeader($metric->value, $metric->shortLabel()) ?></th>
+                <th scope="col" class="num"<?= $sortState($metric->value) ?>><?= $sortHeader($metric->value, $metric->shortLabel()) ?></th>
             <?php } ?>
-            <th class="num"><?= $sortHeader('unassigned', 'Unassigned') ?></th>
-            <th class="num"><?= $sortHeader('no_officer', 'No officer') ?></th>
-            <th class="num"><?= $sortHeader('contact', 'Never contacted') ?></th>
+            <th scope="col" class="num"<?= $sortState('unassigned') ?>><?= $sortHeader('unassigned', 'Unassigned') ?></th>
+            <th scope="col" class="num"<?= $sortState('no_officer') ?>><?= $sortHeader('no_officer', 'No officer') ?></th>
+            <th scope="col" class="num"<?= $sortState('contact') ?>><?= $sortHeader('contact', 'Never contacted') ?></th>
         </tr>
     </thead>
     <tbody>
@@ -274,9 +298,14 @@ foreach ($committee['rows'] as $row) {
 
     foreach (Metric::scored() as $metric) {
         $card = $row['metrics'][$metric->value];
+        // The share beside the count (Phase 10.4): a bar three characters
+        // wide carries no scale, and 12/40 against 51/85 is a division in
+        // the reader's head. Whole percent; a group of nobody has none.
         echo '<td class="metric" data-label="', e($metric->shortLabel()), '">',
             View::bar($card['statuses'], $members),
-            '<span class="mn">', e($number((int) $card['complete'])), '/', e($number($members)), '</span></td>';
+            '<span class="mn">', e($number((int) $card['complete'])), '/', e($number($members)),
+            $members > 0 ? ' &middot; ' . e((string) (int) round((int) $card['complete'] * 100 / $members)) . '%' : '',
+            '</span></td>';
     }
 
     $triage = [

@@ -53,6 +53,11 @@ $sortHeader = static function (string $key, string $label) use ($dropped, $href)
     return '<a href="' . e($href(['sort' => $key, 'dir' => $next, 'page' => null])) . '">'
         . e($label) . $arrow . '</a>';
 };
+
+/** The header cell's aria-sort (Phase 10.4): the arrow, said. */
+$sortState = static fn (string $key): string => $dropped['sort'] === $key
+    ? ' aria-sort="' . ($dropped['dir'] === 'asc' ? 'ascending' : 'descending') . '"'
+    : '';
 ?>
 <h1>Dropped Members</h1>
 <p class="lede">
@@ -101,18 +106,18 @@ $sortHeader = static function (string $key, string $label) use ($dropped, $href)
 <table class="roster">
     <thead>
         <tr>
-            <th><?= $sortHeader('name', 'Name') ?></th>
-            <th><?= $sortHeader('team', 'Team') ?></th>
-            <th><?= $sortHeader('dropped', 'Dropped by') ?></th>
-            <th class="num">Contacts</th>
-            <th>Actions</th>
+            <th scope="col"<?= $sortState('name') ?>><?= $sortHeader('name', 'Name') ?></th>
+            <th scope="col"<?= $sortState('team') ?>><?= $sortHeader('team', 'Team') ?></th>
+            <th scope="col"<?= $sortState('dropped') ?>><?= $sortHeader('dropped', 'Dropped by') ?></th>
+            <th scope="col" class="num">Contacts</th>
+            <th scope="col">Actions</th>
         </tr>
     </thead>
     <tbody>
     <?php foreach ($dropped['rows'] as $row) { ?>
         <tr>
             <td class="who" data-label="Name">
-                <?= e((string) $row['name']) ?>
+                <a class="card-link" href="<?= e($app->url('member')) ?>?from=dropped&amp;id=<?= e((string) $row['id']) ?>"><?= e((string) $row['name']) ?></a>
                 <span class="sub">
                     <?= e((string) $row['member_number']) ?>
                     <?php if ($row['title'] !== '') { ?>
@@ -128,9 +133,8 @@ $sortHeader = static function (string $key, string $label) use ($dropped, $href)
                 <?php if ($row['batch_id'] !== null) { ?>
                     Import #<?= e((string) $row['batch_id']) ?>
                     <span class="sub">
-                        <?php if ($row['dropped_at'] !== null) {
-                            [$words, $absolute] = View::when($app, (string) $row['dropped_at']); ?>
-                            <span title="<?= e($absolute) ?>"><?= e($words) ?></span>
+                        <?php if ($row['dropped_at'] !== null) { ?>
+                            <?= View::time($app, (string) $row['dropped_at']) ?>
                             &middot;
                         <?php } ?>
                         <?= e((string) $row['batch_mode']) ?> mode
@@ -144,15 +148,27 @@ $sortHeader = static function (string $key, string $label) use ($dropped, $href)
             // Absent, never disabled (spec 8.4): a greyed button invites a
             // tap that does nothing. Text only for a CELL PHONE — 116 members
             // hold numbers a text silently fails against.
+            // And, since Phase 10.4, a way to write down the answer: Log
+            // contact opens the member's card, whose form takes a dropped
+            // member, because the person rung to ask "have you left?" is
+            // exactly this one. A row with no way to reach them says so.
+            $links = View::contactLinks($app, $user, ['display_name' => $row['name']] + $row);
             echo '<td class="actions" data-label="Actions">';
-            if ($row['can_call']) {
-                echo '<a href="tel:', e($row['phone_e164']), '">Call</a>';
+            if (isset($links['call'])) {
+                echo '<a href="', e($links['call']), '">Call</a>';
             }
-            if ($row['can_text']) {
-                echo '<a href="sms:', e($row['phone_e164']), '">Text</a>';
+            if (isset($links['text'])) {
+                echo '<a href="', e($links['text']), '">Text</a>';
             }
-            if ($row['can_email']) {
-                echo '<a href="mailto:', e($row['email']), '">Email</a>';
+            if (isset($links['email'])) {
+                echo '<a href="', e($links['email']), '">Email</a>';
+            }
+            if ($links === []) {
+                echo '<span class="why">No phone or email on file</span>';
+            }
+            if ($year['is_open']) {
+                echo '<a href="', e($app->url('member')), '?from=dropped&amp;id=', e((string) $row['id']),
+                    '#log">Log contact</a>';
             }
             echo '</td>';
             ?>

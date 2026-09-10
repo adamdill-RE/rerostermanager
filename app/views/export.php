@@ -23,6 +23,7 @@ declare(strict_types=1);
 
 use Rerm\Csrf;
 use Rerm\Roster\TeamFilter;
+use Rerm\View;
 
 $number = static fn (int $n): string => number_format($n);
 $year   = $export['year'];
@@ -54,9 +55,28 @@ $teams = $export['team_choice'];
     count below, and it is exact.
 </p>
 
+<?php if (($last ?? null) !== null) { ?>
+    <?php /* The acknowledgement a streamed download cannot give (Phase 10.4):
+             the file left silently, so the screen's next load says what left
+             and when, from the audit row written before the body was sent. */ ?>
+    <p class="hint">
+        <span class="chip chip-ok">Your last export</span>
+        <?= e($number((int) ($last['after']['rows'] ?? 0))) ?>
+        <?= (int) ($last['after']['rows'] ?? 0) === 1 ? 'row' : 'rows' ?>
+        for show year <?= e((string) ($last['after']['show_year'] ?? '')) ?>,
+        <?= View::time($app, $last['at']) ?>. It was logged with your name.
+    </p>
+<?php } ?>
+
 <?php if ($year === null) { ?>
     <div class="card">
-        <p>There is no show year to export. Create one first.</p>
+        <p>There is no show year to export.
+            <?php if (Rerm\Auth\Access::mayUse($user, Rerm\Auth\Capability::ManageShowYear)) { ?>
+                <a href="<?= e($app->url('show-year')) ?>">Create one on Show Year</a>.
+            <?php } else { ?>
+                An Admin creates one.
+            <?php } ?>
+        </p>
     </div>
 <?php } else { ?>
 

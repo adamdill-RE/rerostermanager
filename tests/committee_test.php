@@ -1352,7 +1352,10 @@ test('a filtered My Roster Status says so, and every link on it keeps the filter
     $kept    = 0;
     $cleared = 0;
     foreach (cd_links($html) as $href) {
-        if (!str_contains($href, 'dashboard?') && !str_contains($href, 'dashboard&')) {
+        // Links INTO the dashboard. A member card's link carries the word
+        // in its `from=` and the whole state in `back=`; it is the card's
+        // job to hand that back, and Phase 10.4's own test holds it to it.
+        if (!str_contains($href, '/dashboard?')) {
             continue;
         }
         // The one link that deliberately drops everything is the way out.
@@ -1508,4 +1511,29 @@ test('the flat page renders with the toggle, no level words, and the division un
 
     // An unknown level is the tree, never an error and never the input.
     assertSame('tree', cd_page(cd_executive(), ['level' => '<b>'])['level']);
+});
+
+test('by=share sorts a requirement column by the share complete, and the cell prints it', function (): void {
+    // Phase 10.4. The count ranks big teams worst by size; the share is the
+    // comparison a Division Chairman actually makes.
+    $page = cd_page(cd_executive(), ['level' => 'teams', 'sort' => 'hlsr_dues', 'dir' => 'desc', 'by' => 'share']);
+    assertSame('share', $page['by']);
+
+    $shares = [];
+    foreach ($page['rows'] as $row) {
+        $members  = (int) $row['members'];
+        $shares[] = $members === 0 ? 0 : intdiv((int) $row['metrics']['hlsr_dues']['complete'] * 1000, $members);
+    }
+    $sorted = $shares;
+    rsort($sorted);
+    assertSame($sorted, $shares, 'descending by share');
+
+    $byCount = cd_page(cd_executive(), ['level' => 'teams', 'sort' => 'hlsr_dues', 'dir' => 'desc']);
+    assertSame('count', $byCount['by'], 'the count is the default');
+    assertSame('count', cd_page(cd_executive(), ['by' => '<b>'])['by'], 'and anything else');
+
+    $html = cd_render($page);
+    assertTrue(str_contains($html, 'share complete'), 'the toggle');
+    assertTrue(str_contains($html, 'by=share'), 'and the state on the links');
+    assertSame(1, preg_match('/\d+\/\d+ &middot; \d+%/', $html), 'the percent beside the count');
 });

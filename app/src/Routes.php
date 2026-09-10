@@ -98,6 +98,12 @@ final class Routes
         // — purge and restore stay Admin, on /purge.
         'dropped'  => Capability::ViewRoster->value,
 
+        // One member, on one screen (Phase 10.4, spec-v2 §9.1) — the
+        // single-member screen spec-v1 §8.2 named. It shares view_roster for
+        // the reason Dropped Members does: it is one row of the roster, read
+        // through the same predicate, and out of scope is the same 404.
+        'member'   => Capability::ViewRoster->value,
+
         // The Committee Dashboard (spec 7.3) — Senior Officer and above, and
         // the first route whose capability floor is above Officer. Read-only:
         // there is no write path on it at all, so no POST and no CSRF check —

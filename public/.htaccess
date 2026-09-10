@@ -35,6 +35,11 @@ DirectoryIndex index.php
     Require all denied
 </FilesMatch>
 
+# The web manifest (Phase 10.4): served with its own type, or a phone reads
+# it as text and never offers Add to Home Screen. Relative start_url and
+# scope, so it works at /rerm/ or wherever the app is mounted.
+AddType application/manifest+json .webmanifest
+
 # Assets carry a ?v=<mtime> stamp from App::asset(), so a long cache is safe
 # and a changed file busts itself.
 <IfModule mod_expires.c>
@@ -44,6 +49,7 @@ DirectoryIndex index.php
     ExpiresByType image/svg+xml          "access plus 1 year"
     ExpiresByType image/png              "access plus 1 year"
     ExpiresByType font/woff2             "access plus 1 year"
+    ExpiresByType application/manifest+json "access plus 1 day"
 
     # The shell itself must never be cached, or a deploy would not be visible.
     ExpiresByType text/html              "access plus 0 seconds"

@@ -99,12 +99,12 @@ $levelWord = static function (array $row): string {
     </p>
 <?php } ?>
 
-<div class="toggle">
-    <a href="<?= e($href(['only' => null, 'page' => null, 'member' => null])) ?>"
-       class="<?= $designate['only'] === '' ? 'current' : '' ?>">Everyone</a>
-    <a href="<?= e($href(['only' => 'granted', 'page' => null, 'member' => null])) ?>"
-       class="<?= $designate['only'] === 'granted' ? 'current' : '' ?>">Granted only</a>
-</div>
+<nav class="toggle" aria-label="Which members">
+    <a href="<?= e($href(['only' => null, 'page' => null, 'member' => null])) ?>"<?=
+        $designate['only'] === '' ? ' class="current" aria-current="page"' : '' ?>>Everyone</a>
+    <a href="<?= e($href(['only' => 'granted', 'page' => null, 'member' => null])) ?>"<?=
+        $designate['only'] === 'granted' ? ' class="current" aria-current="page"' : '' ?>>Granted only</a>
+</nav>
 
 <?php if ($designate['total'] === 0) { ?>
     <div class="card">
@@ -138,12 +138,12 @@ $levelWord = static function (array $row): string {
 <table class="roster">
     <thead>
         <tr>
-            <th>Member</th>
-            <th>Title</th>
-            <th>Level</th>
-            <th>From</th>
-            <th>Account</th>
-            <th>Actions</th>
+            <th scope="col">Member</th>
+            <th scope="col">Title</th>
+            <th scope="col">Level</th>
+            <th scope="col">From</th>
+            <th scope="col">Account</th>
+            <th scope="col">Actions</th>
         </tr>
     </thead>
 
@@ -152,7 +152,7 @@ $levelWord = static function (array $row): string {
         <tbody class="member" id="m<?= e((string) $row['id']) ?>">
         <tr>
             <td class="who" data-label="Member">
-                <?= e((string) $row['name']) ?>
+                <a class="card-link" href="<?= e($app->url('member')) ?>?from=designate&amp;id=<?= e((string) $row['id']) ?>"><?= e((string) $row['name']) ?></a>
                 <span class="sub">
                     <?= e((string) $row['member_number']) ?>
                     &middot; <?= e($row['team_name'] === '' ? '(No team)' : (string) $row['team_name']) ?>
@@ -277,11 +277,14 @@ $levelWord = static function (array $row): string {
                                     later grant reopens the same one.
                                 <?php } ?>
                             </p>
-                            <button type="submit" class="quiet"
-                                <?= $row['may_revoke'] ? '' : ' disabled' ?>>
-                                Revoke <?= e($row['granted_level']->label()) ?>
-                            </button>
-                            <?php if (!$row['may_revoke']) { ?>
+                            <?php /* Absent, never disabled (spec 8.4, applied here in
+                                     Phase 10.4): a greyed button invites a press that
+                                     does nothing. The sentence says why there is none. */ ?>
+                            <?php if ($row['may_revoke']) { ?>
+                                <button type="submit" class="quiet">
+                                    Revoke <?= e($row['granted_level']->label()) ?>
+                                </button>
+                            <?php } else { ?>
                                 <p class="hint">
                                     Only somebody who could have granted
                                     <?= e($row['granted_level']->label()) ?> may revoke it.
@@ -301,11 +304,9 @@ $levelWord = static function (array $row): string {
                                 everywhere. They must choose a new one the next time they sign in.
                                 <strong>Nothing is emailed</strong> &mdash; tell them yourself.
                             </p>
-                            <button type="submit" class="quiet"
-                                <?= $row['may_reset'] ? '' : ' disabled' ?>>
-                                Reset password
-                            </button>
-                            <?php if (!$row['may_reset']) { ?>
+                            <?php if ($row['may_reset']) { ?>
+                                <button type="submit" class="quiet">Reset password</button>
+                            <?php } else { ?>
                                 <p class="hint">
                                     You cannot reset the password of somebody at
                                     <?= e($row['effective_level']->label()) ?> level.

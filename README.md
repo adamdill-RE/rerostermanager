@@ -18,6 +18,34 @@ file copy.
 
 ## Where this build stands
 
+**Phase 10.4 — the member card, and the rest of the review.** The sixteen
+"next" items from the UX review of 10.2, again none of them a script, a
+framework or a second layout. The one new screen is the **member card** at
+`/member` — the single-member screen spec-v1 §8.2 named and nothing ever
+built: one person, narrow column, Call / Text / Email as the page's largest
+targets, the four chips and the Result word, the **log-contact form open**
+rather than one row at a time, this show year's contact history, and every
+earlier year's under a fold (OI-12's deferred report, now a query). Every list
+links a name to it, carrying that list's state as `back` so the way back keeps
+the drill-down, the search and the page; and it opens **dropped members** too,
+whose contact — "they say they have moved" — now lands in `contact_log`
+through `ScopedQuery::contactable()`. The log form gains **one answer for
+everything open** — a radio row that applies to every requirement the roster
+still shows unmet, with the per-metric selects folded under it — and the Text
+and Email links **start themselves** from two configurable templates, sent by
+the officer's own phone and never by this application. The Committee
+Dashboard prints the **share complete** beside each count and can sort a
+requirement by it; the Assign chooser starts on the **most unassigned** and
+every column sorts; the roster's team filter is **tick boxes**, not a
+`<select multiple>`; the menu is **three groups by job** with a line under
+each screen; every timestamp is one `<time>` helper; a **print stylesheet**
+puts the table back and opens every fold; the app is **installable** from a
+web manifest with its own icons; Designate's buttons are absent rather than
+disabled; the import, the contact import, forgot, reset and setup all
+**post-redirect-get**; Export and Create Forms say what you **last
+downloaded**; and a skip link, `aria-sort`, `aria-current` and `scope` land
+where they were missing. Design: `docs/spec-v2.md` §9.
+
 **Phase 10.3 — the call loop, and the shell.** Fifteen changes from a UX
 review of the build at 10.2, none of them a script, a framework, a schema
 change or a second layout. On a phone, My Roster Status now **folds** its four

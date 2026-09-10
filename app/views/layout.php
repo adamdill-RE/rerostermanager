@@ -49,6 +49,15 @@ declare(strict_types=1);
 */ ?>
 <link rel="icon" type="image/png" href="<?= e($app->asset('assets/icons/favicon.png')) ?>">
 <link rel="apple-touch-icon" href="<?= e($app->asset('assets/icons/apple-touch-icon.png')) ?>">
+<?php /*
+    Installable (Phase 10.4, spec-v2 §9.5): the manifest gives Add to Home
+    Screen a real icon and a standalone window, which on the working list is
+    the address bar's height back — one more row. No service worker, so
+    nothing is cached and nothing can go stale; this is a name and an icon.
+*/ ?>
+<link rel="manifest" href="<?= e($app->asset('manifest.webmanifest')) ?>">
+<meta name="apple-mobile-web-app-title" content="RE Roster">
+<meta name="mobile-web-app-capable" content="yes">
 <style>
 :root {
     --rodeo-orange: #EF7622;
@@ -637,11 +646,32 @@ form.quick button { margin-top: .5rem; }
 /* The way past the cards to the list, in the lede (Phase 10.3). */
 .lede a.skip { display: inline-block; font-weight: 700; margin-top: .25rem; }
 
-/* Call, Text and Email inside the open log-contact sheet (Phase 10.3):
-   the sheet's first and largest targets, 64px like a primary button, so
-   the dial happens from the sheet and the return lands on the form. */
-.roster p.dials { display: flex; flex-wrap: wrap; gap: .5rem; margin: .5rem 0; }
-.roster p.dials a.dial {
+/* The name on a roster row is the way to the member's card (Phase 10.4):
+   text-coloured with a quiet underline, so fifty names do not read as fifty
+   orange links, and the link colour on hover so it still reads as one. */
+a.card-link { color: inherit; text-decoration: underline; text-decoration-color: var(--border); text-underline-offset: 3px; }
+a.card-link:hover { color: var(--link); text-decoration-color: currentColor; }
+.assign td.who a.open { font-size: .85rem; font-weight: 600; margin-left: .35rem; }
+
+/* One answer for everything open (Phase 10.4): the radio row, and the
+   per-metric selects folded under it. */
+fieldset.pgall { border: 1px solid var(--border); border-radius: 8px; padding: .4rem .75rem .6rem; margin: .35rem 0; }
+fieldset.pgall legend { font-size: .9rem; font-weight: 600; padding: 0 .3rem; }
+label.pga { display: flex; align-items: center; gap: .6rem; min-height: 44px; font-weight: 600; }
+label.pga input[type="radio"] { width: 1.3rem; height: 1.3rem; accent-color: var(--action-orange); }
+details.pgeach { margin: .25rem 0 .5rem; }
+details.pgeach summary { color: var(--muted); font-size: .9rem; }
+
+/* The member card (Phase 10.4): the log form in a card rather than a row. */
+.card.roster form { margin: 0; }
+.card.member dl.facts { margin-top: .75rem; }
+
+/* Call, Text and Email inside the open log-contact sheet (Phase 10.3) and on
+   the member card (Phase 10.4): the first and largest targets, 64px like a
+   primary button, so the dial happens there and the return lands on the
+   form. */
+p.dials { display: flex; flex-wrap: wrap; gap: .5rem; margin: .5rem 0; }
+p.dials a.dial {
     flex: 1 1 8rem;
     display: inline-flex;
     align-items: center;
@@ -654,11 +684,52 @@ form.quick button { margin-top: .5rem; }
     font-weight: 700;
     text-decoration: none;
 }
-.roster p.dials a.dial:hover { filter: brightness(1.08); }
-.roster p.dials a.dial:focus-visible { outline: 3px solid var(--rodeo-orange); outline-offset: 2px; }
+p.dials a.dial:hover { filter: brightness(1.08); }
+p.dials a.dial:focus-visible { outline: 3px solid var(--rodeo-orange); outline-offset: 2px; }
 @media (min-width: 720px) {
-    .roster p.dials a.dial { flex: 0 1 auto; min-width: 10rem; min-height: 48px; }
+    p.dials a.dial { flex: 0 1 auto; min-width: 10rem; min-height: 48px; }
 }
+
+/* The menu, grouped by job (Phase 10.4): a heading per group and one
+   56px link row per screen, the screen's name and one line on what it is
+   for. Fifteen identical cards read as a list; three groups read as a
+   shape. */
+h2.menu-group { margin: 1.75rem 0 .35rem; font-size: 1.1rem; }
+h2.menu-group .why { display: block; font-weight: 400; font-size: .9rem; color: var(--muted); }
+ul.menu { list-style: none; margin: 0 0 .5rem; padding: 0; border-top: 1px solid var(--border); }
+ul.menu li { border-bottom: 1px solid var(--border); }
+ul.menu a, ul.menu li > span.what { display: block; padding: .7rem .25rem; min-height: 56px; text-decoration: none; }
+ul.menu a .what { display: block; font-weight: 700; color: var(--link); }
+ul.menu a .why, ul.menu li > span.why { display: block; font-size: .9rem; color: var(--muted); }
+ul.menu a:hover .what { text-decoration: underline; }
+
+/* The roster's team filter (Phase 10.4): a fold of tick boxes, compact. */
+details.teams { border: 1px dashed var(--border); border-radius: 8px; padding: 0 .75rem; margin: .5rem 0 1rem; }
+details.teams summary { font-weight: 600; }
+details.teams fieldset { border: 0; padding: 0 0 .5rem; margin: 0; }
+details.teams .choice { min-height: 48px; padding: .25rem 0; }
+
+/* The skip link (Phase 10.4): hidden until it takes focus, then the first
+   thing on the page, above the sticky bar. Every screen's <main> is
+   #content. */
+a.skip-main {
+    position: absolute;
+    left: -100vw;
+    top: 0;
+    z-index: 20;
+    padding: .6rem 1rem;
+    background: var(--action-orange);
+    color: #FFFFFF;
+    font-weight: 700;
+    text-decoration: none;
+}
+a.skip-main:focus-visible { left: 1rem; top: .5rem; outline: 3px solid var(--rodeo-orange); }
+
+/* Keyboard focus on the controls that had none (Phase 10.4): plain links,
+   selects, and the toggle whose orange current state hid the ring. */
+a:focus-visible { outline: 3px solid var(--rodeo-orange); outline-offset: 2px; border-radius: 3px; }
+select:focus-visible { outline: 3px solid var(--rodeo-orange); outline-offset: 1px; }
+.toggle a:focus-visible { outline: 3px solid var(--rodeo-orange); outline-offset: 3px; }
 
 /* Visible to a screen reader, not to the eye: the checkbox column header and
    the two action-bar selects, whose buttons already say what they do. */
@@ -879,6 +950,43 @@ footer.shell {
 footer.shell.wide { max-width: var(--page-wide); }
 footer.shell .ver { font-variant-numeric: tabular-nums; }
 a { color: var(--link); }
+
+/* PRINT (Phase 10.4, spec-v2 §9.6). A Division Chairman prints the roll-up
+   for a meeting and a Captain prints their twenty names; both got the sticky
+   bar, the forms, the orange links and, on a narrow print width, the stacked
+   cards. On paper: the table layout whatever the width, every <details>
+   open, black on white, no controls. The chips already carry words, so the
+   page survives monochrome. */
+@media print {
+    :root { --page: #FFFFFF; --surface: #FFFFFF; --text: #000000; --muted: #333333; --border: #999999; --link: #000000; }
+    body { padding: 0; font-size: 11pt; }
+    .topbar, footer.shell, form, .actionbar, .toggle, .fold-label, a.skip-main, p.dials,
+    .roster td.actions, [popover], details.defs, a.btnlink, button, .notices { display: none !important; }
+    main, main.wide { max-width: none; }
+    a { color: inherit; text-decoration: none; }
+    a.card-link { text-decoration: none; }
+    details { display: block; }
+    details > summary { display: none; }
+    details:not([open]) > *:not(summary) { display: block; }
+    .fold:not(:checked) + .fold-label + .folded { display: block !important; }
+    .chip { border: 1px solid #000; color: #000; }
+    .chip-fill { background: none; }
+    .chip-fill .chip-word { color: #000; }
+    .bar { border: 1px solid #000; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+    table thead { position: static; width: auto; height: auto; overflow: visible; clip: auto; }
+    table tr { display: table-row; border: 0; padding: 0; margin: 0; }
+    table td, table th { display: table-cell; padding: .2rem .4rem; border-bottom: 1px solid #ccc; }
+    table td::before { content: none; }
+    .roster tbody.member { display: table-row-group; border: 0; padding: 0; margin: 0; }
+    .roster td.who { display: table-cell; font-size: inherit; }
+    .roster td.metric { display: table-cell; margin: 0; }
+    .roster td.expand { display: table-cell; }
+    .committee td.metric { display: table-cell; width: auto; }
+    .committee td.metric .bar { display: inline-flex; width: 3.4rem; }
+    .cards { grid-template-columns: repeat(4, 1fr); }
+    h1::after { content: " — " attr(data-print); font-weight: 400; font-size: .8em; color: #333; }
+    tr, tbody.member { break-inside: avoid; }
+}
 </style>
 </head>
 <body>
@@ -923,6 +1031,7 @@ $navItems = [
 ];
 $currentView = isset($view) && is_string($view) ? $view : '';
 ?>
+<a class="skip-main" href="#content">Skip to content</a>
 <?php if (isset($user) && $user instanceof Rerm\Auth\User) { ?>
     <header class="topbar<?= ($wide ?? false) ? ' wide' : '' ?>">
         <div class="inner">
@@ -956,7 +1065,7 @@ $currentView = isset($view) && is_string($view) ? $view : '';
         <?php } ?>
     </header>
 <?php } ?>
-<main<?= ($wide ?? false) ? ' class="wide"' : '' ?>>
+<main id="content"<?= ($wide ?? false) ? ' class="wide"' : '' ?>>
 <?php if (!isset($user) || !$user instanceof Rerm\Auth\User) { ?>
     <span class="brand"><?= e((string) $app->config()->get('app.name')) ?></span>
     <?= $noticeHtml ?>

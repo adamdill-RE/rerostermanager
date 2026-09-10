@@ -292,6 +292,11 @@ final class CommitteePage
         $sort = is_string($input['sort'] ?? null) && in_array($input['sort'], self::sortKeys(), true)
             ? $input['sort']
             : self::DEFAULT_SORT;
+        // What a METRIC column sorts by (Phase 10.4, spec-v2 §9.9): the
+        // outstanding count, as decided 3 has it, or the share complete —
+        // a 27-member team beside an 85-member one is otherwise ranked by
+        // size. A whitelist of two; the count stays the default.
+        $by = ($input['by'] ?? '') === 'share' ? 'share' : 'count';
         $dir = in_array($input['dir'] ?? null, ['asc', 'desc'], true)
             ? (string) $input['dir']
             : self::DEFAULT_DIR;
@@ -303,7 +308,9 @@ final class CommitteePage
             $divisions,
             $teams,
             $sort,
-            $dir
+            $dir,
+            '',
+            $by
         );
 
         $requestedDivision = (int) ($input['division'] ?? 0);
@@ -326,7 +333,8 @@ final class CommitteePage
                 $teams,
                 $sort,
                 $dir,
-                $openDivision . "\0"
+                $openDivision . "\0",
+                $by
             );
         }
 
@@ -362,10 +370,11 @@ final class CommitteePage
 
         if ($level === 'teams') {
             return [
-                'rows'          => self::flatTeams($teamTally, $divisions, $teams, $sort, $dir),
+                'rows'          => self::flatTeams($teamTally, $divisions, $teams, $sort, $dir, $by),
                 'level'         => 'teams',
                 'sort'          => $sort,
                 'dir'           => $dir,
+                'by'            => $by,
                 'open_division' => null,
                 'open_area'     => null,
                 'sole_division' => $soleDivision,
@@ -443,7 +452,8 @@ final class CommitteePage
                     $teams,
                     $sort,
                     $dir,
-                    $areaPath . "\0"
+                    $areaPath . "\0",
+                    $by
                 );
 
                 foreach ($teamIds as $teamId) {
@@ -469,6 +479,7 @@ final class CommitteePage
             'level'         => 'tree',
             'sort'          => $sort,
             'dir'           => $dir,
+            'by'            => $by,
             'open_division' => $openDivision,
             'open_area'     => $openArea,
             'sole_division' => $soleDivision,
@@ -555,7 +566,8 @@ final class CommitteePage
         array $divisions,
         array $teams,
         string $sort,
-        string $dir
+        string $dir,
+        string $by = 'count'
     ): array {
         $entries = [];
         foreach ($teamTally as $path => $tally) {
@@ -570,7 +582,7 @@ final class CommitteePage
                 'area_name'     => $areaKey === '' ? self::NO_AREA : $areaKey,
                 'team_id'       => $teamId,
                 'name'          => $name,
-                'value'         => self::sortValue($tally, $sort, $name),
+                'value'         => self::sortValue($tally, $sort, $name, $by),
                 'tally'         => $tally,
             ];
         }
@@ -698,7 +710,8 @@ final class CommitteePage
         array $teams,
         string $sort,
         string $dir,
-        string $prefix = ''
+        string $prefix = '',
+        string $by = 'count'
     ): array {
         $rows = [];
         foreach ($keys as $key) {
@@ -720,7 +733,7 @@ final class CommitteePage
                 $name = (int) $key === 0 ? self::NO_TEAM : (string) ($teams[(int) $key]['name'] ?? '');
             }
 
-            $rows[] = ['key' => $key, 'name' => $name, 'value' => self::sortValue($tally, $sort, $name)];
+            $rows[] = ['key' => $key, 'name' => $name, 'value' => self::sortValue($tally, $sort, $name, $by)];
         }
 
         $descending = $dir === 'desc';
@@ -748,7 +761,7 @@ final class CommitteePage
      *
      * @param array<string, mixed> $tally
      */
-    private static function sortValue(array $tally, string $sort, string $name): int|string
+    private static function sortValue(array $tally, string $sort, string $name, string $by = 'count'): int|string
     {
         if ($sort === 'name') {
             return $name;
@@ -757,6 +770,15 @@ final class CommitteePage
             return (int) $tally['never_contacted'];
         }
         if (isset($tally['metrics'][$sort])) {
+            // by=share (Phase 10.4): the share COMPLETE, in tenths of a
+            // percent so the integer sort holds, and a group with nobody in
+            // it sorts as wholly incomplete rather than dividing by zero.
+            if ($by === 'share') {
+                $members = (int) $tally['members'];
+
+                return $members === 0 ? 0 : intdiv((int) $tally['metrics'][$sort]['complete'] * 1000, $members);
+            }
+
             return (int) $tally['metrics'][$sort]['outstanding'];
         }
 

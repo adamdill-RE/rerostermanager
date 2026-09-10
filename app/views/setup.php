@@ -86,7 +86,7 @@ $chip = static function (string $state, string $word): string {
                 <?= e((string) count($state['migrations_pending'])) ?> migration(s) have never been applied:
             </p>
             <div class="mono hint"><?= e(implode(', ', $state['migrations_pending'])) ?></div>
-            <form method="post" action="<?= e($app->url('setup')) ?>">
+            <form method="post" action="<?= e($app->url('setup')) ?>?key=<?= e(rawurlencode($key)) ?>">
                 <input type="hidden" name="key" value="<?= e($key) ?>">
                 <input type="hidden" name="action" value="migrate">
                 <button type="submit">Apply migrations</button>
@@ -111,11 +111,11 @@ $chip = static function (string $state, string $word): string {
                     <?php if ($state['admin_locked']) { ?>
                         <?= $chip('warn', 'Locked') ?> shipped unusable; set one below
                     <?php } else { ?>
-                        <?= $chip('ok', 'Set') ?> this account can sign in once Phase 3 lands
+                        <?= $chip('ok', 'Set') ?> this account can sign in
                     <?php } ?>
                 </dd>
             </dl>
-            <form method="post" action="<?= e($app->url('setup')) ?>">
+            <form method="post" action="<?= e($app->url('setup')) ?>?key=<?= e(rawurlencode($key)) ?>">
                 <input type="hidden" name="key" value="<?= e($key) ?>">
                 <input type="hidden" name="action" value="set-password">
                 <p>

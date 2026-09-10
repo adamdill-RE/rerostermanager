@@ -85,6 +85,19 @@ final class AssignPage
         // for an Officer (Phase 8.6).
         $teams = $this->teamsInScope($user, $showYearId);
 
+        // THE CHOOSER'S ORDER (Phase 10.4, spec-v2 §9.10). Its job is to pick
+        // the team that needs the work, so the most unassigned come first,
+        // then the most re-pointing, then the name — and every numeric
+        // header sorts, from a whitelist. The lede that apologised for the
+        // alphabet is gone with the alphabet.
+        $teamSort = is_string($input['tsort'] ?? null) && in_array($input['tsort'], self::TEAM_SORTS, true)
+            ? $input['tsort']
+            : self::TEAM_SORT_DEFAULT;
+        $teamDir = in_array($input['tdir'] ?? null, ['asc', 'desc'], true)
+            ? (string) $input['tdir']
+            : ($teamSort === 'name' ? 'asc' : 'desc');
+        $teams = self::orderedTeams($teams, $teamSort, $teamDir);
+
         // Senior Officer and above always choose a team. An Officer normally
         // IS a team and gets no picker, because one they cannot use is a
         // control that lies about what the screen does — but an Officer
@@ -131,6 +144,8 @@ final class AssignPage
         $common = [
             'can_choose_team' => $canChooseTeam,
             'teams'           => $teams,
+            'team_sort'       => $teamSort,
+            'team_dir'        => $teamDir,
             'thin_teams'      => $thinTeams,
             'thin_members'    => $thinMembers,
             // A member with no team at all can never be assigned, because
@@ -457,6 +472,38 @@ final class AssignPage
         }
 
         return $holders;
+    }
+
+    /** The chooser's sort keys, as the URL spells them (Phase 10.4). */
+    public const TEAM_SORTS        = ['unassigned', 'ineligible', 'members', 'officers', 'name'];
+    public const TEAM_SORT_DEFAULT = 'unassigned';
+
+    /**
+     * The chooser's rows in the chosen order: the key, then the other work
+     * column, then the name, so a screen of equal figures still reads
+     * alphabetically. In PHP over rows already read; no key reaches SQL.
+     *
+     * @param array<int, array<string, mixed>> $teams
+     * @return array<int, array<string, mixed>>
+     */
+    private static function orderedTeams(array $teams, string $sort, string $dir): array
+    {
+        $descending = $dir === 'desc';
+        usort($teams, static function (array $a, array $b) use ($sort, $descending): int {
+            $primary = $sort === 'name'
+                ? strcasecmp((string) $a['name'], (string) $b['name'])
+                : (int) $a[$sort] <=> (int) $b[$sort];
+            if ($descending) {
+                $primary = -$primary;
+            }
+
+            return $primary !== 0
+                ? $primary
+                : [-(int) $a['unassigned'], -(int) $a['ineligible'], (string) $a['name']]
+                    <=> [-(int) $b['unassigned'], -(int) $b['ineligible'], (string) $b['name']];
+        });
+
+        return $teams;
     }
 
     /**

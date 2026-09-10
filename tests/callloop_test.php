@@ -327,8 +327,8 @@ test('the open sheet carries the row\'s Call, Text and Email on the row\'s own t
 
     // Both screens pass the row.
     foreach (['dashboard', 'roster'] as $view) {
-        assertTrue(preg_match('/\$row\[\'statuses\'\],\s*9,\s*\$row\s*\)/', cl_source('app/views/' . $view . '.php')) === 1,
-            $view . '.php hands the sheet the row');
+        assertTrue(preg_match('/\$row\[\'statuses\'\],\s*9,\s*\[\'links\' => \$links\] \+ \$row\s*\)/', cl_source('app/views/' . $view . '.php')) === 1,
+            $view . '.php hands the sheet the row and its links');
     }
 });
 
@@ -411,7 +411,7 @@ test('the refusal page says which of three things it means, and gives nothing aw
     // The guard says so with a 403; members and keys keep their 404.
     $front = cl_source('public/index.php');
     assertTrue(str_contains($front, "['reason' => 'refused'], 403)"));
-    assertSame(6, substr_count($front, "['reason' => 'no_year'], 404)"), 'every no-year site says no year');
+    assertSame(7, substr_count($front, "['reason' => 'no_year'], 404)"), 'every no-year site says no year');
     assertTrue(str_contains($front, "if (!status_permitted(\$app)) {\n            render(\$app, 'not-found', 'Not found', [], 404);"), 'a wrong key is a plain 404');
 });
 

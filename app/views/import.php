@@ -30,6 +30,7 @@ declare(strict_types=1);
  * @var array<int, array<string, mixed>>     $teams
  */
 
+use Rerm\View;
 use Rerm\Csrf;
 use Rerm\Import\Importer;
 use Rerm\Import\Warnings;
@@ -138,8 +139,7 @@ $mode = (string) ($_POST['mode'] ?? Importer::MODE_COMPLETE);
         <div class="card">
             <h2><?= $chip('danger', 'Failed part way') ?> The roster is partly updated</h2>
             <p>
-                This import stopped at <?= e((string) $preview['failure']['at']) ?> UTC
-                (<?= e($app->toDisplay((string) $preview['failure']['at'])->format('D j M, H:i T')) ?>)
+                This import stopped at <?= View::timeFull($app, (string) $preview['failure']['at']) ?>
                 after writing <strong><?= e($number($written)) ?></strong> member row(s).
                 Nothing can undo that: the apply commits in batches so that a 1,954-row import fits
                 inside this server&rsquo;s 30-second limit, and the batches before the failure are
@@ -413,8 +413,7 @@ $mode = (string) ($_POST['mode'] ?? Importer::MODE_COMPLETE);
                 anything on this page &mdash; the way back is to import a correct file.
             </p>
             <p class="hint">
-                This preview is kept until <?= e($preview['expires_at']) ?> UTC
-                (<?= e($app->toDisplay($preview['expires_at'])->format('D j M, H:i T')) ?>), then
+                This preview is kept until <?= View::timeFull($app, (string) $preview['expires_at']) ?>, then
                 discarded. A stale diff was computed against a roster that has since changed.
             </p>
             <form method="post" action="<?= e($app->url('import')) ?>">
@@ -445,8 +444,7 @@ $mode = (string) ($_POST['mode'] ?? Importer::MODE_COMPLETE);
         <div class="card">
             <p>
                 <?= $chip('ok', 'Applied') ?>
-                <?= e((string) $batch['applied_at']) ?> UTC
-                (<?= e($app->toDisplay((string) $batch['applied_at'])->format('D j M, H:i T')) ?>).
+                <?= View::timeFull($app, (string) $batch['applied_at']) ?>.
                 This batch's counts and warnings are kept for good &mdash; they are what answers
                 &ldquo;why did this member's dues flip back to N&rdquo; a year from now.
             </p>
@@ -477,8 +475,8 @@ $mode = (string) ($_POST['mode'] ?? Importer::MODE_COMPLETE);
                     <td data-label="Read" class="num"><?= e($number((int) $row['rows_read'])) ?></td>
                     <td data-label="Create" class="num"><?= e($number((int) $row['rows_created'])) ?></td>
                     <td data-label="Update" class="num"><?= e($number((int) $row['rows_updated'])) ?></td>
-                    <td data-label="Staged"><?= e($app->toDisplay((string) $row['started_at'])->format('j M H:i')) ?></td>
-                    <td data-label="">
+                    <td data-label="Staged"><?= View::timeFull($app, (string) $row['started_at']) ?></td>
+                    <td data-label="Open">
                         <a href="<?= e($app->url('import') . '?batch=' . (int) $row['id']) ?>">Review</a>
                     </td>
                 </tr>

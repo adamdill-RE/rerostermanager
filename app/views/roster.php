@@ -96,7 +96,10 @@ $sortHeader = static function (string $key, string $word) use ($roster, $href): 
         . e($word) . '</a>' . e($marker);
 };
 
-$when = static fn (string $utc): array => View::when($app, $utc);
+/** The header cell's aria-sort (Phase 10.4): the arrow, said. */
+$sortState = static fn (string $key): string => $roster['sort'] === $key
+    ? ' aria-sort="' . ($roster['dir'] === 'asc' ? 'ascending' : 'descending') . '"'
+    : '';
 
 /** What a contact type is called — View's table, shared with the dashboard. */
 $contactTypes = View::CONTACT_TYPES;
@@ -129,17 +132,29 @@ $number = static fn (int $n): string => number_format($n);
         </p>
 
         <?php if ($roster['can_filter_teams'] && $roster['teams'] !== []) { ?>
-            <p>
-                <label for="team">Teams &mdash; leave empty for all of them</label><br>
-                <select id="team" name="team[]" multiple size="6">
+            <?php /* Checkboxes, not a <select multiple> (Phase 10.4): the
+                     native multi-select needs Ctrl-click at a desk and opens
+                     an unlabelled picker on a phone; the Export screen's
+                     fieldset of boxes is the touch-friendly answer, and the
+                     same team[] parameter. Folded, open when a choice is in
+                     force so a narrowed list never hides what narrowed it. */ ?>
+            <details class="teams"<?= $roster['selected_teams'] !== [] ? ' open' : '' ?>>
+                <summary>Teams &middot;
+                    <?= $roster['selected_teams'] === []
+                        ? 'all ' . e($number(count($roster['teams'])))
+                        : e($number(count($roster['selected_teams']))) . ' of ' . e($number(count($roster['teams']))) . ' selected' ?></summary>
+                <fieldset>
+                    <legend class="vh">Teams &mdash; leave every box clear for all of them</legend>
                     <?php foreach ($roster['teams'] as $team) { ?>
-                        <option value="<?= e((string) $team['id']) ?>"
-                            <?= in_array((int) $team['id'], $roster['selected_teams'], true) ? 'selected' : '' ?>>
-                            <?= e((string) $team['name']) ?>
-                        </option>
+                        <label class="choice" for="team-<?= e((string) $team['id']) ?>">
+                            <input type="checkbox" id="team-<?= e((string) $team['id']) ?>" name="team[]"
+                                   value="<?= e((string) $team['id']) ?>"<?=
+                                   in_array((int) $team['id'], $roster['selected_teams'], true) ? ' checked' : '' ?>>
+                            <span><span class="what"><?= e((string) $team['name']) ?></span></span>
+                        </label>
                     <?php } ?>
-                </select>
-            </p>
+                </fieldset>
+            </details>
         <?php } ?>
 
         <p>
@@ -209,14 +224,14 @@ $number = static fn (int $n): string => number_format($n);
     <table class="roster">
         <thead>
             <tr>
-                <th><?= $sortHeader('name', 'Name') ?></th>
-                <th><?= $sortHeader('team', 'Team') ?></th>
+                <th scope="col"<?= $sortState('name') ?>><?= $sortHeader('name', 'Name') ?></th>
+                <th scope="col"<?= $sortState('team') ?>><?= $sortHeader('team', 'Team') ?></th>
                 <?php foreach (Metric::scored() as $metric) { ?>
-                    <th><?= e($metric->shortLabel()) ?></th>
+                    <th scope="col"><?= e($metric->shortLabel()) ?></th>
                 <?php } ?>
-                <th><?= $sortHeader('contact', 'Last contact') ?></th>
-                <th>Officer</th>
-                <th>Actions</th>
+                <th scope="col"<?= $sortState('contact') ?>><?= $sortHeader('contact', 'Last contact') ?></th>
+                <th scope="col">Officer</th>
+                <th scope="col">Actions</th>
             </tr>
         </thead>
 <?php
@@ -230,22 +245,29 @@ $number = static fn (int $n): string => number_format($n);
         // one query string — whitelisted again on the way back by
         // roster_return_query(), so a 303 that dropped the search would not
         // land the officer on page one of everyone after logging one call.
-        $lcAction = $app->url('log-contact');
+        $lcAction    = $app->url('log-contact');
+        $returnState = http_build_query(array_filter([
+            'q'    => $roster['search'] !== '' ? $roster['search'] : null,
+            'team' => $roster['selected_teams'] !== [] ? $roster['selected_teams'] : null,
+            'sort' => $roster['sort'] !== 'name' ? $roster['sort'] : null,
+            'dir'  => $roster['dir'] !== 'asc' ? $roster['dir'] : null,
+            'page' => $roster['page'] > 1 ? $roster['page'] : null,
+            'size' => $roster['size'] !== $roster['size_default'] ? $roster['size'] : null,
+        ]));
         $lcShared = Rerm\Csrf::field()
             . '<input type="hidden" name="screen" value="roster">'
-            . '<input type="hidden" name="return" value="' . e(http_build_query(array_filter([
-                'q'    => $roster['search'] !== '' ? $roster['search'] : null,
-                'team' => $roster['selected_teams'] !== [] ? $roster['selected_teams'] : null,
-                'sort' => $roster['sort'] !== 'name' ? $roster['sort'] : null,
-                'dir'  => $roster['dir'] !== 'asc' ? $roster['dir'] : null,
-                'page' => $roster['page'] > 1 ? $roster['page'] : null,
-                'size' => $roster['size'] !== $roster['size_default'] ? $roster['size'] : null,
-            ]))) . '">';
+            . '<input type="hidden" name="return" value="' . e($returnState) . '">';
         $openSheet = (int) ($roster['log_open'] ?? 0);
+
+        // The way to one member's card (Phase 10.4): the name is the link,
+        // carrying this list's state as `back` — re-whitelisted on the way
+        // back by roster_return_query(), as the sheet's 303 is.
+        $cardUrl = $app->url('member') . '?from=roster&back=' . rawurlencode($returnState) . '&id=';
 
         foreach ($roster['rows'] as $row) {
             echo '<tbody class="member" id="m', e((string) $row['id']), '"><tr class="entry">';
-            echo '<td class="who">', e($row['display_name']),
+            echo '<td class="who"><a class="card-link" href="', e($cardUrl), e((string) $row['id']), '">',
+                e($row['display_name']), '</a>',
                 ' <span class="sub">', e($row['member_number']), '</span></td>';
             echo '<td data-label="Team">',
                 e($row['team_name'] !== '' ? $row['team_name'] : '(no team)'), '</td>';
@@ -260,24 +282,23 @@ $number = static fn (int $n): string => number_format($n);
                     '<span class="chip chip-muted">Never contacted</span></td>';
                 echo '<td data-label="Officer">&mdash;</td>';
             } else {
-                [$words, $absolute] = $when((string) $row['last_contact']['occurred_at']);
-                echo '<td data-label="Last contact"><span title="', e($absolute), '">',
-                    e($words), '</span></td>';
+                echo '<td data-label="Last contact">', View::time($app, (string) $row['last_contact']['occurred_at']), '</td>';
                 echo '<td data-label="Officer">', e((string) $row['last_contact']['officer_name']), '</td>';
             }
 
             // Absent, never disabled (spec 8.4): a greyed button invites a
             // tap that does nothing. Text only for CELL PHONE; Email only
             // when an address exists.
+            $links = View::contactLinks($app, $user, $row);
             echo '<td class="actions">';
-            if ($row['can_call']) {
-                echo '<a href="tel:', e($row['phone_e164']), '">Call</a>';
+            if (isset($links['call'])) {
+                echo '<a href="', e($links['call']), '">Call</a>';
             }
-            if ($row['can_text']) {
-                echo '<a href="sms:', e($row['phone_e164']), '">Text</a>';
+            if (isset($links['text'])) {
+                echo '<a href="', e($links['text']), '">Text</a>';
             }
-            if ($row['can_email']) {
-                echo '<a href="mailto:', e($row['email']), '">Email</a>';
+            if (isset($links['email'])) {
+                echo '<a href="', e($links['email']), '">Email</a>';
             }
             // Log contact (Phase 10.2), the dashboard's fourth action, on
             // the same terms: a link that re-renders this page with THIS
@@ -320,8 +341,7 @@ $number = static fn (int $n): string => number_format($n);
             } else {
                 echo '<ul class="rows">';
                 foreach ($row['contacts'] as $entry) {
-                    [$words, $absolute] = $when((string) $entry['occurred_at']);
-                    echo '<li><span title="', e($absolute), '">', e($words), '</span> &middot; ',
+                    echo '<li>', View::time($app, (string) $entry['occurred_at']), ' &middot; ',
                         e($contactTypes[$entry['contact_type']] ?? $entry['contact_type']),
                         ' &middot; ', e((string) $entry['officer_name']);
                     if (trim((string) $entry['notes']) !== '') {
@@ -366,7 +386,7 @@ $number = static fn (int $n): string => number_format($n);
                     (string) $row['display_name'],
                     $row['statuses'],
                     9,
-                    $row
+                    ['links' => $links] + $row
                 );
             }
 

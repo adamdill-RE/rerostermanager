@@ -2055,7 +2055,10 @@ test('the Audit Log renders, escaped, with payloads behind a details', function 
     $html = ad_render('audit', 'Audit Log', ['user' => ad_user('adm'), 'audit' => $page]);
 
     assertTrue(str_contains($html, 'Audit Log'));
-    assertTrue(ad_says($html, 'Times are UTC'), 'the column is UTC and the screen says so');
+    // Since Phase 10.4 the instant is in each row's <time datetime> in UTC,
+    // spelled in Houston's time for the eye — one way to write a time.
+    assertTrue(ad_says($html, 'the exact instant is in each row'), 'the screen says where the instant is');
+    assertTrue($audit['rows'] === [] || str_contains($html, '<time datetime="'), 'and it is there, machine-readable');
 
     // Read-only: nothing on the rendered SCREEN can write. The shell's own
     // Sign out (Phase 10.3) is the one POST on every signed-in page and is
@@ -2180,6 +2183,39 @@ test('applying an import asks to be told the diff was read, in the form and in t
     $body  = substr($front, (int) $from, (int) $to - (int) $from);
     assertTrue(str_contains($body, "if ((\$_POST['confirmed'] ?? '') !== '1') {"), 'and refused by the handler');
     assertTrue(str_contains($body, 'Nothing was written.'));
+});
+
+test('the export and the forms menu say what the caller last downloaded, from the audit row', function (): void {
+    // Phase 10.4. A download streams from a POST and the page cannot change,
+    // so the acknowledgement is the screen's next load.
+    $f    = ad_fixture();
+    $page = ExportPage::fromApp($GLOBALS['rerm_app'])->page(ad_user('adm'), ['year' => (string) $f['this_year']]);
+    $html = ad_render('export', 'Export Roster', [
+        'user' => ad_user('adm'), 'notices' => [], 'export' => $page,
+        'last' => ['at' => gmdate('Y-m-d H:i:s'), 'after' => ['rows' => 82, 'show_year' => 'AD-2027']],
+    ]);
+    assertTrue(ad_says($html, 'Your last export'), 'the card');
+    assertTrue(ad_says($html, '82 rows for show year AD-2027'), 'with the count and the year');
+    assertTrue(str_contains($html, '<time datetime="'), 'and when');
+
+    $none = ad_render('export', 'Export Roster', [
+        'user' => ad_user('adm'), 'notices' => [], 'export' => $page, 'last' => null,
+    ]);
+    assertTrue(!ad_says($none, 'Your last export'), 'nothing for somebody who never has');
+
+    $forms = ad_render('forms', 'Create Forms', [
+        'user' => ad_user('adm'), 'year' => ['id' => 1, 'label' => 'AD-2027', 'is_open' => true],
+        'last' => ['at' => gmdate('Y-m-d H:i:s'), 'after' => ['rows' => 3, 'sub_committee' => 'Alpha Team']],
+    ]);
+    assertTrue(ad_says($forms, 'Your last form'));
+    assertTrue(ad_says($forms, 'Roster Change Form for Alpha Team, 3 people'));
+    assertTrue(ad_says($forms, 'for show year AD-2027.'), 'and the sentence that used to end early is finished');
+
+    // The handler reads the caller's own most recent row of that action.
+    $front = (string) file_get_contents(__DIR__ . '/../public/index.php');
+    assertTrue(str_contains($front, 'WHERE actor_user_id = :actor AND action = :action'));
+    assertTrue(str_contains($front, "last_download(\$app, \$user, Rerm\\Audit\\Action::ExportRoster)"));
+    assertTrue(str_contains($front, "last_download(\$app, \$user, Rerm\\Audit\\Action::CreateForm)"));
 });
 
 test('the fixture cleans up after itself, and leaves the seeded year active', function (): void {

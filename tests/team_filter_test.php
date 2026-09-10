@@ -449,7 +449,10 @@ test('the picker renders, and every link on the screen carries the team', functi
 
     // Every dashboard link keeps the selection. Losing it on a page turn is
     // the officer's roster silently changing size under them.
-    assertSame(1, preg_match_all('/href="([^"]*dashboard[^"]*)"/', $html, $m) > 0 ? 1 : 0);
+    // Links INTO the dashboard: the path, not the word — a member card's
+    // link names the dashboard in its `from=` (Phase 10.4) and carries the
+    // state in `back=`, which the card's own test holds it to.
+    assertSame(1, preg_match_all('/href="([^"]*\/dashboard\?[^"]*)"/', $html, $m) > 0 ? 1 : 0);
     $kept = 0;
     foreach ($m[1] as $href) {
         $href = html_entity_decode($href, ENT_QUOTES);

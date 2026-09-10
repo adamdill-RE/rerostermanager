@@ -1,0 +1,15 @@
+{
+  "name": "Rodeo Express Roster",
+  "short_name": "RE Roster",
+  "description": "Who is outstanding on the four requirements, and a button that dials them.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#FFFFFF",
+  "theme_color": "#EF7622",
+  "icons": [
+    { "src": "assets/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "assets/icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

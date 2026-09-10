@@ -81,7 +81,9 @@ function render(Rerm\App $app, string $view, string $title, array $data = [], in
     // Defence in depth for a server-rendered app with no inline scripts and no
     // third-party assets. It costs nothing and it is one fewer thing to
     // remember when the first real screen ships.
-    header("Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'");
+    // manifest-src since Phase 10.4: default-src 'none' blocks the manifest
+    // fetch too, silently, and a manifest nobody can fetch is no manifest.
+    header("Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; manifest-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'");
     header('X-Content-Type-Options: nosniff');
     header('Referrer-Policy: same-origin');
 
@@ -122,6 +124,24 @@ function redirect(Rerm\App $app, string $path = ''): never
 function request_ip(): string
 {
     return substr((string) ($_SERVER['REMOTE_ADDR'] ?? ''), 0, 45);
+}
+
+/**
+ * Post, redirect, get (Phase 10.4, spec-v2 §9.11): a handler's notices
+ * become the flash and the browser is sent to the screen by GET, so a
+ * reload re-reads rather than re-submits. The flash holds one notice, so
+ * several are joined into one sentence in the loudest level among them —
+ * "Applied. …" and its warning are one paragraph, and one "resend form
+ * data?" dialog fewer on the screens that write the most rows.
+ *
+ * @param array<int, array{0: string, 1: string}> $notices
+ */
+function flash_notices(array $notices): void
+{
+    $joined = Rerm\View::joinNotices($notices);
+    if ($joined !== null) {
+        flash_set(...$joined);
+    }
 }
 
 /** The one refusal every POST shares when its CSRF token is stale or absent. */
@@ -980,10 +1000,14 @@ function log_contact_act(Rerm\App $app, Rerm\Auth\User $user): never
     $state = [];
     parse_str(is_string($_POST['return'] ?? null) ? $_POST['return'] : '', $state);
 
-    $screen = ($_POST['screen'] ?? '') === 'roster' ? 'roster' : 'dashboard';
-    $return = $screen === 'roster'
-        ? 'roster' . roster_return_query($state)
-        : 'dashboard' . dashboard_return_query($state);
+    $screen = in_array($_POST['screen'] ?? '', ['roster', 'member'], true) ? (string) $_POST['screen'] : 'dashboard';
+    $return = match ($screen) {
+        'roster' => 'roster' . roster_return_query($state),
+        // The member card (Phase 10.4): back to the same card, which reads
+        // the fresh history and lands on the flash.
+        'member' => 'member' . member_return_query($state),
+        default  => 'dashboard' . dashboard_return_query($state),
+    };
 
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
         redirect($app, $screen);
@@ -1036,6 +1060,105 @@ function log_contact_act(Rerm\App $app, Rerm\Auth\User $user): never
 // ScopedQuery::droppedForUser(), which is the ordinary scope predicate over
 // the population every other read hides. No POST, no CSRF, nothing to write.
 // ---------------------------------------------------------------------------
+
+/**
+ * The screens a member card can be opened FROM, and what the way back is
+ * called (Phase 10.4). A whitelist: the value lands in a link.
+ *
+ * @return array<string, array{0: string, 1: string}> from => [route, word]
+ */
+function member_from(): array
+{
+    return [
+        'dashboard' => ['dashboard', 'My Roster Status'],
+        'roster'    => ['roster', 'View My Roster'],
+        'dropped'   => ['dropped', 'Dropped Members'],
+        'assign'    => ['assign', 'Assign Officers'],
+        'designate' => ['designate', 'Designate Users'],
+    ];
+}
+
+/**
+ * What the member card's log-contact form carries back: the id, where the
+ * card was opened from, and that screen's own list state — `back`, a
+ * bounded string the list built and the card hands back unread. It is
+ * re-whitelisted by the LIST's own rules (dashboard_return_query,
+ * roster_return_query) before it becomes a link, never echoed as it came.
+ */
+function member_return_query(array $input): string
+{
+    return return_query($input, [
+        'id'   => ['int' => 0],
+        'from' => array_keys(member_from()),
+        'back' => ['text' => 400],
+    ]);
+}
+
+/**
+ * The way back from a member card (Phase 10.4): the screen it was opened
+ * from, with that screen's list state re-applied through that screen's own
+ * whitelist. A drill-down's forty people, a search term, a page — all of
+ * it survives the trip to the card and back, for the reason every link on
+ * My Roster Status carries them: losing a filter is losing the people the
+ * officer came to work.
+ *
+ * @return array{0: string, 1: string} the URL path with its query, and the word
+ */
+function member_back(string $from, string $back): array
+{
+    $screens = member_from();
+    if (!isset($screens[$from])) {
+        return ['', ''];
+    }
+    [$route, $word] = $screens[$from];
+
+    $state = [];
+    parse_str($back, $state);
+
+    $query = match ($route) {
+        'dashboard' => dashboard_return_query($state),
+        'roster'    => roster_return_query($state),
+        default     => '',
+    };
+
+    return [$route . $query, $word];
+}
+
+/** Renders one member's card (Phase 10.4, spec-v2 §9.1). */
+function member_screen(Rerm\App $app, Rerm\Auth\User $user): void
+{
+    $year = active_show_year($app);
+    if ($year === null) {
+        render($app, 'not-found', 'No show year is active', ['reason' => 'no_year'], 404);
+
+        return;
+    }
+
+    $member = Rerm\Roster\MemberPage::fromApp($app)->page($user, $year['id'], (int) ($_GET['id'] ?? 0));
+    if ($member === null) {
+        // Out of scope, purged or nonexistent: the same 404 a typed URL gets.
+        render($app, 'not-found', 'Not found', [], 404);
+
+        return;
+    }
+
+    $from = is_string($_GET['from'] ?? null) && isset(member_from()[$_GET['from']]) ? $_GET['from'] : '';
+    $back = is_string($_GET['back'] ?? null) ? mb_substr($_GET['back'], 0, 400) : '';
+    [$backPath, $backWord] = member_back($from, $back);
+
+    render($app, 'member', $member['display_name'], [
+        // A single-member screen: the narrow column (spec 8.2).
+        'wide'     => false,
+        'user'     => $user,
+        'year'     => $year,
+        'notices'  => flash_take(),
+        'member'   => $member,
+        'from'     => $from,
+        'back'     => $back,
+        'backPath' => $backPath,
+        'backWord' => $backWord,
+    ]);
+}
 
 /** Renders Dropped Members — who fell off the roster, in the caller's scope. */
 function dropped_screen(Rerm\App $app, Rerm\Auth\User $user): void
@@ -1583,6 +1706,34 @@ function purge_act(Rerm\App $app, Rerm\Auth\User $user): never
 // button.
 // ---------------------------------------------------------------------------
 
+/**
+ * The caller's most recent download of one kind (Phase 10.4, spec-v2
+ * §9.12), from the audit log — the row the export and the form write
+ * BEFORE the body is sent. A download streams from a POST and the page
+ * cannot change, so the acknowledgement belongs on the screen's next load:
+ * "your last export: 82 rows for 2026, 3 minutes ago". Null when they have
+ * never made one.
+ *
+ * @return ?array{at: string, after: array<string, mixed>}
+ */
+function last_download(Rerm\App $app, Rerm\Auth\User $user, Rerm\Audit\Action $action): ?array
+{
+    $read = $app->db()->prepare(
+        'SELECT occurred_at, after_json FROM audit_log'
+        . ' WHERE actor_user_id = :actor AND action = :action'
+        . ' ORDER BY occurred_at DESC, id DESC LIMIT 1'
+    );
+    $read->execute([':actor' => $user->id, ':action' => $action->value]);
+    $row = $read->fetch();
+    if (!is_array($row)) {
+        return null;
+    }
+
+    $after = json_decode((string) ($row['after_json'] ?? ''), true);
+
+    return ['at' => (string) $row['occurred_at'], 'after' => is_array($after) ? $after : []];
+}
+
 /** Renders the Export screen — the year, the team filter and the row count. */
 function export_screen(Rerm\App $app, Rerm\Auth\User $user): void
 {
@@ -1598,6 +1749,7 @@ function export_screen(Rerm\App $app, Rerm\Auth\User $user): void
         'user'    => $user,
         'notices' => flash_take(),
         'export'  => Rerm\Admin\ExportPage::fromApp($app)->page($user, $input),
+        'last'    => last_download($app, $user, Rerm\Audit\Action::ExportRoster),
     ]);
 }
 
@@ -1680,6 +1832,8 @@ function forms_screen(Rerm\App $app, Rerm\Auth\User $user): void
         // A list of choices, not a data table (spec 8.2): the narrow column.
         'wide' => false,
         'user' => $user,
+        'last' => last_download($app, $user, Rerm\Audit\Action::CreateForm),
+        'year' => active_show_year($app),
     ]);
 }
 
@@ -2592,19 +2746,49 @@ switch ($path) {
         break;
 
     case 'forgot':
-        $outcome = forgot_act($app);
+        // Post, redirect, get (Phase 10.4): the two result states are GET
+        // states, so a reload of the confirmation re-reads it rather than
+        // re-requesting a link — and the form is one click back.
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            $outcome = forgot_act($app);
+            if ($outcome['notices'] !== []) {
+                flash_notices($outcome['notices']);
+                redirect($app, 'forgot');
+            }
+            if ($outcome['no_email']) {
+                redirect($app, 'forgot?no_email=' . rawurlencode(mb_substr((string) $outcome['member_number'], 0, 32)));
+            }
+            redirect($app, 'forgot?sent=1');
+        }
+
+        $noEmailFor = is_string($_GET['no_email'] ?? null) ? mb_substr(trim($_GET['no_email']), 0, 32) : '';
         render($app, 'forgot', 'Forgot password', [
-            'notices'      => $outcome['notices'],
-            'sent'         => $outcome['sent'],
-            'noEmail'      => $outcome['no_email'],
-            'memberNumber' => $outcome['member_number'],
+            'notices'      => flash_take(),
+            'sent'         => ($_GET['sent'] ?? '') === '1',
+            'noEmail'      => $noEmailFor !== '',
+            'memberNumber' => $noEmailFor,
         ]);
         break;
 
     case 'reset':
-        $outcome = reset_act($app);
+        // Post, redirect, get (Phase 10.4): done is a GET state naming the
+        // member number; a refused attempt comes back to the same link with
+        // the reason as the flash; a spent link lands on the plain page.
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            $outcome = reset_act($app);
+            if ($outcome['done']) {
+                redirect($app, 'reset?done=' . rawurlencode((string) $outcome['member_number']));
+            }
+            flash_notices($outcome['notices']);
+            redirect($app, $outcome['token'] !== null ? 'reset?token=' . rawurlencode($outcome['token']) : 'reset');
+        }
+
+        $doneFor = is_string($_GET['done'] ?? null) ? mb_substr(trim($_GET['done']), 0, 32) : '';
+        $outcome = $doneFor !== ''
+            ? ['notices' => [], 'token' => null, 'member_number' => $doneFor, 'done' => true]
+            : reset_act($app);
         render($app, 'reset', 'Reset password', [
-            'notices'      => $outcome['notices'],
+            'notices'      => flash_take(),
             'token'        => $outcome['token'],
             'memberNumber' => $outcome['member_number'],
             'done'         => $outcome['done'],
@@ -2641,6 +2825,10 @@ switch ($path) {
 
     case 'dropped':
         dropped_screen($app, $user);
+        break;
+
+    case 'member':
+        member_screen($app, $user);
         break;
 
     case 'assign':
@@ -2749,19 +2937,26 @@ switch ($path) {
         // changed, so applying it would write a diff nobody has read.
         $importer->discardExpired();
 
-        $outcome = import_act($app, $user);
-
-        $batchId = $outcome['batch'] ?? null;
-        if ($batchId === null && isset($_GET['batch'])) {
-            $batchId = (int) $_GET['batch'];
+        // Post, redirect, get (Phase 10.4): the write happens, its notice
+        // becomes the flash, and the browser lands on the batch by GET —
+        // so a reload of the most dangerous screen in the application
+        // re-reads a preview rather than re-posting an apply.
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            $outcome = import_act($app, $user);
+            flash_notices($outcome['notices']);
+            $batchId = $outcome['batch'] ?? null;
+            redirect($app, 'import' . ($batchId !== null && $batchId > 0 ? '?batch=' . (int) $batchId : ''));
         }
+
+        $notices = flash_take();
+        $batchId = isset($_GET['batch']) ? (int) $_GET['batch'] : null;
 
         $preview = null;
         if ($batchId !== null && $batchId > 0) {
             try {
                 $preview = $importer->preview($batchId);
             } catch (Rerm\Import\ImportException $e) {
-                $outcome['notices'][] = ['warn', $e->getMessage()];
+                $notices[] = ['warn', $e->getMessage()];
             }
         }
 
@@ -2769,7 +2964,7 @@ switch ($path) {
             // A 1,954-row diff is data, not a list of choices (spec 8.2).
             'wide'    => true,
             'blocked' => null,
-            'notices' => $outcome['notices'],
+            'notices' => $notices,
             'preview' => $preview,
             'staged'  => $importer->stagedBatches(10),
             'applied' => $importer->appliedBatches(5),
@@ -2810,27 +3005,32 @@ switch ($path) {
         // has moved since, so applying it would write a diff nobody has read.
         $contacts->discardExpired();
 
-        $outcome = contacts_act($app, $user);
-
-        $batchId = $outcome['batch'] ?? null;
-        if ($batchId === null && isset($_GET['batch'])) {
-            $batchId = (int) $_GET['batch'];
+        // Post, redirect, get (Phase 10.4), as the roster import.
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            $outcome = contacts_act($app, $user);
+            flash_notices($outcome['notices']);
+            $batchId = $outcome['batch'] ?? null;
+            redirect($app, 'import-contacts' . ($batchId !== null && $batchId > 0 ? '?batch=' . (int) $batchId : ''));
         }
+
+        $notices = flash_take();
+        $batchId = isset($_GET['batch']) ? (int) $_GET['batch'] : null;
 
         $preview = null;
         if ($batchId !== null && $batchId > 0) {
             try {
                 $preview = $contacts->preview($batchId);
             } catch (Rerm\Import\ImportException $e) {
-                $outcome['notices'][] = ['warn', $e->getMessage()];
+                $notices[] = ['warn', $e->getMessage()];
             }
         }
 
         render($app, 'import-contacts', 'Import Contact History', [
-            // A row-by-row diff is data, not a list of choices.
-            'wide'     => $preview !== null,
+            // One column for the whole flow (Phase 10.4): the page used to
+            // change width between the form and the preview.
+            'wide'     => true,
             'blocked'  => null,
-            'notices'  => $outcome['notices'],
+            'notices'  => $notices,
             'preview'  => $preview,
             'staged'   => $contacts->stagedBatches(5),
             'applied'  => $contacts->appliedBatches(5),
@@ -2852,12 +3052,17 @@ switch ($path) {
             render($app, 'not-found', 'Not found', [], 404);
             break;
         }
-        // The action runs BEFORE the state is read, so the page reflects what
-        // just happened rather than what was true when the form was drawn.
-        $notices = setup_act($app);
+        // The action runs, its notice becomes the flash, and the browser is
+        // sent back by GET with the key in the address (Phase 10.4): before,
+        // the POST left the address bar without the key, so a reload or a
+        // Back-then-Forward was a 404 and the operator re-pasted the URL.
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            flash_notices(setup_act($app));
+            redirect($app, 'setup?key=' . rawurlencode(setup_key_supplied()));
+        }
         render($app, 'setup', 'Setup', [
             'state'   => setup_state($app),
-            'notices' => $notices,
+            'notices' => flash_take(),
             'key'     => setup_key_supplied(),
         ]);
         break;

@@ -917,7 +917,152 @@ member outside scope and a wrong key included, stays the incurious 404.
 
 ---
 
-## 9. Open items
+## 9. The member card, and the rest of the review
+
+Phase 10.4 is the sixteen "next" items from the review Phase 10.3 came
+from. The same rules hold: nothing is a script, a framework, a schema
+change or a second layout, and the 100KB budget is untouched.
+
+### 9.1 One person, one screen
+
+Spec-v1 §8.2 names "single-member screens" among those that keep the
+narrow column, and none existed: every mention of a person was a row, and a
+name on Assign Officers, Dropped Members or Designate Users had nowhere to
+link. `/member?id=` renders `Rerm\Roster\MemberPage`: name, number, the
+imported title and team; Call, Text and Email as 64px targets; the four
+chips, harassment training and the Result word; the log-contact form OPEN
+on an open year; this show year's contacts; every earlier year's under a
+closed `<details>` — OI-12's deferred report, which spec-v1 §5.5 retained
+the data for so that it would be a query and not a migration; and who is
+assigned. Roughly 5KB against a fifty-row list's fifty-five.
+
+It reads through `ScopedQuery::forUser()` and, failing that,
+`droppedForUser()`, so Dropped Members can open the person it wants rung
+and the card says they are dropped. Out of scope, purged or missing is
+null, and the route answers the same 404 a typed URL would. Every derived
+value comes from the functions the lists use — `MetricStatus::derive`,
+`ContactOutcome::summarise`, the CELL PHONE rule — and a test holds the
+card to the row.
+
+**The way back keeps the list.** Each list links a name with `from=` and
+its own return state as `back=`, and the card re-whitelists `back` through
+that list's own rule (`dashboard_return_query`, `roster_return_query`)
+before it becomes a link. A drill-down's forty people, a search term and a
+page survive the trip to the card and back — the same reason every link on
+My Roster Status carries them. The log form's `screen=member` returns to
+the card with both.
+
+### 9.2 One answer for everything open
+
+The sheet offered one select per open metric, four options each. A member
+outstanding on all four who says "I'll sort it all this week" is one
+answer. With more than one requirement open, `View::logContactForm()` draws
+a radio row — No change · Member Handling · Reported Complete — for
+everything still open, and the per-metric selects under a closed
+`<details>` for the exceptional case; `LogContact` applies `progress_all`
+to every scored metric the roster shows unmet, and a per-metric choice
+wins where one was made. Imported Y is never overwritten; one open
+requirement is its own select as before.
+
+### 9.3 A text that starts itself
+
+`View::contactLinks()` is now the one place `tel:`, `sms:` and `mailto:`
+are built — the CELL PHONE rule in one function rather than four views —
+and it fills `contact.sms_body` and `contact.mail_subject` from config with
+`{first}`, `{officer}` and `{team}`. `?&body=` is the spelling both iOS and
+Android accept. Nothing is sent by this application; the officer's own
+phone opens Messages or Mail with the text in place. The mail-safety design
+of spec-v1 §3.3a is untouched: no message leaves this host.
+
+### 9.4 Dropped Members can record the answer
+
+The screen exists so an officer can ring somebody and find out whether
+they left, and it had no way to write the answer down. Log contact on the
+row opens the member card; `ScopedQuery::contactable()` — present or
+dropped, never purged, never the system row — is what `LogContact` reads
+by, so the contact lands. Scope is still the matrix's question with a
+Subject. A row with no way to reach the person now says so.
+
+### 9.5 Installable
+
+`public/manifest.webmanifest`, relative `start_url` and `scope` so the
+mount point is not spelled twice, `display: standalone`, and the two sizes
+`bin/gen-icons.php` now writes — 192 and 512 — without touching the two
+shared icons. `manifest-src 'self'` in the CSP, because `default-src 'none'`
+blocked the fetch silently, and `AddType` in `.htaccess`, because a manifest
+served as text is no manifest. No service worker: nothing is cached and
+nothing can go stale.
+
+### 9.6 Print
+
+`@media print`: the sticky bar, the forms, the action bars and the dial
+buttons go; the table layout comes back whatever the width; every
+`<details>` opens; black on white. The chips already carry words, so the
+page survives monochrome. A Division Chairman prints the roll-up for a
+meeting; a Captain prints their twenty names.
+
+### 9.7 One way to write a time
+
+`View::time()` — relative words, the local absolute as the title, the UTC
+instant in `datetime` — and `View::timeFull()` for the screens where the
+absolute is the point, in one spelling: `7 Sep 2026, 2:14 pm`. Four formats
+coexisted, including bare UTC strings in cells; a test reads every view
+for one.
+
+### 9.8 The menu, by job
+
+Three groups — Chase, Lead, Administer — each a heading and one 56px link
+row per screen with a line on what it is for. Each tile stays one line
+with its route, because tests read the menu a line at a time.
+
+### 9.9 The share beside the count
+
+A bar three characters wide carries no scale. Each requirement cell now
+prints `12/40 · 30%`, and `by=share` sorts a requirement column by the
+share complete rather than the outstanding count — a whitelist of two,
+the count still the default, the sort keys unchanged.
+
+### 9.10 The chooser, sorted by work
+
+Assign Officers' team chooser starts on the most unassigned, then the most
+re-pointing, then the name, and every column sorts from a whitelist. The
+lede that apologised for the alphabet is gone with the alphabet. The
+scope-wide "no officer on this team" count left the bucket toggle, where it
+read as a bucket of this team; it stays as a column on the chooser and a
+section at the foot.
+
+### 9.11 Post, redirect, get
+
+The import, the contact import, forgot, reset and setup re-rendered on
+their POST, so a reload re-submitted and the browser asked whether to
+resend — on the two screens that write the most rows. Each now redirects:
+the imports to `?batch=`, forgot to its two result states, reset to `?done=`
+or back to its link with the reason, setup back to itself with the key in
+the address, which a POST used to lose. `View::joinNotices()` folds a
+handler's several notices into the one the flash holds, at the loudest
+level. The contact import keeps one column width for the whole flow.
+
+### 9.12 A download that says it happened
+
+A download streams from a POST and the page cannot change. Export and
+Create Forms now open with the caller's most recent download of that kind,
+from the audit row written before the body was sent: "Your last export: 82
+rows for show year 2026, 3 minutes ago." The Roster Change Form's
+truncated sentence names the show year.
+
+### 9.13 The rest
+
+Designate Users renders no disabled button: where a revoke or a reset is
+not permitted the sentence stands alone (spec-v1 §8.4, applied). View My
+Roster's team filter is a fold of tick boxes, the Export screen's pattern,
+rather than a `<select multiple>`. A skip link to `#content`, `aria-sort`
+on every sortable header, `aria-current` on every toggle, `scope="col"` on
+every header cell, focus rings on links and selects, and no empty
+`data-label`.
+
+---
+
+## 10. Open items
 
 Carried from spec-v1 §12 where they bear on v2, plus those this document
 raises.
