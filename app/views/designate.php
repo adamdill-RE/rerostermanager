@@ -79,15 +79,6 @@ $levelWord = static function (array $row): string {
     it back. A grant survives every import: that is what it is for.
 </p>
 
-<?php foreach ($notices as [$level, $message]) { ?>
-    <div class="card">
-        <span class="chip chip-<?= e($level === 'ok' ? 'ok' : ($level === 'warn' ? 'warn' : 'danger')) ?>">
-            <?= e($level === 'ok' ? 'Done' : ($level === 'warn' ? 'Note' : 'Stopped')) ?>
-        </span>
-        <span><?= e($message) ?></span>
-    </div>
-<?php } ?>
-
 <form method="get" action="<?= e($app->url('designate')) ?>">
     <label for="q">Search by name or member number</label>
     <input type="search" id="q" name="q" value="<?= e((string) $designate['search']) ?>"
@@ -158,7 +149,7 @@ $levelWord = static function (array $row): string {
 
     <?php foreach ($designate['rows'] as $row) { ?>
         <?php $open = $designate['selected'] === $row['id']; ?>
-        <tbody class="member">
+        <tbody class="member" id="m<?= e((string) $row['id']) ?>">
         <tr>
             <td class="who" data-label="Member">
                 <?= e((string) $row['name']) ?>
@@ -423,4 +414,3 @@ $levelWord = static function (array $row): string {
 
 <?php } ?>
 
-<p><a href="<?= e($app->url('menu')) ?>">Back to the menu</a></p>

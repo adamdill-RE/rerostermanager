@@ -174,4 +174,3 @@ $sortHeader = static function (string $key, string $label) use ($dropped, $href)
 
 <?php } ?>
 
-<p><a href="<?= e($app->url('menu')) ?>">Back to the menu</a></p>

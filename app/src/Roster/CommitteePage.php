@@ -343,6 +343,40 @@ final class CommitteePage
         }
 
         // ------------------------------------------------------------------
+        // ALL TEAMS ON ONE PAGE (Phase 10.3). The tree opens one division and
+        // one area at a time, which is right for the byte budget and wrong
+        // for the person spec 1.2 built this screen for — "a Division
+        // Chairman comparing 25 teams" — who could never see them side by
+        // side: five or six loads to survey a division, and no sort across
+        // areas. Spec 7.3 measured the fully expanded tree at 75.4KB, inside
+        // the budget, so a single flat level was never the bytes' problem.
+        //
+        // `level=teams` is every team in scope as one sortable list, the
+        // same nine columns, the same drill-downs, the same sort whitelist,
+        // with the division and the area as words under the name. A team
+        // spanning two divisions appears once per division, exactly as it
+        // does in the tree: the group is the (division, team) pair.
+        // ------------------------------------------------------------------
+
+        $level = ($input['level'] ?? '') === 'teams' ? 'teams' : 'tree';
+
+        if ($level === 'teams') {
+            return [
+                'rows'          => self::flatTeams($teamTally, $divisions, $teams, $sort, $dir),
+                'level'         => 'teams',
+                'sort'          => $sort,
+                'dir'           => $dir,
+                'open_division' => null,
+                'open_area'     => null,
+                'sole_division' => $soleDivision,
+                'sole_area'     => false,
+                'total'         => count($members),
+                'divisions'     => count($divisionIds),
+                'teams'         => count($teamTally),
+            ];
+        }
+
+        // ------------------------------------------------------------------
         // The rows, in render order: every division, the open division's
         // areas, and the open area's teams. One level at a time is the byte
         // budget deciding (spec 10) — see app/views/committee.php.
@@ -432,6 +466,7 @@ final class CommitteePage
 
         return [
             'rows'          => $rows,
+            'level'         => 'tree',
             'sort'          => $sort,
             'dir'           => $dir,
             'open_division' => $openDivision,
@@ -497,6 +532,83 @@ final class CommitteePage
             'sole'        => $sole,
             'drillable'   => $drillable,
         ];
+    }
+
+    /**
+     * Every team in scope as one list of team rows (Phase 10.3), sorted by
+     * the chosen key across the whole scope rather than within an area, with
+     * the tiebreak ordered() uses — name, then division name, then key — so
+     * the two halves of a split team sit together and read alphabetically.
+     *
+     * Each row is row()'s shape plus `division_name` and `area_name`, the
+     * two words the tree carried as indentation and the flat list carries
+     * under the name. (No team) rows keep their placeholder flag and do not
+     * drill, for the reason row() records.
+     *
+     * @param array<string, array<string, mixed>> $teamTally keyed div\0area\0team
+     * @param array<int, array<string, mixed>>    $divisions
+     * @param array<int, array<string, mixed>>    $teams
+     * @return array<int, array<string, mixed>>
+     */
+    private static function flatTeams(
+        array $teamTally,
+        array $divisions,
+        array $teams,
+        string $sort,
+        string $dir
+    ): array {
+        $entries = [];
+        foreach ($teamTally as $path => $tally) {
+            [$divisionId, $areaKey, $teamId] = explode("\0", (string) $path, 3);
+            $divisionId = (int) $divisionId;
+            $teamId     = (int) $teamId;
+            $name       = $teamId === 0 ? self::NO_TEAM : (string) ($teams[$teamId]['name'] ?? '(Unknown team)');
+
+            $entries[] = [
+                'division_id'   => $divisionId,
+                'division_name' => (string) ($divisions[$divisionId]['name'] ?? '(Unknown division)'),
+                'area_name'     => $areaKey === '' ? self::NO_AREA : $areaKey,
+                'team_id'       => $teamId,
+                'name'          => $name,
+                'value'         => self::sortValue($tally, $sort, $name),
+                'tally'         => $tally,
+            ];
+        }
+
+        $descending = $dir === 'desc';
+        usort($entries, static function (array $a, array $b) use ($descending): int {
+            $primary = $a['value'] <=> $b['value'];
+            if ($descending) {
+                $primary = -$primary;
+            }
+
+            return $primary !== 0
+                ? $primary
+                : [$a['name'], $a['division_name'], $a['team_id']]
+                    <=> [$b['name'], $b['division_name'], $b['team_id']];
+        });
+
+        $rows = [];
+        foreach ($entries as $entry) {
+            $rows[] = self::row(
+                'team',
+                (string) $entry['team_id'],
+                $entry['name'],
+                $entry['tally'],
+                $entry['division_id'],
+                $entry['team_id'] === 0 ? [] : [$entry['team_id']],
+                $entry['team_id'] !== 0,
+                $entry['team_id'] === 0,
+                false,
+                0,
+                false
+            ) + [
+                'division_name' => $entry['division_name'],
+                'area_name'     => $entry['area_name'],
+            ];
+        }
+
+        return $rows;
     }
 
     /** A zero tally: the four metrics with every status at nought. */

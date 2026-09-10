@@ -42,4 +42,3 @@ declare(strict_types=1);
     </p>
 </div>
 
-<p><a href="<?= e($app->url('menu')) ?>">Back to the menu</a></p>

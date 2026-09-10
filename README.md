@@ -18,6 +18,36 @@ file copy.
 
 ## Where this build stands
 
+**Phase 10.3 — the call loop, and the shell.** Fifteen changes from a UX
+review of the build at 10.2, none of them a script, a framework, a schema
+change or a second layout. On a phone, My Roster Status now **folds** its four
+cards and its controls behind 56px labels below 720px, so the first screen is
+the first call to make; the lede offers a skip to the list and says how many
+**days the show year has to go**, from the end date that was in the table and
+on no screen. Chips carry a **short word** — Open, Reported, Handling — with
+the owner's full word as the title, so four of them fit one line of a card.
+A **search finds "John Smith"**: `RosterPage::searchClause()` splits the term
+into words and every word must land, and Designate Users and Import History
+now search through the same clause rather than a copy. The **log-contact
+sheet carries Call, Text and Email** inside it and opens on its first control,
+so the dial happens from the sheet and the return lands on the form; every
+write that changes one row **303s back anchored to that row**, marked. The
+shell gains a **nav** of the four working screens, filtered by capability,
+**Sign out** on every screen, **one notice component** with one vocabulary
+inside the sticky bar with `role="status"`, a **link token** that meets 4.5:1
+on Dust Light, and `color-scheme` so native controls draw dark in the dark
+theme; the forced-password screen no longer offers a Menu link that loops,
+and a password change is confirmed. The Committee Dashboard gains **All
+teams**, every team in scope on one sortable page — the comparison spec 1.2
+promised a Division Chairman — and Assign Officers and Flagged for Purge read
+**"12 selected" live through a CSS counter**. Consequential actions are gated
+by consequence: applying an import asks to be told the diff was read, Make
+active and Re-open are a step with a card, and a purge types its word on a
+second page that names the ticked members and keeps them if the word is
+wrong. The export is **one form**, so the file can never disagree with the
+boxes. And the refusal page says which of three things it means. Design:
+`docs/spec-v2.md` §8; the review it came from is the ledger there.
+
 **Phase 10.2 — find, and log where you found them.** Two things an officer
 kept having to leave a screen to do. My Roster Status now carries View My
 Roster's **search box** — name or member number, from three characters, the
@@ -32,7 +62,7 @@ somebody by name, gains **Log contact** on the row: the same sheet, rendered
 once by `Rerm\View::logContactSheet()` for both screens, posting to the same
 route and the same per-member permission check, and coming back to the row it
 was opened from with the search, filter, sort and page intact. Design:
-`docs/spec-v2.md` §8.
+`docs/spec-v2.md` §7.
 
 **Phase 10.1 — what the call produced.** My Roster Status now answers the
 question an officer rings back to find out. Each row carries the member's

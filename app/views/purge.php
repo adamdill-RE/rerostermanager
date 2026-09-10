@@ -58,15 +58,6 @@ $href = static function (array $overrides = []) use ($app, $purge): string {
     history, assignments and metrics all survive it intact.
 </p>
 
-<?php foreach ($notices as [$level, $message]) { ?>
-    <div class="card">
-        <span class="chip chip-<?= e($level === 'ok' ? 'ok' : ($level === 'warn' ? 'warn' : 'danger')) ?>">
-            <?= e($level === 'ok' ? 'Done' : ($level === 'warn' ? 'Note' : 'Stopped')) ?>
-        </span>
-        <span><?= e($message) ?></span>
-    </div>
-<?php } ?>
-
 <div class="toggle">
     <a href="<?= e($href(['list' => null, 'page' => null])) ?>"
        class="<?= $isPurged ? '' : 'current' ?>">
@@ -119,7 +110,7 @@ $href = static function (array $overrides = []) use ($app, $purge): string {
     <?php } ?>
 </p>
 
-<form method="post" action="<?= e($app->url('purge')) ?>">
+<form method="post" action="<?= e($app->url('purge')) ?>" class="pick">
     <?= Csrf::field() ?>
     <input type="hidden" name="action" value="<?= $isPurged ? 'restore' : 'purge' ?>">
     <input type="hidden" name="return" value="<?= e(http_build_query(array_filter([
@@ -188,24 +179,21 @@ $href = static function (array $overrides = []) use ($app, $purge): string {
             <p class="ab">
                 <span>Restoring puts these members back on every roster and roll-up,
                     with everything they already had.</span>
-                <button type="submit">Restore selected</button>
+                <button type="submit" class="needs">Restore <span class="count"></span> ticked</button>
             </p>
         <?php } else { ?>
-            <p class="ab">
-                <label for="confirm">
-                    Type <code><?= e((string) $purge['confirm_word']) ?></code> to purge the members you ticked
-                </label>
-                <input type="text" id="confirm" name="confirm" value=""
-                       autocomplete="off" spellcheck="false"
-                       inputmode="text" size="10">
-            </p>
+            <?php /* The word is typed on the next page (Phase 10.3), which
+                     lists the ticked members by name and keeps them listed
+                     if the word is wrong. Here: tick, and a live count. */ ?>
             <p class="ab">
                 <span>
                     A purge hides them from every roster and roll-up. It deletes
                     nothing: their contact history, assignments and metrics stay
-                    exactly where they are, and Restore brings them back.
+                    exactly where they are, and Restore brings them back. The
+                    next page names the members you ticked and asks for
+                    <code><?= e((string) $purge['confirm_word']) ?></code> before anything changes.
                 </span>
-                <button type="submit">Purge selected</button>
+                <button type="submit" class="needs">Purge <span class="count"></span> ticked&hellip;</button>
             </p>
         <?php } ?>
     </div>
@@ -224,4 +212,3 @@ $href = static function (array $overrides = []) use ($app, $purge): string {
 
 <?php } ?>
 
-<p><a href="<?= e($app->url('menu')) ?>">Back to the menu</a></p>

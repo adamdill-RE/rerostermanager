@@ -183,6 +183,9 @@ final class LogContact
 
         return [
             'outcome'          => 'logged',
+            // For the 303's anchor (Phase 10.3): the screen lands on the row
+            // that was just worked, not on the top of fifty.
+            'member_id'        => $memberId,
             'member_name'      => RosterPage::displayName(
                 (string) $member['preferred_name'],
                 (string) $member['first_name'],

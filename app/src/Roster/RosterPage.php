@@ -247,33 +247,75 @@ final class RosterPage
     }
 
     /**
+     * The most words a search is split into. Six is more than any name has
+     * and bounds the statement: every word is four LIKEs.
+     */
+    public const SEARCH_MAX_TOKENS = 6;
+
+    /**
      * The search as a SQL fragment over `m`, with its bindings — ONE spelling
-     * for the two screens that search a roster (spec 7.2 and, since Phase
-     * 10.2, spec 7.1). The caller has already applied the floor.
+     * for every screen that searches a roster (spec 7.2, spec 7.1 since
+     * Phase 10.2, Designate Users and Import History since Phase 10.3). The
+     * caller has already applied the floor.
+     *
+     * A TERM IS WORDS, AND EVERY WORD HAS TO LAND (Phase 10.3). The natural
+     * thing to type is a first name and a last name, and one pattern tested
+     * against four columns separately finds nobody for "John Smith" — no
+     * column holds both words — which reads as "this member is gone" on a
+     * screen whose empty state cannot correct it. So the term is split on
+     * whitespace and commas, each word must match ONE of the four columns,
+     * and the words are ANDed: "John Smith", "Smith John" and "Smith, John"
+     * all find the same person, and "Jo Smi" finds them too.
      *
      * %, _ and \ typed by a person are literals, not operators: a member
      * named 100% must be findable and %%% must match nobody. Four columns
-     * means four placeholders — a named placeholder cannot be reused within
-     * one statement here.
+     * means four placeholders PER WORD — a named placeholder cannot be
+     * reused within one statement here.
      *
      * @return array{0: string, 1: array<string, string>} the parenthesised
      *         clause, and the bindings it needs
      */
     public static function searchClause(string $search): array
     {
-        $like = '%' . self::escapeLike($search) . '%';
+        $parts = [];
+        $bind  = [];
 
-        $clause = "(m.preferred_name LIKE :search_preferred ESCAPE '\\\\'"
-            . " OR m.first_name LIKE :search_first ESCAPE '\\\\'"
-            . " OR m.last_name LIKE :search_last ESCAPE '\\\\'"
-            . " OR m.member_number LIKE :search_number ESCAPE '\\\\')";
+        foreach (self::searchTokens($search) as $i => $token) {
+            $like = '%' . self::escapeLike($token) . '%';
+            $p    = ':search' . $i;
 
-        return [$clause, [
-            ':search_preferred' => $like,
-            ':search_first'     => $like,
-            ':search_last'      => $like,
-            ':search_number'    => $like,
-        ]];
+            $parts[] = "(m.preferred_name LIKE {$p}p ESCAPE '\\\\'"
+                . " OR m.first_name LIKE {$p}f ESCAPE '\\\\'"
+                . " OR m.last_name LIKE {$p}l ESCAPE '\\\\'"
+                . " OR m.member_number LIKE {$p}n ESCAPE '\\\\')";
+
+            $bind[$p . 'p'] = $like;
+            $bind[$p . 'f'] = $like;
+            $bind[$p . 'l'] = $like;
+            $bind[$p . 'n'] = $like;
+        }
+
+        return ['(' . implode(' AND ', $parts) . ')', $bind];
+    }
+
+    /**
+     * The words of a search term: split on whitespace and commas, emptied of
+     * blanks, de-duplicated, and capped. A term with no words in it — ",,,"
+     * — is one word, itself, so the clause is never empty: it then matches
+     * exactly the nobody it should.
+     *
+     * @return array<int, string>
+     */
+    public static function searchTokens(string $search): array
+    {
+        $tokens = preg_split('/[\s,]+/u', trim($search), -1, PREG_SPLIT_NO_EMPTY);
+        $tokens = array_values(array_unique(is_array($tokens) ? $tokens : []));
+
+        if ($tokens === []) {
+            return [trim($search)];
+        }
+
+        return array_slice($tokens, 0, self::SEARCH_MAX_TOKENS);
     }
 
     /**

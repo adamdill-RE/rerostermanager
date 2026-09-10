@@ -38,15 +38,6 @@ $href = static function (?int $team) use ($app): string {
     to Rodeo Houston, and changing it changes nobody&rsquo;s access.
 </p>
 
-<?php foreach ($notices as [$level, $message]) { ?>
-    <div class="card">
-        <span class="chip chip-<?= e($level === 'ok' ? 'ok' : ($level === 'warn' ? 'warn' : 'danger')) ?>">
-            <?= e($level === 'ok' ? 'Done' : ($level === 'warn' ? 'Note' : 'Stopped')) ?>
-        </span>
-        <span><?= e($message) ?></span>
-    </div>
-<?php } ?>
-
 <?php if ($teams['no_area_count'] > 0) { ?>
     <div class="card">
         <span class="chip chip-warn">Note</span>
@@ -84,7 +75,7 @@ $href = static function (?int $team) use ($app): string {
     <tbody>
     <?php foreach ($teams['teams'] as $team) { ?>
         <?php $open = $teams['selected'] === $team['id']; ?>
-        <tr>
+        <tr id="t<?= e((string) $team['id']) ?>">
             <td data-label="Team"><strong><?= e((string) $team['name']) ?></strong></td>
             <td data-label="Division"><?= e($team['division_name'] === '' ? '&mdash;' : (string) $team['division_name']) ?></td>
             <td data-label="Area">
@@ -131,4 +122,3 @@ $href = static function (?int $team) use ($app): string {
     </tbody>
 </table>
 
-<p><a href="<?= e($app->url('menu')) ?>">Back to the menu</a></p>

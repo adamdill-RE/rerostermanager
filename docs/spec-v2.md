@@ -756,7 +756,168 @@ stopped being read-only on the one row an officer has just found.
 
 ---
 
-## 8. Open items
+## 8. The call loop, and the shell
+
+Phase 10.3 is fifteen changes from a UX review of the build at 10.2, read
+against spec-v1 §1.2's two people: the Captain in a parking lot and the
+Division Chairman at a desk. Each is HTML, CSS, a query or wording. None is
+a script — the CSP still forbids one — a framework, a schema change or a
+second layout, and the 100KB first-paint budget is unchanged by every one of
+them. The review's own ledger, with the evidence behind each item, is kept
+with the session that produced it; what follows is what was decided and why.
+
+### 8.1 The first screen is the first call
+
+On a 360px phone, My Roster Status put the working list under the lede, the
+toggle, the team picker with its hint, the search box with its hint, the
+banner and four cards each with a legend — roughly two screens of scroll
+before "The next calls to make", on the screen spec 1.2 describes as "one
+screen: who is outstanding, and a button that dials them".
+
+Below 720px the four cards and the two controls each **fold** behind a 56px
+label; above it nothing folds. The fold is a checkbox and a label, not
+`<details>`, because `<details>` cannot be open at one width and closed at
+another without a script, and a checkbox can — the CSS ignores it above the
+breakpoint. Not a byte of the folded content changes. The cards' label is
+the four outstanding counts in one line, so the fold is itself the summary;
+and the controls' fold is **open whenever something inside it is in force**
+— a search term, a chosen team — because a narrowed list must never hide the
+control that narrowed it. The lede offers a skip to the list.
+
+The lede also says **how many days the show year has to go**, from
+`show_year.ends_on`, which was in the table and on no screen. `View::daysLeft()`
+derives it in the display zone; a year with no date says nothing.
+
+### 8.2 A chip's word
+
+Spec 8.3 set one word per status. The owner's renaming at Phase 5 made three
+of them three words — Open/No Contact, Reported Complete, Member Handling —
+and four such chips with their metric prefixes wrap a phone card to three
+lines. `MetricStatus::chipLabel()` is the chip's word: Open, Reported,
+Handling, and the same as `label()` for the rest. The full word rides in the
+chip's `title` and is spelled everywhere else — legend, popover, Result.
+`label()` is still the only place the owner's words are spelled; this is a
+shorter form of one vocabulary, not a second one.
+
+### 8.3 A search is words
+
+`RosterPage::searchClause()` tested the whole typed term against four
+columns separately, so "John Smith" — the natural thing to type — matched
+nothing, on four screens, and the empty state's honest sentence made it read
+as "this member is gone". The term is now split on whitespace and commas,
+every word must match one of the four columns, and the words are ANDed:
+"John Smith", "Smith, John" and "Zeb Fin" find the same person. Designate
+Users and Import History, which each carried a copy of the old clause, call
+the one clause. Four placeholders per word, six words at most, wildcards
+literal in every one.
+
+### 8.4 Call, then log
+
+Spec-v1 §8.4 wanted a Call tap to "offer to log the contact on return", and
+without a script the page cannot know a tap happened. The nearest thing:
+the open sheet **carries the row's Call, Text and Email inside it**, as its
+first and largest targets, on the row's own terms — Text only for a cell
+phone, Email only with an address, absent never disabled — so the order
+becomes open the sheet, dial from it, return to a page already open on this
+row with the form waiting. The sheet's first control takes `autofocus`.
+
+Every write that changes one row **comes back anchored to it**: log-contact
+to `#m<id>`, Designate to `#m<id>` with the row still open (the return
+carries `member`), Manage Teams to `#t<id>`. `:target` draws a rule down the
+row's edge and `scroll-margin-top` keeps it out from under the bar.
+
+### 8.5 The shell
+
+**One notice component.** Fourteen views each spelled six lines, and the same
+danger level read Refused, Failed or Stopped by screen. `View::notice()`
+renders every notice with one vocabulary — Done, Note, Stopped — and the
+layout places it: inside the sticky bar for a signed-in person, with
+`role="status"`, so a landing further down the page still shows the word;
+at the top of the column for anybody else.
+
+**A nav of the four working screens** — Status, Roster, Assign, Committee —
+filtered by capability exactly as the menu filters its tiles, the current
+one marked `aria-current`, and **Sign out** beside the name on every screen.
+The ad-hoc link rows at the foot of twelve screens are gone. While a
+password change is forced the bar offers Sign out and nothing that loops:
+the Menu link 303'd straight back. A password change is now confirmed on
+landing, as its lede promised.
+
+**A link token.** Action Orange is 4.9:1 on white and 4.1:1 on Dust Light,
+under spec-v1 §10's 4.5:1, and the links that matter sit on Dust Light —
+menu tiles, empty states, notices, hints. `--link` is `#9C4512` in light
+(6.4:1 on white, 5.4:1 on the surface) and Rodeo Orange in dark (5.9:1).
+Buttons keep Action Orange, where white text is what is measured.
+
+**`color-scheme: light dark`**, declared in a meta and on `:root`, so a
+`<select>`'s drop-down, the date picker, the checkboxes and the scrollbars
+draw dark on the dark page; and a `theme-color` per scheme for the phone's
+own chrome.
+
+### 8.6 All teams on one page
+
+The Committee Dashboard opens one division and one area at a time, for a
+sound byte reason (§7.3). The cost was that "a Division Chairman comparing
+25 teams" could never see them side by side. §7.3 measured the fully
+expanded tree at 75.4KB, inside the budget, so a single flat level was never
+the bytes' problem. **`level=teams`** is every team in scope as one sortable
+list: the same nine columns, drill-downs and sort whitelist, the division
+and area as words under the name, a team spanning two divisions once per
+division exactly as in the tree. The tree stays the default and out of the
+URL.
+
+### 8.7 Selected, counted
+
+Spec-v1 §7.4 wanted the sticky bar to read "12 selected"; the CSS said that
+was impossible without a script. CSS counters count ticked boxes in document
+order, and the bar sits after the table: `counter-reset` on the form,
+`counter-increment` on `:checked`, `counter(sel)` in the button. Assign
+Officers and Flagged for Purge both read it. `:has()` only dims the button
+while nothing is ticked; the server still answers a bare press.
+
+### 8.8 Gating by consequence
+
+Typing `CONFIRM` was required to purge one dropped member, close a year and
+carry assignments forward, while applying a 1,954-row import, making a year
+active for every officer and re-opening one were each one press. The gating
+did not track consequence. Two tiers, applied:
+
+- **Reaches everyone, or is hard to reverse.** Applying an import asks for a
+  ticked "I have read the diff above", required by the browser and refused
+  again by the handler. Make active and Re-open are a **step**: a link to
+  `?confirm=activate&year=` draws a card saying what will happen, and the
+  button is on the card. Close and Carry keep their typed word, in place.
+- **One person, reversible.** Purge, Restore, Revoke, Reset and Grant stay
+  a press. A purge's word is typed on a **second page that names the ticked
+  members** and carries their ids, so a wrong word re-renders that page with
+  the names still on it — before, it 303'd to a fresh list and forty ticks
+  were gone.
+
+### 8.9 One form for the export
+
+The year and the team boxes sat in a GET form under "Update the count", and
+Download was a second POST form carrying hidden copies of the *last loaded*
+selection: tick two more teams, press Download, get the file for the boxes
+as they were before — with no error, on the screen §4 built so that "the
+screen says 1,247 rows and the file holds 82" could not happen. One POST
+form, two buttons named by action: count re-renders from the posted boxes,
+download streams from them. The count card is advisory and says so.
+
+### 8.10 Which of three things "not found" means
+
+One sentence — "There is nothing at this address" — served a real 404, a
+capability refusal, a member outside scope, a wrong key, and a roster
+screen with no active show year. It was wrong for two of the people reading
+it: an Officer who tapped a leadership link, and an Admin on a fresh install
+reading it on their own dashboard. The page now says which: a signed-in
+capability refusal reads "Not open to your level" with a 403 — the menu
+already shows which screens exist, so nothing is given away; no active show
+year reads what it is and links an Admin to Show Year; everything else, a
+member outside scope and a wrong key included, stays the incurious 404.
+
+---
+
+## 9. Open items
 
 Carried from spec-v1 §12 where they bear on v2, plus those this document
 raises.

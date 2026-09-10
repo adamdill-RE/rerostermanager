@@ -38,13 +38,6 @@ $chip = static function (string $state, string $word): string {
     and this page stops existing.
 </p>
 
-<?php foreach ($notices as [$level, $message]) { ?>
-    <div class="card">
-        <?= $chip($level, $level === 'ok' ? 'Done' : ($level === 'warn' ? 'Note' : 'Failed')) ?>
-        <span><?= e($message) ?></span>
-    </div>
-<?php } ?>
-
 <div class="card">
     <h2>1 &middot; Database connection</h2>
     <dl class="facts">

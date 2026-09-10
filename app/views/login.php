@@ -22,15 +22,6 @@ declare(strict_types=1);
 <h1>Sign in</h1>
 <p class="lede">Rodeo Express Roster — officers and designated users only.</p>
 
-<?php foreach ($notices as [$level, $message]) { ?>
-    <div class="card">
-        <span class="chip <?= $level === 'ok' ? 'chip-ok' : ($level === 'warn' ? 'chip-warn' : 'chip-danger') ?>">
-            <?= e($level === 'ok' ? 'Done' : ($level === 'warn' ? 'Note' : 'Refused')) ?>
-        </span>
-        <span><?= e($message) ?></span>
-    </div>
-<?php } ?>
-
 <form method="post" action="<?= e($app->url('login')) ?>">
     <?= Rerm\Csrf::field() ?>
 

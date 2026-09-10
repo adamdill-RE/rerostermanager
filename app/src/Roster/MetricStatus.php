@@ -90,6 +90,25 @@ enum MetricStatus: string
     }
 
     /**
+     * The word a CHIP carries, where four of them share one line of a phone
+     * card (spec 8.2): the owner's word where it is one word, and its first
+     * word where it is three. Four "Open/No Contact" chips with their metric
+     * prefixes wrap a 360px card to three lines; four "Open" chips are the
+     * one line the rule asks for. The full word rides in the chip's title
+     * and is spelled out beside every legend, definition and Result — this
+     * is a shorter form of label(), never a second vocabulary (Phase 10.3).
+     */
+    public function chipLabel(): string
+    {
+        return match ($this) {
+            self::Reported    => 'Reported',
+            self::InProgress  => 'Handling',
+            self::Outstanding => 'Open',
+            default           => $this->label(),
+        };
+    }
+
+    /**
      * What the status word MEANS, in the owner's exact wording (Phase 5
      * decided 6). Rendered twice on the dashboard — a popover per status and
      * the plain <details> fallback at the foot — from this one source.

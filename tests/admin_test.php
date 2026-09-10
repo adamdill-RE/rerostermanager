@@ -1965,10 +1965,26 @@ test('Flagged for Purge renders both lists, with the typed confirmation', functi
         ]);
 
         assertTrue(str_contains($html, 'Flagged for Purge'), 'the screen rendered');
-        assertTrue(str_contains($html, 'name="confirm"'), 'a purge asks for the word');
-        assertTrue(str_contains($html, Purge::CONFIRM_WORD), 'and says which word');
         assertTrue(str_contains($html, 'name="member_id[]"'), 'per-member checkboxes, never a bulk sweep');
-        assertTrue(ad_says($html, 'Purge selected'), 'and a button that does it');
+        assertTrue(str_contains($html, Purge::CONFIRM_WORD), 'and it says which word the next page asks for');
+        assertTrue(ad_says($html, 'ticked'), 'and a button that leads there');
+
+        // The word is typed on the SECOND page (Phase 10.3), which names the
+        // ticked members and carries their ids, so a wrong word cannot lose
+        // the selection. The list page no longer asks for it at all.
+        assertTrue(!str_contains($html, 'name="confirm"'), 'the list does not ask for the word');
+
+        $rows = $purge->preview([(string) $f['ids']['flagged']]);
+        assertSame(1, count($rows), 'the preview is the purgeable rows among the ids');
+        $confirmHtml = ad_render('purge-confirm', 'Purge these members?', [
+            'user' => ad_user('adm'), 'notices' => [], 'rows' => $rows, 'return' => '', 'back' => 'purge',
+        ]);
+        assertTrue(str_contains($confirmHtml, 'name="confirm"'), 'the second page asks for the word');
+        assertTrue(str_contains($confirmHtml, Purge::CONFIRM_WORD), 'and says which word');
+        assertTrue(str_contains($confirmHtml, $rows[0]['name']), 'and names who it will act on');
+        assertTrue(str_contains($confirmHtml, 'name="member_id[]" value="' . $f['ids']['flagged'] . '"'),
+            'and carries the ids, so nothing is retyped');
+        assertSame(0, preg_match_all('/<input[^>]*type="checkbox"/', $confirmHtml), 'nothing to re-tick');
 
         // Now purge them, and render the other half.
         $purge->apply(ad_user('adm'), [
@@ -1985,7 +2001,8 @@ test('Flagged for Purge renders both lists, with the typed confirmation', functi
 
         // Restoring is the reversible half, so it does not ask for the word.
         assertTrue(!str_contains($html, 'name="confirm"'), 'restoring does not ask');
-        assertTrue(ad_says($html, 'Restore selected'), 'it offers Restore instead');
+        assertTrue(ad_says($html, 'Restore'), 'it offers Restore instead');
+        assertTrue(!str_contains($html, 'Purge <span'), 'and not Purge');
     } finally {
         $purge->apply(ad_user('adm'), [
             'action' => 'restore', 'member_id' => [(string) $f['ids']['flagged']],
@@ -2040,8 +2057,12 @@ test('the Audit Log renders, escaped, with payloads behind a details', function 
     assertTrue(str_contains($html, 'Audit Log'));
     assertTrue(ad_says($html, 'Times are UTC'), 'the column is UTC and the screen says so');
 
-    // Read-only: nothing on the rendered page can write.
-    assertSame(0, preg_match('/method="post"/i', $html), 'no POST on a read-only screen');
+    // Read-only: nothing on the rendered SCREEN can write. The shell's own
+    // Sign out (Phase 10.3) is the one POST on every signed-in page and is
+    // not this screen's; it is set aside so the assertion still reads the
+    // screen.
+    $screen = (string) preg_replace('/<form class="signout".*?<\/form>/s', '', $html);
+    assertSame(0, preg_match('/method="post"/i', $screen), 'no POST on a read-only screen');
 
     // The payloads are JSON, and JSON is full of quotes and braces. If one
     // reached the page unescaped it would break out of the <pre>.
@@ -2088,6 +2109,77 @@ test('a member name with markup in it is escaped everywhere it is rendered', fun
         $pdo->prepare("UPDATE member SET first_name = 'Mabel' WHERE id = :id")
             ->execute([':id' => $f['ids']['m3']]);
     }
+});
+
+test('Make active and Re-open are a step, not a press: a card that says what happens, then the button', function (): void {
+    // Phase 10.3. Purging one member asked for a typed word while the action
+    // that switches every officer's screens was one press.
+    $years = ShowYears::fromApp($GLOBALS['rerm_app'])->years();
+    $plain = ad_render('show-year', 'Show Year', [
+        'user' => ad_user('adm'), 'notices' => [],
+        'showYear' => ['years' => $years, 'from_year' => 0, 'to_year' => 0, 'preview' => null, 'confirm' => null],
+    ]);
+    assertSame(0, substr_count($plain, 'name="action" value="activate"'), 'no one-press activate form on the list');
+    assertSame(0, substr_count($plain, 'name="action" value="open"'), 'nor re-open');
+    assertTrue(str_contains($plain, 'confirm=activate&amp;year='), 'the link leads to the step');
+    assertTrue(str_contains($plain, 'name="action" value="close"'), 'closing still asks for the word, in place');
+
+    $inactive = null;
+    foreach ($years as $year) {
+        if (!$year['is_active']) {
+            $inactive = $year;
+        }
+    }
+    assertTrue($inactive !== null, 'the fixture has a year that is not active');
+
+    $step = ad_render('show-year', 'Show Year', [
+        'user' => ad_user('adm'), 'notices' => [],
+        'showYear' => [
+            'years' => $years, 'from_year' => 0, 'to_year' => 0, 'preview' => null,
+            'confirm' => ['what' => 'activate', 'year' => $inactive, 'current' => 'AD-2027'],
+        ],
+    ]);
+    assertTrue(ad_says($step, 'Make ' . $inactive['label'] . ' the active show year?'));
+    assertTrue(ad_says($step, 'next page load'), 'and says what will happen');
+    assertTrue(str_contains($step, 'name="action" value="activate"'), 'the button is on the card');
+    assertTrue(str_contains($step, 'name="year_id" value="' . $inactive['id'] . '"'));
+    assertTrue(ad_says($step, 'Cancel'), 'with a way out');
+});
+
+test('the export is one form: the count and the download read the same boxes', function (): void {
+    // Phase 10.3. Two forms meant Download streamed the LAST LOADED
+    // selection, not the boxes as ticked — with no error.
+    $source = (string) file_get_contents(__DIR__ . '/../app/views/export.php');
+    assertSame(1, preg_match_all('/<form /', $source), 'one form');
+    assertSame(0, substr_count($source, 'method="get"'), 'and it posts');
+    assertTrue(str_contains($source, 'name="action" value="count"'));
+    assertTrue(str_contains($source, 'name="action" value="download"'));
+    assertSame(0, substr_count($source, 'name="team[]" value="<?= e($teamValue)'), 'no hidden copy of a stale selection');
+
+    $front = (string) file_get_contents(__DIR__ . '/../public/index.php');
+    $from  = strpos($front, 'function export_act(');
+    $to    = strpos($front, "\nfunction ", (int) $from + 1);
+    $body  = substr($front, (int) $from, (int) $to - (int) $from);
+    assertTrue(str_contains($body, "if ((\$_POST['action'] ?? '') !== 'download') {"), 'count re-renders');
+    assertTrue(str_contains($body, 'export_screen($app, $user);'));
+
+    // The screen renders from the posted boxes on a POST, the query on a GET.
+    $from = strpos($front, 'function export_screen(');
+    $to   = strpos($front, "\nfunction ", (int) $from + 1);
+    $body = substr($front, (int) $from, (int) $to - (int) $from);
+    assertTrue(str_contains($body, "\$_SERVER['REQUEST_METHOD'] === 'POST' ? \$_POST : \$_GET"));
+});
+
+test('applying an import asks to be told the diff was read, in the form and in the handler', function (): void {
+    $view = (string) file_get_contents(__DIR__ . '/../app/views/import.php');
+    assertTrue(str_contains($view, 'name="confirmed" value="1" required'), 'the box, required by the browser');
+
+    $front = (string) file_get_contents(__DIR__ . '/../public/index.php');
+    $from  = strpos($front, 'function import_act(');
+    $to    = strpos($front, "\nfunction ", (int) $from + 1);
+    $body  = substr($front, (int) $from, (int) $to - (int) $from);
+    assertTrue(str_contains($body, "if ((\$_POST['confirmed'] ?? '') !== '1') {"), 'and refused by the handler');
+    assertTrue(str_contains($body, 'Nothing was written.'));
 });
 
 test('the fixture cleans up after itself, and leaves the seeded year active', function (): void {

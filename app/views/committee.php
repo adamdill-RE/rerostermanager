@@ -79,6 +79,7 @@ $number = static fn (int $n): string => number_format($n);
  */
 $href = static function (array $overrides = []) use ($app, $committee): string {
     $params = [
+        'level'    => $committee['level'],
         'sort'     => $committee['sort'],
         'dir'      => $committee['dir'],
         'division' => $committee['open_division'],
@@ -88,6 +89,10 @@ $href = static function (array $overrides = []) use ($app, $committee): string {
         $params[$key] = $value;
     }
 
+    // The tree is the default and stays out of the URL (Phase 10.3).
+    if ($params['level'] !== 'teams') {
+        unset($params['level']);
+    }
     if ($params['sort'] === CommitteePage::DEFAULT_SORT) {
         unset($params['sort']);
     }
@@ -147,10 +152,15 @@ $sortHeader = static function (string $key, string $word) use ($committee, $href
 
 /** What each level's rows are called, in the cell and in the card. */
 $levelWord = ['division' => 'Division', 'area' => 'Area', 'team' => 'Team'];
+
+/** All teams on one page (Phase 10.3), or the tree. */
+$flat = $committee['level'] === 'teams';
 ?>
+<?php $daysLeft = View::daysLeft($app, $year['ends_on'] ?? null); ?>
 <h1>Committee Dashboard</h1>
 <p class="lede">
-    Show year <?= e((string) $year['label']) ?> &middot;
+    Show year <?= e((string) $year['label']) ?><?php
+        if ($daysLeft !== '') { ?> &middot; <strong><?= e($daysLeft) ?></strong><?php } ?> &middot;
     <?= e($number((int) $committee['total'])) ?> members in
     <?= e($number((int) $committee['divisions'])) ?>
     <?= (int) $committee['divisions'] === 1 ? 'division' : 'divisions' ?>.
@@ -169,11 +179,26 @@ $levelWord = ['division' => 'Division', 'area' => 'Area', 'team' => 'Team'];
     </div>
 <?php } else { ?>
 
-<table class="committee">
+<?php /* The tree, or every team on one page (Phase 10.3): the comparison
+         spec 1.2 promised a Division Chairman, which one area at a time
+         could never give them. Same columns, same links, same sort. */ ?>
+<nav class="toggle" aria-label="How the groups are shown">
+    <a href="<?= e($href(['level' => 'tree'])) ?>"<?= $flat ? '' : ' class="current" aria-current="page"' ?>>By division</a>
+    <a href="<?= e($href(['level' => 'teams', 'division' => null, 'area' => null])) ?>"<?= $flat ? ' class="current" aria-current="page"' : '' ?>>All teams
+        <span class="n"><?= e($number((int) $committee['teams'])) ?></span></a>
+</nav>
+
+<table class="committee<?= $flat ? ' flat' : '' ?>">
     <caption>
-        Open a division or an area by its name; open a team, or any linked
-        number, to reach the people it counts. Each requirement shows how many
-        of the group are complete, out of its members.
+        <?php if ($flat) { ?>
+            Every team you can see, on one page, in the order the sort says.
+            Open a team, or any linked number, to reach the people it counts.
+            A team appears once for each division its members belong to.
+        <?php } else { ?>
+            Open a division or an area by its name; open a team, or any linked
+            number, to reach the people it counts. Each requirement shows how many
+            of the group are complete, out of its members.
+        <?php } ?>
     </caption>
     <thead>
         <tr>
@@ -195,8 +220,12 @@ $levelWord = ['division' => 'Division', 'area' => 'Area', 'team' => 'Team'];
 foreach ($committee['rows'] as $row) {
     $members = (int) $row['members'];
 
-    echo '<tr class="lv-', e($row['level']), '"><td class="grp" data-label="Group">',
-        '<span class="lvl">', e($levelWord[$row['level']]), '</span> ';
+    echo '<tr class="lv-', e($row['level']), '"><td class="grp" data-label="Group">';
+    // Every row on the flat page is a team, so the level word is noise there;
+    // the division and the area go under the name instead (Phase 10.3).
+    if (!$flat) {
+        echo '<span class="lvl">', e($levelWord[$row['level']]), '</span> ';
+    }
 
     if ($row['level'] === 'team') {
         // A leaf: the name goes where the work is — the working list for this
@@ -229,6 +258,10 @@ foreach ($committee['rows'] as $row) {
         // reason), and it carries no drill-down because spec 7.1 has no
         // filter that means "no team".
         echo '<span class="sub">cannot be assigned &mdash; no team</span>';
+    }
+    if ($flat) {
+        echo '<span class="sub">', e((string) $row['division_name']), ' &middot; ',
+            e((string) $row['area_name']), '</span>';
     }
 
     echo '</td>';
@@ -305,8 +338,3 @@ foreach ($committee['rows'] as $row) {
     </dl>
 </details>
 
-<p>
-    <a href="<?= e($app->url('dashboard')) ?>">My Roster Status</a> &middot;
-    <a href="<?= e($app->url('roster')) ?>">View My Roster</a> &middot;
-    <a href="<?= e($app->url('menu')) ?>">Menu</a>
-</p>

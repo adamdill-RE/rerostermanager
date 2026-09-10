@@ -366,7 +366,11 @@ final class ImportHistory
      */
     public function findMembers(string $query, int $limit = 25): array
     {
-        $like = '%' . RosterPage::escapeLike($query) . '%';
+        // RosterPage::searchClause(), the one spelling (Phase 10.3): a full
+        // name typed here finds who it finds on every other screen. The
+        // exact member number stays as its own branch, because that is the
+        // one value unique across the roster and the box's hint names it.
+        [$clause, $bind] = RosterPage::searchClause($query);
 
         $read = $this->pdo->prepare(
             'SELECT m.id, m.member_number, m.first_name, m.last_name, m.preferred_name,'
@@ -375,20 +379,11 @@ final class ImportHistory
             . ' LEFT JOIN team t ON t.id = m.team_id'
             . ' LEFT JOIN division d ON d.id = m.division_id'
             . ' WHERE m.is_system = 0 AND ('
-            . "   m.member_number = :exact"
-            . "   OR m.first_name LIKE :first ESCAPE '\\\\'"
-            . "   OR m.last_name LIKE :last ESCAPE '\\\\'"
-            . "   OR m.preferred_name LIKE :preferred ESCAPE '\\\\'"
-            . "   OR m.member_number LIKE :number ESCAPE '\\\\'"
+            . '   m.member_number = :exact'
+            . '   OR ' . $clause
             . ' ) ORDER BY m.last_name, m.first_name, m.id LIMIT ' . max(1, $limit)
         );
-        $read->execute([
-            ':exact'     => $query,
-            ':first'     => $like,
-            ':last'      => $like,
-            ':preferred' => $like,
-            ':number'    => $like,
-        ]);
+        $read->execute([':exact' => $query] + $bind);
 
         $matches = [];
         foreach ($read->fetchAll() as $row) {

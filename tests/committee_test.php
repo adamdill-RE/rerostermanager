@@ -1444,3 +1444,68 @@ test('the rendered page escapes every group name and stays inside the byte budge
     // become enormous.
     assertTrue(strlen($html) < 100 * 1024, 'first paint is ' . strlen($html) . ' bytes');
 });
+
+// ---------------------------------------------------------------------------
+// All teams on one page (Phase 10.3)
+// ---------------------------------------------------------------------------
+
+test('level=teams lists every team in scope on one page, sorted across areas, once per division', function (): void {
+    $f    = cd_fixture();
+    $page = cd_page(cd_executive(), ['level' => 'teams', 'sort' => 'contact', 'dir' => 'desc']);
+
+    assertSame('teams', $page['level']);
+    assertSame(null, $page['open_division'], 'nothing is open — there is no tree');
+    assertSame(null, $page['open_area']);
+
+    $levels = array_unique(array_map(static fn (array $r): string => $r['level'], $page['rows']));
+    assertSame(['team'], array_values($levels), 'every row is a team');
+    assertSame((int) $page['teams'], count($page['rows']), 'and every (division, team) pair is one row');
+
+    // The tree's team figures, row for row: the flat page is the same
+    // tallies in a different order, never a second count.
+    $tree = cd_page(cd_executive(), ['division' => $f['divisions']['A'], 'area' => 'Reed Road']);
+    foreach (['Reed Road Parking Team A CD', 'Reed Road CD'] as $name) {
+        $flatRow = null;
+        foreach ($page['rows'] as $row) {
+            if ($row['name'] === $name && $row['division_id'] === $f['divisions']['A']) {
+                $flatRow = $row;
+            }
+        }
+        assertTrue($flatRow !== null, $name . ' is on the flat page');
+        assertSame(cd_figures(cd_row($tree, 'team', $name)), cd_figures($flatRow), $name . ' carries the tree\'s figures');
+        assertSame('Reed Road', $flatRow['area_name'], 'and names its area');
+        assertTrue($flatRow['area_name'] !== '' && $flatRow['division_name'] !== '');
+    }
+
+    // Sorted ACROSS areas: never-contacted descending, then name.
+    $values = array_map(static fn (array $r): int => (int) $r['never_contacted'], $page['rows']);
+    $sorted = $values;
+    rsort($sorted);
+    assertSame($sorted, $values, 'the whole scope is one sort');
+
+    // Drill-downs are the tree's: a real team drills, (No team) does not.
+    foreach ($page['rows'] as $row) {
+        assertSame($row['name'] !== CommitteePage::NO_TEAM, $row['drillable'], $row['name']);
+    }
+});
+
+test('the flat page renders with the toggle, no level words, and the division under each name', function (): void {
+    $f    = cd_fixture();
+    $html = cd_render(cd_page(cd_executive(), ['level' => 'teams']));
+
+    assertTrue(str_contains($html, 'class="committee flat"'));
+    assertTrue(str_contains($html, '>All teams'), 'the toggle is offered');
+    assertTrue(str_contains($html, '>By division</a>'));
+    assertSame(0, substr_count($html, '<span class="lvl">'), 'no level word on a page of one level');
+    assertTrue(str_contains($html, 'Reed Road CD'));
+    assertTrue(strlen($html) < 100 * 1024, 'inside the byte budget at ' . strlen($html) . ' bytes');
+
+    // The tree is the default, and stays out of the URL.
+    $tree = cd_render(cd_page(cd_executive(), []));
+    assertTrue(!str_contains($tree, 'class="committee flat"'));
+    assertTrue(str_contains($tree, 'level=teams'), 'the toggle links to the flat page');
+    assertTrue(!str_contains($tree, 'level=tree'), 'and never spells the default');
+
+    // An unknown level is the tree, never an error and never the input.
+    assertSame('tree', cd_page(cd_executive(), ['level' => '<b>'])['level']);
+});

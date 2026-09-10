@@ -1002,6 +1002,28 @@ test('log-contact comes back to the roster through its own whitelist, with the s
 // Cleanup — always last in this file
 // ---------------------------------------------------------------------------
 
+test('a first and a last name together find the member, in either order, with or without a comma', function (): void {
+    // Phase 10.3. The natural thing to type is a whole name, and one
+    // pattern tested against four columns separately found nobody for it —
+    // no column holds both words — which read as "this member is gone".
+    $fixture = rt_fixture();
+    $officer = rt_user(Level::Officer, $fixture['division10'], $fixture['team10']);
+    $number  = $fixture['special']['search'];
+
+    foreach (['Zebulon Findme', 'Findme Zebulon', 'Findme, Zebulon', 'Robert Findme', 'Zeb Fin'] as $term) {
+        $page = rt_page($officer, ['q' => $term]);
+        assertSame(1, $page['total'], '"' . $term . '" finds exactly one');
+        assertSame($number, $page['rows'][0]['member_number'], '"' . $term . '" finds the right one');
+    }
+
+    // Every word has to land: a word that matches nobody empties the result
+    // even beside one that matches somebody.
+    assertSame(0, rt_page($officer, ['q' => 'Zebulon Nobodyatall'])['total']);
+
+    // The member number is a word too.
+    assertSame(1, rt_page($officer, ['q' => 'Findme ' . $number])['total']);
+});
+
 test('roster fixtures are cleaned up', function (): void {
     rt_teardown(rt_pdo());
 

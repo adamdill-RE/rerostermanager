@@ -78,13 +78,6 @@ $mode = (string) ($_POST['mode'] ?? Importer::MODE_COMPLETE);
     </div>
 <?php return; } ?>
 
-<?php foreach ($notices as [$level, $message]) { ?>
-    <div class="card">
-        <?= $chip($level, $level === 'ok' ? 'Done' : ($level === 'warn' ? 'Note' : 'Stopped')) ?>
-        <span><?= e($message) ?></span>
-    </div>
-<?php } ?>
-
 <?php if ($preview === null) { ?>
     <div class="card">
         <h2>1 &middot; Choose a file and a mode</h2>
@@ -428,6 +421,17 @@ $mode = (string) ($_POST['mode'] ?? Importer::MODE_COMPLETE);
                 <?= Csrf::field() ?>
                 <input type="hidden" name="action" value="apply">
                 <input type="hidden" name="batch_id" value="<?= e((string) $batch['id']) ?>">
+                <?php /* The pause (Phase 10.3): purging one member asks for a
+                         typed word, and this — every row above, written —
+                         was one press. The browser refuses the form unticked;
+                         the handler refuses it again. */ ?>
+                <label class="choice">
+                    <input type="checkbox" name="confirmed" value="1" required>
+                    <span>
+                        <span class="what">I have read the diff above</span>
+                        <span class="why">and want these <?= e($number($counts['create'] + $counts['update'])) ?> change(s) written to the roster.</span>
+                    </span>
+                </label>
                 <button type="submit">Apply <?= e($number($counts['create'] + $counts['update'])) ?> change(s) to the roster</button>
             </form>
             <form method="post" action="<?= e($app->url('import')) ?>">

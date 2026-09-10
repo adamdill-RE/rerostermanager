@@ -82,13 +82,6 @@ $view = (string) $history['view'];
     answered without keeping and diffing spreadsheets.
 </p>
 
-<?php foreach ($notices as [$level, $message]) { ?>
-    <div class="card">
-        <?= $chip($level, $level === 'ok' ? 'Done' : ($level === 'warn' ? 'Note' : 'Stopped')) ?>
-        <span><?= e($message) ?></span>
-    </div>
-<?php } ?>
-
 <form class="quick" method="get" action="<?= e($app->url('import-history')) ?>">
     <label for="member">One member&rsquo;s history</label>
     <input type="text" id="member" name="member" value="<?= e((string) $history['q']) ?>"

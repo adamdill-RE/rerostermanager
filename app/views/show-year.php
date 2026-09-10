@@ -36,12 +36,39 @@ $word   = ShowYears::CONFIRM_WORD;
     is active at a time &mdash; that is the year every officer sees.
 </p>
 
-<?php foreach ($notices as [$level, $message]) { ?>
-    <div class="card">
-        <span class="chip chip-<?= e($level === 'ok' ? 'ok' : ($level === 'warn' ? 'warn' : 'danger')) ?>">
-            <?= e($level === 'ok' ? 'Done' : ($level === 'warn' ? 'Note' : 'Stopped')) ?>
-        </span>
-        <span><?= e($message) ?></span>
+<?php if (($showYear['confirm'] ?? null) !== null) { $confirm = $showYear['confirm']; ?>
+    <?php /* The pause before the two actions that reach everybody (Phase 10.3):
+             making a year active switches every officer's screens, and
+             re-opening one lets contacts and progress be written into a year
+             that was closed. Neither is hard to reverse, and both were one
+             press. A card that says what will happen, and the button. */ ?>
+    <div class="card" id="confirm">
+        <?php if ($confirm['what'] === 'activate') { ?>
+            <h2>Make <?= e((string) $confirm['year']['label']) ?> the active show year?</h2>
+            <p>
+                Every officer&rsquo;s roster, status and assignments switch to it on
+                their next page load<?php if ($confirm['current'] !== null) { ?>, and
+                <?= e((string) $confirm['current']) ?> stops being the year they see<?php } ?>.
+                Nothing in either year is changed, and the other year stays open
+                and exportable.
+            </p>
+        <?php } else { ?>
+            <h2>Re-open <?= e((string) $confirm['year']['label']) ?>?</h2>
+            <p>
+                Contacts and progress can be logged into it again, and its
+                assignments can change. Nothing that was frozen is altered by
+                re-opening; it can be closed again the same way.
+            </p>
+        <?php } ?>
+        <form method="post" action="<?= e($app->url('show-year')) ?>">
+            <?= Csrf::field() ?>
+            <input type="hidden" name="action" value="<?= e((string) $confirm['what']) ?>">
+            <input type="hidden" name="year_id" value="<?= e((string) $confirm['year']['id']) ?>">
+            <button type="submit">
+                <?= $confirm['what'] === 'activate' ? 'Make ' . e((string) $confirm['year']['label']) . ' active' : 'Re-open ' . e((string) $confirm['year']['label']) ?>
+            </button>
+        </form>
+        <p class="hint"><a href="<?= e($app->url('show-year')) ?>">Cancel &mdash; leave things as they are</a></p>
     </div>
 <?php } ?>
 
@@ -84,12 +111,10 @@ $word   = ShowYears::CONFIRM_WORD;
             <td class="num" data-label="Contacts"><?= e($number((int) $row['contacts'])) ?></td>
             <td data-label="Actions">
                 <?php if (!$row['is_active']) { ?>
-                    <form method="post" action="<?= e($app->url('show-year')) ?>">
-                        <?= Csrf::field() ?>
-                        <input type="hidden" name="action" value="activate">
-                        <input type="hidden" name="year_id" value="<?= e((string) $row['id']) ?>">
-                        <button type="submit" class="quiet">Make active</button>
-                    </form>
+                    <?php /* A step, not a press (Phase 10.3): this is the action
+                             that switches every officer's screen, and it asks
+                             first — the card at the top of the page. */ ?>
+                    <a class="btnlink" href="<?= e($app->url('show-year')) ?>?confirm=activate&amp;year=<?= e((string) $row['id']) ?>#confirm">Make active&hellip;</a>
                 <?php } ?>
 
                 <?php if ($row['is_open']) { ?>
@@ -122,12 +147,7 @@ $word   = ShowYears::CONFIRM_WORD;
                         </form>
                     </details>
                 <?php } else { ?>
-                    <form method="post" action="<?= e($app->url('show-year')) ?>">
-                        <?= Csrf::field() ?>
-                        <input type="hidden" name="action" value="open">
-                        <input type="hidden" name="year_id" value="<?= e((string) $row['id']) ?>">
-                        <button type="submit" class="quiet">Re-open</button>
-                    </form>
+                    <a class="btnlink" href="<?= e($app->url('show-year')) ?>?confirm=open&amp;year=<?= e((string) $row['id']) ?>#confirm">Re-open&hellip;</a>
                 <?php } ?>
             </td>
         </tr>
@@ -227,4 +247,3 @@ $word   = ShowYears::CONFIRM_WORD;
 </div>
 <?php } ?>
 
-<p><a href="<?= e($app->url('menu')) ?>">Back to the menu</a></p>

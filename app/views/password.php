@@ -28,15 +28,6 @@ declare(strict_types=1);
     <?php } ?>
 </p>
 
-<?php foreach ($notices as [$level, $message]) { ?>
-    <div class="card">
-        <span class="chip <?= $level === 'ok' ? 'chip-ok' : ($level === 'warn' ? 'chip-warn' : 'chip-danger') ?>">
-            <?= e($level === 'ok' ? 'Done' : ($level === 'warn' ? 'Note' : 'Refused')) ?>
-        </span>
-        <span><?= e($message) ?></span>
-    </div>
-<?php } ?>
-
 <form method="post" action="<?= e($app->url('password')) ?>">
     <?= Rerm\Csrf::field() ?>
 
@@ -62,6 +53,3 @@ declare(strict_types=1);
     <button type="submit">Set password</button>
 </form>
 
-<?php if (!$forced) { ?>
-    <footer><a href="<?= e($app->url()) ?>">Back to the menu</a></footer>
-<?php } ?>

@@ -119,13 +119,6 @@ $typeWord = static fn (string $type): string => ucfirst(str_replace('_', ' ', $t
     </div>
 <?php return; } ?>
 
-<?php foreach ($notices as [$level, $message]) { ?>
-    <div class="card">
-        <?= $chip($level, $level === 'ok' ? 'Done' : ($level === 'warn' ? 'Note' : 'Stopped')) ?>
-        <span><?= e($message) ?></span>
-    </div>
-<?php } ?>
-
 <?php if ($preview === null) { ?>
     <div class="card">
         <h2>1 &middot; What the file needs to contain</h2>
