@@ -6,6 +6,7 @@ namespace Rerm;
 
 use DateTimeImmutable;
 use DateTimeZone;
+use Rerm\Auth\User;
 use Rerm\Roster\ContactOutcome;
 use Rerm\Roster\LogContact;
 use Rerm\Roster\Metric;
@@ -39,19 +40,61 @@ final class View
     ];
 
     /**
-     * The per-row log-contact sheet (spec 7.1 + 8.4, Phase 5 decided 2): a
-     * whole table row holding an open <details> and its own small <form> —
-     * type, optional note, and a progress select for every scored metric the
-     * member is not yet Complete on. Its own form, so a submit posts only
-     * this row's fields and max_input_vars stays distant.
+     * The three ways to reach a member, as hrefs, on the row's own terms
+     * (spec 8.4): tel: when there is a number, sms: only for a CELL PHONE,
+     * mailto: only with an address — absent, never disabled. Since Phase
+     * 10.4 the text and the email START THEMSELVES: `contact.sms_body` and
+     * `contact.mail_subject` from config, with {first}, {officer} and {team}
+     * filled in, ride in the link, so an officer texting twenty people does
+     * not type the same opening line twenty times. Nothing is sent by the
+     * application; the officer's own phone sends it, which keeps the mail
+     * safety design (spec 3.3a) untouched. `?&body=` is the spelling both
+     * iOS and Android accept.
      *
-     * One renderer for the two screens that offer it, My Roster Status and
-     * (since Phase 10.2) View My Roster: the POST it produces is read by ONE
-     * handler, LogContact, and a sheet that differed between the screens by
-     * a field name would be a contact that logs from one and 404s from the
-     * other. The caller supplies what differs — the action URL and the
-     * $shared block (the CSRF token, the return state and the screen to
-     * come back to), built ONCE per page rather than once per row.
+     * Returns PLAIN hrefs keyed call / text / email, only for the ways that
+     * work; the caller escapes them into attributes.
+     *
+     * @param array<string, mixed> $row a roster-shaped row: display_name,
+     *        team_name, phone_e164, email, can_call, can_text, can_email
+     * @return array<string, string>
+     */
+    public static function contactLinks(App $app, ?User $officer, array $row): array
+    {
+        $links = [];
+        $e164  = (string) ($row['phone_e164'] ?? '');
+        $email = trim((string) ($row['email'] ?? ''));
+
+        $first   = trim((string) strtok((string) ($row['display_name'] ?? ''), ' '));
+        $fill    = static function (string $template) use ($first, $officer, $row): string {
+            $filled = strtr($template, [
+                '{first}'   => $first,
+                '{officer}' => $officer !== null ? $officer->displayName : '',
+                '{team}'    => (string) ($row['team_name'] ?? ''),
+            ]);
+
+            return trim((string) preg_replace('/\s{2,}/', ' ', $filled));
+        };
+
+        if (($row['can_call'] ?? false) && $e164 !== '') {
+            $links['call'] = 'tel:' . $e164;
+        }
+        if (($row['can_text'] ?? false) && $e164 !== '') {
+            $body          = $fill((string) $app->config()->get('contact.sms_body', ''));
+            $links['text'] = 'sms:' . $e164 . ($body === '' ? '' : '?&body=' . rawurlencode($body));
+        }
+        if (($row['can_email'] ?? false) && $email !== '') {
+            $subject        = $fill((string) $app->config()->get('contact.mail_subject', ''));
+            $links['email'] = 'mailto:' . $email . ($subject === '' ? '' : '?subject=' . rawurlencode($subject));
+        }
+
+        return $links;
+    }
+
+    /**
+     * The per-row log-contact sheet (spec 7.1 + 8.4, Phase 5 decided 2): a
+     * whole table row holding an open <details> and the form — the form
+     * itself is logContactForm(), shared since Phase 10.4 with the member
+     * card, which renders it in a column rather than a row.
      *
      * Rendered for ONE row at a time (?log=id), never for every row: the
      * option lists are ~1.6KB and fifty copies are half the spec 10
@@ -61,6 +104,9 @@ final class View
      *
      * @param array<string, MetricStatus> $statuses the row's effective
      *        statuses, Metric->value => status, as the screen derived them
+     * @param array<string, mixed>        $contact  the row's contact facts —
+     *        can_call / can_text / can_email, phone, phone_e164, email — and
+     *        optionally `links`, contactLinks()'s answer, which wins
      */
     public static function logContactSheet(
         string $action,
@@ -71,29 +117,77 @@ final class View
         int $colspan = 9,
         array $contact = []
     ): string {
+        return '<tr class="detail"><td class="expand" colspan="' . e((string) $colspan) . '">'
+            . '<details open><summary>Log contact &mdash; ' . e($displayName) . '</summary>'
+            . self::logContactForm($action, $shared, $memberId, $statuses, $contact)
+            . '</details></td></tr>';
+    }
+
+    /**
+     * The log-contact FORM (Phase 10.4): type, optional note, and what the
+     * member said about what is still open. One renderer for the three
+     * places that offer it — the two list screens' sheets and the member
+     * card — because the POST it produces is read by ONE handler, and a form
+     * that differed by a field name would be a contact that logs from one
+     * screen and 404s from another. The caller supplies what differs: the
+     * action URL and the $shared block (the CSRF token, the return state and
+     * the screen to come back to).
+     *
+     * CALL, THEN LOG (Phase 10.3, spec 8.4's intent without a script). The
+     * row's own Call, Text and Email are here as the form's first and
+     * largest targets, so the natural order is: open, dial from inside,
+     * come back to a page already open on this row with the form waiting.
+     *
+     * ONE ANSWER FOR EVERYTHING OPEN (Phase 10.4, spec-v2 §9.2). With more
+     * than one requirement still open, a radio row answers for all of them
+     * at once — the common case is one sentence from the member — and the
+     * per-metric selects sit under a closed <details> for the exceptional
+     * case, winning where one is chosen. One open requirement is just its
+     * own select, as before.
+     *
+     * Returns escaped HTML, safe to echo. $shared is already-escaped HTML.
+     *
+     * @param array<string, MetricStatus> $statuses
+     * @param array<string, mixed>        $contact  see logContactSheet()
+     */
+    public static function logContactForm(
+        string $action,
+        string $shared,
+        int $memberId,
+        array $statuses,
+        array $contact = []
+    ): string {
         $typeOptions = '';
         foreach (LogContact::TYPES as $type) {
             $typeOptions .= '<option value="' . e($type) . '">'
                 . e(self::CONTACT_TYPES[$type] ?? $type) . '</option>';
         }
 
-        // CALL, THEN LOG (Phase 10.3, spec 8.4's intent without a script).
-        // The row's own Call, Text and Email are here again, as the sheet's
-        // first and largest targets, so the natural order is: open the
-        // sheet, dial from inside it, come back to a page already open on
-        // this row with the form waiting. Absent, never disabled, on the
-        // row's own terms — Text only for a cell phone, Email only with an
-        // address. An older caller that passes nothing gets no buttons.
+        // The dial buttons: contactLinks()'s hrefs where the caller computed
+        // them, else the bare links from the row's own flags. Absent, never
+        // disabled. An older caller that passes nothing gets no buttons.
+        $links = is_array($contact['links'] ?? null) ? $contact['links'] : [];
+        if ($links === []) {
+            if (($contact['can_call'] ?? false) && (string) ($contact['phone_e164'] ?? '') !== '') {
+                $links['call'] = 'tel:' . (string) $contact['phone_e164'];
+            }
+            if (($contact['can_text'] ?? false) && (string) ($contact['phone_e164'] ?? '') !== '') {
+                $links['text'] = 'sms:' . (string) $contact['phone_e164'];
+            }
+            if (($contact['can_email'] ?? false) && (string) ($contact['email'] ?? '') !== '') {
+                $links['email'] = 'mailto:' . (string) $contact['email'];
+            }
+        }
         $dial = '';
-        if (($contact['can_call'] ?? false) && (string) ($contact['phone_e164'] ?? '') !== '') {
-            $dial .= '<a class="dial" href="tel:' . e((string) $contact['phone_e164']) . '">Call'
+        if (isset($links['call'])) {
+            $dial .= '<a class="dial" href="' . e($links['call']) . '">Call'
                 . ((string) ($contact['phone'] ?? '') !== '' ? ' ' . e((string) $contact['phone']) : '') . '</a>';
         }
-        if (($contact['can_text'] ?? false) && (string) ($contact['phone_e164'] ?? '') !== '') {
-            $dial .= '<a class="dial" href="sms:' . e((string) $contact['phone_e164']) . '">Text</a>';
+        if (isset($links['text'])) {
+            $dial .= '<a class="dial" href="' . e($links['text']) . '">Text</a>';
         }
-        if (($contact['can_email'] ?? false) && (string) ($contact['email'] ?? '') !== '') {
-            $dial .= '<a class="dial" href="mailto:' . e((string) $contact['email']) . '">Email</a>';
+        if (isset($links['email'])) {
+            $dial .= '<a class="dial" href="' . e($links['email']) . '">Email</a>';
         }
         if ($dial !== '') {
             $dial = '<p class="dials">' . $dial . '</p>';
@@ -108,15 +202,13 @@ final class View
             'not_started'      => 'Not started — clear a status set by mistake',
         ];
 
-        $html = '<tr class="detail"><td class="expand" colspan="' . e((string) $colspan) . '">'
-            . '<details open><summary>Log contact &mdash; ' . e($displayName) . '</summary>'
-            . '<form method="post" action="' . e($action) . '">'
+        $html = '<form method="post" action="' . e($action) . '">'
             . $shared
             . '<input type="hidden" name="member_id" value="' . e((string) $memberId) . '">'
             . $dial
-            // autofocus: the link that opened this sheet re-rendered the page,
-            // and the page should open on the sheet's first control rather
-            // than on the top of the tbody the anchor named.
+            // autofocus: the link that opened this re-rendered the page, and
+            // the page should open on the form's first control rather than
+            // on the top of the tbody the anchor named.
             . '<p class="lc"><select name="contact_type" aria-label="How the contact happened" autofocus>'
             . $typeOptions
             . '</select><textarea name="note" rows="2" maxlength="1000" aria-label="Note"'
@@ -124,23 +216,38 @@ final class View
 
         // A select only for what is still open: a member already Complete on
         // HLSR dues has nothing to say about them.
-        $pending = array_filter(
+        $pending = array_values(array_filter(
             Metric::scored(),
             static fn (Metric $m): bool => ($statuses[$m->value] ?? null) !== MetricStatus::Complete
-        );
-        if ($pending !== []) {
-            $html .= '<p class="pgh">What they said &mdash; optional</p>';
-            foreach ($pending as $metric) {
-                $html .= '<label class="pg">' . e($metric->shortLabel())
-                    . '<select name="progress[' . e($metric->value) . ']">';
-                foreach ($progressChoices as $value => $label) {
-                    $html .= '<option value="' . e((string) $value) . '">' . e($label) . '</option>';
-                }
-                $html .= '</select></label>';
+        ));
+
+        $each = '';
+        foreach ($pending as $metric) {
+            $each .= '<label class="pg">' . e($metric->shortLabel())
+                . '<select name="progress[' . e($metric->value) . ']">';
+            foreach ($progressChoices as $value => $label) {
+                $each .= '<option value="' . e((string) $value) . '">' . e($label) . '</option>';
             }
+            $each .= '</select></label>';
         }
 
-        return $html . '<button type="submit">Log this contact</button></form></details></td></tr>';
+        if (count($pending) > 1) {
+            $open = implode(', ', array_map(static fn (Metric $m): string => $m->shortLabel(), $pending));
+            $html .= '<p class="pgh">What they said &mdash; optional</p>'
+                . '<fieldset class="pgall"><legend>For everything still open (' . e($open) . ')</legend>'
+                . '<label class="pga"><input type="radio" name="progress_all" value="" checked> No change</label>'
+                . '<label class="pga"><input type="radio" name="progress_all" value="in_progress"> '
+                . e(MetricStatus::InProgress->label()) . '</label>'
+                . '<label class="pga"><input type="radio" name="progress_all" value="claimed_complete"> '
+                . e(MetricStatus::Reported->label()) . '</label>'
+                . '</fieldset>'
+                . '<details class="pgeach"><summary>Different answers per requirement</summary>'
+                . $each . '</details>';
+        } elseif ($pending !== []) {
+            $html .= '<p class="pgh">What they said &mdash; optional</p>' . $each;
+        }
+
+        return $html . '<button type="submit">Log this contact</button></form>';
     }
 
     /**
@@ -161,6 +268,34 @@ final class View
 
         return '<div class="notice"><span class="chip ' . $class . '">' . $word . '</span>'
             . '<span>' . e($message) . '</span></div>';
+    }
+
+    /**
+     * Several notices as the one the flash can hold (Phase 10.4): the
+     * messages joined into one paragraph, at the loudest level among them,
+     * so "Applied. …" and its warning travel together across a 303. Null
+     * for none.
+     *
+     * @param array<int, array{0: string, 1: string}> $notices
+     * @return ?array{0: string, 1: string}
+     */
+    public static function joinNotices(array $notices): ?array
+    {
+        if ($notices === []) {
+            return null;
+        }
+
+        $rank  = ['ok' => 0, 'warn' => 1, 'danger' => 2];
+        $level = 'ok';
+        $parts = [];
+        foreach ($notices as [$kind, $message]) {
+            if (($rank[$kind] ?? 2) > ($rank[$level] ?? 0)) {
+                $level = $kind;
+            }
+            $parts[] = $message;
+        }
+
+        return [$level, implode(' ', $parts)];
     }
 
     /**
@@ -288,6 +423,44 @@ final class View
         }
 
         return $html . '</div>';
+    }
+
+    /**
+     * A moment, as HTML (Phase 10.4, spec-v2 §9.7): relative words the eye
+     * reads, the absolute local time as the title, and the UTC instant in
+     * `datetime` so a screen reader and a script agree on what it was. One
+     * spelling for the four that coexisted — words with a title, two
+     * localised formats and bare UTC strings. Returns escaped HTML.
+     */
+    public static function time(App $app, string $utc): string
+    {
+        [$words, $absolute] = self::when($app, $utc);
+
+        return '<time datetime="' . e(self::iso($utc)) . '" title="' . e($absolute) . '">'
+            . e($words) . '</time>';
+    }
+
+    /**
+     * A moment where the absolute is the point — an import applied, a
+     * contact loaded, an audit row — spelled the one way (`7 Sep 2026,
+     * 2:14 pm`, in the display zone), with the UTC instant in `datetime`.
+     * Returns escaped HTML.
+     */
+    public static function timeFull(App $app, string $utc): string
+    {
+        [, $absolute] = self::when($app, $utc);
+
+        return '<time datetime="' . e(self::iso($utc)) . '">' . e($absolute) . '</time>';
+    }
+
+    /** A stored UTC DATETIME as the ISO instant `datetime` wants. */
+    private static function iso(string $utc): string
+    {
+        try {
+            return (new DateTimeImmutable($utc, new DateTimeZone('UTC')))->format('Y-m-d\TH:i:s\Z');
+        } catch (\Throwable) {
+            return '';
+        }
     }
 
     /**

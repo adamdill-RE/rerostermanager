@@ -121,20 +121,41 @@ $href = static function (array $overrides = []) use ($app, $assign): string {
             </p>
         </div>
     <?php } else { ?>
+        <?php
+        // Sorted by work (Phase 10.4): the most unassigned first, every
+        // numeric header a sort link, the arrow said in aria-sort.
+        $teamHeader = static function (string $key, string $word) use ($app, $assign): string {
+            $active = $assign['team_sort'] === $key;
+            $lead   = $key === 'name' ? 'asc' : 'desc';
+            $dir    = $active ? ($assign['team_dir'] === 'asc' ? 'desc' : 'asc') : $lead;
+            $marker = $active ? ($assign['team_dir'] === 'asc' ? ' ▲' : ' ▼') : '';
+            $query  = http_build_query(array_filter([
+                'tsort' => $key !== Rerm\Roster\AssignPage::TEAM_SORT_DEFAULT ? $key : null,
+                'tdir'  => $dir !== ($key === 'name' ? 'asc' : 'desc') ? $dir : null,
+            ]));
+            $sorted = $active ? ' aria-sort="' . ($assign['team_dir'] === 'asc' ? 'ascending' : 'descending') . '"' : '';
+
+            return '<th scope="col"' . ($key === 'name' ? '' : ' class="num"') . $sorted . '><a href="'
+                . e($app->url('assign') . ($query === '' ? '' : '?' . $query)) . '#teams">'
+                . e($word) . '</a>' . e($marker) . '</th>';
+        };
+        ?>
         <h2 id="teams">Choose a team</h2>
         <p class="lede">
-            <?= e($number(count($assign['teams']))) ?> teams in your roster, worst first
-            is not the order &mdash; they are alphabetical, and the two numbers that
-            matter are on every row.
+            <?= e($number(count($assign['teams']))) ?> teams in your roster,
+            <?= $assign['team_sort'] === 'unassigned' && $assign['team_dir'] === 'desc'
+                ? 'the most unassigned first'
+                : 'sorted by ' . e(['unassigned' => 'unassigned', 'ineligible' => 'needs re-pointing', 'members' => 'members', 'officers' => 'officers', 'name' => 'name'][$assign['team_sort']]) ?>.
+            Any column sorts.
         </p>
         <table class="roster">
             <thead>
                 <tr>
-                    <th>Team</th>
-                    <th class="num">Members</th>
-                    <th class="num">Unassigned</th>
-                    <th class="num">Needs re-pointing</th>
-                    <th class="num">Officers</th>
+                    <?= $teamHeader('name', 'Team') ?>
+                    <?= $teamHeader('members', 'Members') ?>
+                    <?= $teamHeader('unassigned', 'Unassigned') ?>
+                    <?= $teamHeader('ineligible', 'Needs re-pointing') ?>
+                    <?= $teamHeader('officers', 'Officers') ?>
                 </tr>
             </thead>
             <tbody>
@@ -173,8 +194,11 @@ $href = static function (array $overrides = []) use ($app, $assign): string {
                 <?= $bucket === $key ? 'class="current" aria-current="page"' : '' ?>><?= e($label) ?>
                 <span class="n"><?= e($number((int) $counts[$key])) ?></span></a>
         <?php } ?>
-        <a href="#thin">No officer on this team <span class="n"><?= e($number(count($thin))) ?></span></a>
     </nav>
+    <?php /* The scope-wide count of teams with nobody to assign used to sit
+             in this toggle as a fourth item, reading as a bucket of THIS
+             team (Phase 10.4). It is a column on the chooser and a section
+             at the foot of this page, where "7 teams" is unambiguous. */ ?>
 
 <?php
     // Everything identical across rows and forms is built ONCE: the same
@@ -284,14 +308,14 @@ $href = static function (array $overrides = []) use ($app, $assign): string {
     <table class="roster assign">
         <thead>
             <tr>
-                <?php if ($canAct) { ?><th><span class="vh">Select</span></th><?php } ?>
-                <th>Name</th>
-                <th>Title</th>
+                <?php if ($canAct) { ?><th scope="col"><span class="vh">Select</span></th><?php } ?>
+                <th scope="col">Name</th>
+                <th scope="col">Title</th>
                 <?php foreach (Metric::scored() as $metric) { ?>
-                    <th><?= e($metric->shortLabel()) ?></th>
+                    <th scope="col"><?= e($metric->shortLabel()) ?></th>
                 <?php } ?>
-                <th>Last contact</th>
-                <?php if ($bucket !== 'unassigned') { ?><th>Officers</th><?php } ?>
+                <th scope="col">Last contact</th>
+                <?php if ($bucket !== 'unassigned') { ?><th scope="col">Officers</th><?php } ?>
             </tr>
         </thead>
         <tbody>
@@ -314,6 +338,10 @@ $href = static function (array $overrides = []) use ($app, $assign): string {
             echo $canAct ? '<label for="p' . e($id) . '">' : '';
             echo e($row['display_name']), ' <span class="sub">', e($row['member_number']), '</span>';
             echo $canAct ? '</label>' : '';
+            // The card (Phase 10.4), beside the label rather than as it: the
+            // name is the checkbox's target, and a link inside a label is a
+            // tap that both ticks and leaves.
+            echo ' <a class="open" href="', e($app->url('member')), '?from=assign&amp;id=', e($id), '">Open</a>';
             echo '</td>';
 
             // The export's own word for what they do. Sorted on, so the team
@@ -328,8 +356,7 @@ $href = static function (array $overrides = []) use ($app, $assign): string {
             if ($row['last_contact'] === null) {
                 echo '<td data-label="Last contact"><span class="chip chip-muted">Never contacted</span></td>';
             } else {
-                [$words, $absolute] = View::when($app, (string) $row['last_contact']);
-                echo '<td data-label="Last contact"><span title="', e($absolute), '">', e($words), '</span></td>';
+                echo '<td data-label="Last contact">', View::time($app, (string) $row['last_contact']), '</td>';
             }
 
             if ($bucket !== 'unassigned') {
@@ -428,7 +455,7 @@ $href = static function (array $overrides = []) use ($app, $assign): string {
         </p>
         <?php if ($thin !== []) { ?>
             <table class="roster">
-                <thead><tr><th>Team</th><th class="num">Members with nobody to assign them</th></tr></thead>
+                <thead><tr><th scope="col">Team</th><th scope="col" class="num">Members with nobody to assign them</th></tr></thead>
                 <tbody>
                 <?php foreach ($thin as $team) { ?>
                     <tr>

@@ -1418,6 +1418,103 @@ test('the return whitelist carries the search term, bounded, like Designate User
 // Cleanup — always last in this file
 // ---------------------------------------------------------------------------
 
+test('one answer for everything open applies to every open requirement, and a per-metric choice wins', function (): void {
+    // Phase 10.4. A member outstanding on all four who says "I'll sort it
+    // all this week" is one answer, not four selections.
+    $fixture = st_fixture();
+    $target  = $fixture['members']['openb'];
+
+    $result = st_log(st_officer1(), [
+        'member_id'    => (string) $target['id'],
+        'contact_type' => 'call',
+        'progress_all' => 'in_progress',
+    ]);
+    assertSame('logged', $result['outcome']);
+    assertSame(4, $result['progress_changes'], 'all four open requirements took the answer');
+
+    $read = st_pdo()->prepare('SELECT metric, progress FROM member_metric WHERE member_id = :m AND show_year_id = :y');
+    $read->execute([':m' => $target['id'], ':y' => $fixture['year']]);
+    $progress = [];
+    foreach ($read->fetchAll() as $row) {
+        $progress[(string) $row['metric']] = (string) $row['progress'];
+    }
+    foreach (Metric::scored() as $metric) {
+        assertSame('in_progress', $progress[$metric->value], $metric->value);
+    }
+
+    // The per-metric select wins where one was chosen; the rest take the answer.
+    $result = st_log(st_officer1(), [
+        'member_id'    => (string) $target['id'],
+        'contact_type' => 'call',
+        'progress_all' => 'in_progress',
+        'progress'     => ['hlsr_dues' => 'claimed_complete'],
+    ]);
+    assertSame(4, $result['progress_changes']);
+    $read->execute([':m' => $target['id'], ':y' => $fixture['year']]);
+    $progress = [];
+    foreach ($read->fetchAll() as $row) {
+        $progress[(string) $row['metric']] = (string) $row['progress'];
+    }
+    assertSame('claimed_complete', $progress['hlsr_dues'], 'the specific answer');
+    assertSame('in_progress', $progress['committee_dues'], 'the general one');
+
+    // A word that is not a progress value is ignored, never an error.
+    $result = st_log(st_officer1(), [
+        'member_id' => (string) $target['id'], 'contact_type' => 'call', 'progress_all' => 'sideways',
+    ]);
+    assertSame('logged', $result['outcome']);
+    assertSame(0, $result['progress_changes']);
+});
+
+test('the member card is one row of the roster: the same statuses, the same Result, the same flags', function (): void {
+    // Phase 10.4, spec-v2 §9.1. MemberPage derives with the functions the
+    // lists use, so the card cannot disagree with the row it was opened from.
+    $fixture = st_fixture();
+    $target  = $fixture['members']['openb'];
+    $page    = Rerm\Roster\MemberPage::fromApp($GLOBALS['rerm_app'])
+        ->page(st_officer1(), (int) $fixture['year'], (int) $target['id']);
+
+    assertTrue($page !== null, 'in scope, so a card');
+    assertSame($target['number'], $page['member_number']);
+    assertSame(false, $page['dropped']);
+    assertSame(MetricStatus::Reported, $page['statuses']['hlsr_dues'], 'the test above left this claimed');
+    assertSame(MetricStatus::InProgress, $page['statuses']['committee_dues']);
+    assertSame(Rerm\Roster\ContactOutcome::Reported, $page['outcome']['outcome'], 'the furthest the member committed');
+    assertTrue(count($page['contacts']) >= 3, 'the whole show year of contacts');
+    assertSame([], $page['other_years'], 'and no other year yet');
+
+    // The row on the working list says the same.
+    foreach (st_all_rows(st_officer1(), ['mode' => 'team', 'show' => 'all']) as $row) {
+        if ($row['member_number'] === $target['number']) {
+            // The row carries the four scored statuses; the card those and
+            // harassment training, which the working list never scores.
+            foreach (Metric::scored() as $metric) {
+                assertSame($row['statuses'][$metric->value], $page['statuses'][$metric->value], 'the card and the row agree on ' . $metric->value);
+            }
+            assertSame($row['outcome']['outcome'], $page['outcome']['outcome']);
+        }
+    }
+
+    // Nobody, and an id that is not a member: null, which the route makes a 404.
+    assertSame(null, Rerm\Roster\MemberPage::fromApp($GLOBALS['rerm_app'])->page(st_officer1(), (int) $fixture['year'], 0));
+    assertSame(null, Rerm\Roster\MemberPage::fromApp($GLOBALS['rerm_app'])->page(st_officer1(), (int) $fixture['year'], 999999999));
+
+    // The card renders, with the form open and the dial buttons first.
+    $app = $GLOBALS['rerm_app'];
+    $_SESSION ??= [];
+    $user = st_officer1(); $year = ['id' => $fixture['year'], 'label' => 'ST', 'is_open' => true, 'ends_on' => null];
+    $member = $page; $from = 'dashboard'; $back = 'mode=team'; $backPath = 'dashboard?mode=team'; $backWord = 'My Roster Status';
+    $wide = false; $notices = [];
+    ob_start();
+    require $app->path('app/views/member.php');
+    $html = (string) ob_get_clean();
+    assertTrue(str_contains($html, 'name="screen" value="member"'), 'the form returns to the card');
+    assertTrue(str_contains($html, 'name="progress_all"'), 'with one answer for what is open');
+    assertTrue(str_contains($html, '&larr; My Roster Status'), 'and the way back');
+    assertTrue(str_contains($html, 'href="/rerm/dashboard?mode=team"'), 'which keeps the list\'s state');
+    assertTrue(strlen($html) < 12 * 1024, 'a page a tenth the size of the list: ' . strlen($html));
+});
+
 test('status fixtures are cleaned up', function (): void {
     st_teardown(st_pdo());
 

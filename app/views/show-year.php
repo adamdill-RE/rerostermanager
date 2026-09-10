@@ -76,12 +76,12 @@ $word   = ShowYears::CONFIRM_WORD;
     <caption>Every show year, active first.</caption>
     <thead>
         <tr>
-            <th>Year</th>
-            <th>State</th>
-            <th class="num">Members</th>
-            <th class="num">Assignments</th>
-            <th class="num">Contacts</th>
-            <th>Actions</th>
+            <th scope="col">Year</th>
+            <th scope="col">State</th>
+            <th scope="col" class="num">Members</th>
+            <th scope="col" class="num">Assignments</th>
+            <th scope="col" class="num">Contacts</th>
+            <th scope="col">Actions</th>
         </tr>
     </thead>
     <tbody>

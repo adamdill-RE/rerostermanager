@@ -29,6 +29,7 @@ declare(strict_types=1);
  * @var array<string, mixed>                 $history everything ImportHistory::page() decided
  */
 
+use Rerm\View;
 use Rerm\Import\ImportHistory;
 
 $number = static fn (int $n): string => number_format($n);
@@ -68,8 +69,8 @@ $href = static function (array $params) use ($app): string {
     return $app->url('import-history') . ($query === '' ? '' : '?' . $query);
 };
 
-/** When a UTC timestamp happened, in Houston's words. */
-$when = static fn (string $utc): string => $app->toDisplay($utc)->format('j M Y, H:i T');
+/** When a UTC timestamp happened, in Houston's words — the one spelling (Phase 10.4). */
+$when = static fn (string $utc): string => View::timeFull($app, $utc);
 
 $view = (string) $history['view'];
 ?>
@@ -200,10 +201,10 @@ $view = (string) $history['view'];
             <dd>
                 <?php if ($batch['failed_at'] !== null) { ?>
                     <?= $chip('danger', 'Stopped part way') ?>
-                    <?= e($when((string) $batch['failed_at'])) ?>
+                    <?= ($when((string) $batch['failed_at'])) ?>
                 <?php } else { ?>
                     <?= $chip('ok', 'Applied') ?>
-                    <?= e($when((string) $batch['applied_at'])) ?>
+                    <?= ($when((string) $batch['applied_at'])) ?>
                 <?php } ?>
             </dd>
             <dt>By</dt>
@@ -356,7 +357,7 @@ $view = (string) $history['view'];
                     </td>
                     <td data-label="File"><?= e((string) $batch['filename']) ?></td>
                     <td data-label="When">
-                        <?= e($when((string) ($batch['applied_at'] ?? $batch['failed_at'] ?? $batch['started_at']))) ?>
+                        <?= ($when((string) ($batch['applied_at'] ?? $batch['failed_at'] ?? $batch['started_at']))) ?>
                     </td>
                     <td data-label="Created" class="num"><?= e($number((int) $batch['rows_created'])) ?></td>
                     <td data-label="Updated" class="num"><?= e($number((int) $batch['rows_updated'])) ?></td>
@@ -409,7 +410,7 @@ $view = (string) $history['view'];
             <?php foreach ($history['rows'] as $row) { ?>
                 <tr>
                     <?php if ($view === 'member') { ?>
-                        <td data-label="When"><?= e($when((string) $row['occurred_at'])) ?></td>
+                        <td data-label="When"><?= ($when((string) $row['occurred_at'])) ?></td>
                         <td data-label="Import" class="mono">
                             <a href="<?= e($href(['batch' => $row['batch_id']])) ?>"><?= e((string) $row['batch_id']) ?></a>
                             <span class="sub"><?= e((string) $row['filename']) ?></span>

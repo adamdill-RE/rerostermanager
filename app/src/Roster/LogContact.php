@@ -85,15 +85,17 @@ final class LogContact
         }
         $showYearId = (int) $year['id'];
 
-        // The member, by the same visibility rules as every roster read: a
-        // purged, dropped or system row takes no contact. Scope is NOT in
-        // this WHERE — it is Access's question, asked next, so the refusal
-        // is decided by the matrix and not by a query this class wrote.
+        // The member, present or DROPPED (Phase 10.4): a purged or system row
+        // takes no contact, but the person an officer rings to ask "have you
+        // left?" is the dropped one, and their answer belongs in the record.
+        // Scope is NOT in this WHERE — it is Access's question, asked next,
+        // so the refusal is decided by the matrix and not by a query this
+        // class wrote.
         $memberId = is_scalar($input['member_id'] ?? null) ? (int) $input['member_id'] : 0;
 
         $read = $this->pdo->prepare(
             'SELECT id, member_number, first_name, last_name, preferred_name, division_id, team_id'
-            . ' FROM member WHERE id = :id AND ' . ScopedQuery::visible('member')
+            . ' FROM member WHERE id = :id AND ' . ScopedQuery::contactable('member')
         );
         $read->execute([':id' => $memberId]);
         $member = $read->fetch();
@@ -132,6 +134,33 @@ final class LogContact
                 continue;
             }
             $changes[$metric->value] = $progressValue;
+        }
+
+        // ONE ANSWER FOR EVERYTHING OPEN (Phase 10.4, spec-v2 §9.2). A member
+        // outstanding on all four who says "I'll sort it all this week" is
+        // one answer, not four selections; `progress_all` applies it to every
+        // scored metric the roster still shows unmet, and a per-metric choice
+        // above wins where one was made. Open is what the cards call it:
+        // everything but imported Y, a member no import has covered included.
+        $all = is_string($input['progress_all'] ?? null) ? $input['progress_all'] : '';
+        if ($all !== '' && in_array($all, self::PROGRESS, true)
+            && Access::allows($user, Capability::SetMetricProgress, Subject::fromMemberRow($member))
+        ) {
+            $imported = $this->pdo->prepare(
+                'SELECT metric, imported_value FROM member_metric'
+                . ' WHERE member_id = :member AND show_year_id = :year'
+            );
+            $imported->execute([':member' => (int) $member['id'], ':year' => $showYearId]);
+            $importedBy = [];
+            foreach ($imported->fetchAll() as $row) {
+                $importedBy[(string) $row['metric']] = (string) $row['imported_value'];
+            }
+            foreach (Metric::scored() as $metric) {
+                if (isset($changes[$metric->value]) || ($importedBy[$metric->value] ?? 'unknown') === 'Y') {
+                    continue;
+                }
+                $changes[$metric->value] = $all;
+            }
         }
 
         // One transaction: the contact and its progress notes land together

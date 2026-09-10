@@ -58,18 +58,18 @@ $href = static function (array $overrides = []) use ($app, $purge): string {
     history, assignments and metrics all survive it intact.
 </p>
 
-<div class="toggle">
-    <a href="<?= e($href(['list' => null, 'page' => null])) ?>"
-       class="<?= $isPurged ? '' : 'current' ?>">
+<nav class="toggle" aria-label="Which list">
+    <a href="<?= e($href(['list' => null, 'page' => null])) ?>"<?=
+        $isPurged ? '' : ' class="current" aria-current="page"' ?>>
         Flagged
         <span class="n"><?= e($number($isPurged ? (int) $purge['other_total'] : (int) $purge['total'])) ?></span>
     </a>
-    <a href="<?= e($href(['list' => 'purged', 'page' => null])) ?>"
-       class="<?= $isPurged ? 'current' : '' ?>">
+    <a href="<?= e($href(['list' => 'purged', 'page' => null])) ?>"<?=
+        $isPurged ? ' class="current" aria-current="page"' : '' ?>>
         Purged
         <span class="n"><?= e($number($isPurged ? (int) $purge['total'] : (int) $purge['other_total'])) ?></span>
     </a>
-</div>
+</nav>
 
 <?php if ($purge['total'] === 0) { ?>
     <div class="card">
@@ -122,10 +122,10 @@ $href = static function (array $overrides = []) use ($app, $purge): string {
     <table class="assign">
         <thead>
             <tr>
-                <th><span class="vh">Select</span></th>
-                <th>Member</th>
-                <th><?= $isPurged ? 'Purged' : 'Flagged by' ?></th>
-                <th class="num">Kept</th>
+                <th scope="col"><span class="vh">Select</span></th>
+                <th scope="col">Member</th>
+                <th scope="col"><?= $isPurged ? 'Purged' : 'Flagged by' ?></th>
+                <th scope="col" class="num">Kept</th>
             </tr>
         </thead>
         <tbody>
@@ -149,8 +149,7 @@ $href = static function (array $overrides = []) use ($app, $purge): string {
                 </td>
                 <td data-label="<?= $isPurged ? 'Purged' : 'Flagged by' ?>">
                     <?php if ($isPurged && $row['purged_at'] !== null) { ?>
-                        <?php [$words, $absolute] = View::when($app, (string) $row['purged_at']); ?>
-                        <span title="<?= e($absolute) ?>"><?= e($words) ?></span>
+                        <?= View::time($app, (string) $row['purged_at']) ?>
                     <?php } elseif ($row['batch_id'] !== null) { ?>
                         Import #<?= e((string) $row['batch_id']) ?>
                         <span class="off">

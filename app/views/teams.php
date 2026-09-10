@@ -65,11 +65,11 @@ $href = static function (?int $team) use ($app): string {
     </caption>
     <thead>
         <tr>
-            <th>Team</th>
-            <th>Division</th>
-            <th>Area</th>
-            <th class="num">Members</th>
-            <th>Actions</th>
+            <th scope="col">Team</th>
+            <th scope="col">Division</th>
+            <th scope="col">Area</th>
+            <th scope="col" class="num">Members</th>
+            <th scope="col">Actions</th>
         </tr>
     </thead>
     <tbody>

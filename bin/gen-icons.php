@@ -24,18 +24,28 @@ declare(strict_types=1);
  * system already applies to the colours, applied to the one part of the
  * interface that is visible when the page is not.
  *
- * So the committed files are RESM's, byte for byte, and this script is its
- * generator with the PWA sizes removed: this application is not installable
- * and has no manifest, so an icon-192 nothing names is a file nobody fetches.
- * If the mark ever changes it changes in both repositories, in one commit
- * each, and this script is how the second one is produced.
+ * So the committed favicon and touch icon are RESM's, byte for byte, and this
+ * script is its generator. Since Phase 10.4 it also writes the two sizes a
+ * web manifest names — 192 and 512 — because this application IS
+ * installable now (public/manifest.webmanifest, spec-v2 §9.5): Add to Home
+ * Screen gives a phone back the address-bar height, which on the working
+ * list is one more row. If the mark ever changes it changes in both
+ * repositories, in one commit each, and this script is how the second one
+ * is produced.
+ *
+ *   php bin/gen-icons.php [output directory]
+ *
+ * An output directory other than the committed one is how the two new sizes
+ * were produced without touching the two shared files.
  *
  * Ink lettering on Rodeo Orange, which is the palette's own rule rather than
  * a choice made here: Rodeo Orange is 2.9:1 on white and takes dark text
  * only, never white (CLAUDE.md → Design system).
  */
 
-$out = dirname(__DIR__) . '/public/assets/icons';
+$out = isset($argv[1]) && is_string($argv[1]) && $argv[1] !== ''
+    ? rtrim($argv[1], '/')
+    : dirname(__DIR__) . '/public/assets/icons';
 if (!is_dir($out) && !mkdir($out, 0755, true) && !is_dir($out)) {
     fwrite(STDERR, "cannot create {$out}\n");
     exit(1);
@@ -124,5 +134,10 @@ icon($out . '/favicon.png', 64, $font, 0.14);
 // iOS reads this for a home-screen shortcut and composites it onto its own
 // background, so it is full-bleed rather than inset further.
 icon($out . '/apple-touch-icon.png', 180, $font, 0.18);
+
+// The manifest's two sizes (Phase 10.4). Android reads 192 for the home
+// screen and 512 for the splash; both are maskable-safe at this inset.
+icon($out . '/icon-192.png', 192, $font, 0.18);
+icon($out . '/icon-512.png', 512, $font, 0.18);
 
 echo "Done.\n";

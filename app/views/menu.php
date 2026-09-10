@@ -19,23 +19,37 @@ use Rerm\Auth\Capability;
  * @var Rerm\Auth\User $user
  */
 
-/** @var array<int, array{cap: Capability, label: string, route: ?string, phase: string}> $tiles */
+/**
+ * The tiles, grouped by the job they serve (Phase 10.4, spec-v2 §9.8):
+ * Chase is the officer's loop, Lead is the desk, Administer is the Admin's
+ * once-a-month. Fifteen identical cards in one column were a list to read;
+ * three headings are a shape to recognise. Each tile stays one line, with
+ * its route, because tests read the menu a line at a time.
+ *
+ * @var array<int, array{cap: Capability, label: string, route: ?string, phase: string, group: string, why: string}> $tiles
+ */
 $tiles = [
-    ['cap' => Capability::ViewStatusDashboard,   'label' => 'My Roster Status',    'route' => 'dashboard', 'phase' => ''],
-    ['cap' => Capability::ViewRoster,            'label' => 'View My Roster',      'route' => 'roster', 'phase' => ''],
-    ['cap' => Capability::AssignOfficers,        'label' => 'Assign Officers',     'route' => 'assign', 'phase' => ''],
-    ['cap' => Capability::ViewCommitteeDashboard, 'label' => 'Committee Dashboard', 'route' => 'committee', 'phase' => ''],
-    ['cap' => Capability::ViewRoster,            'label' => 'Dropped Members',     'route' => 'dropped', 'phase' => ''],
-    ['cap' => Capability::ImportRoster,          'label' => 'Import Roster',       'route' => 'import', 'phase' => ''],
-    ['cap' => Capability::ImportRoster,          'label' => 'Import History',      'route' => 'import-history', 'phase' => ''],
-    ['cap' => Capability::ImportContactHistory,  'label' => 'Import Contact History', 'route' => 'import-contacts', 'phase' => ''],
-    ['cap' => Capability::ExportRoster,          'label' => 'Export Roster',       'route' => 'export', 'phase' => ''],
-    ['cap' => Capability::CreateForms,           'label' => 'Create Forms',        'route' => 'forms', 'phase' => ''],
-    ['cap' => Capability::ManageShowYear,        'label' => 'Show Year',           'route' => 'show-year', 'phase' => ''],
-    ['cap' => Capability::DesignateAllowedUser,  'label' => 'Designate Users',     'route' => 'designate', 'phase' => ''],
-    ['cap' => Capability::ImportRoster,          'label' => 'Flagged for Purge',   'route' => 'purge',  'phase' => ''],
-    ['cap' => Capability::ManageTeams,           'label' => 'Manage Teams',        'route' => 'teams',  'phase' => ''],
-    ['cap' => Capability::ViewAuditLog,          'label' => 'Audit Log',           'route' => 'audit',  'phase' => ''],
+    ['cap' => Capability::ViewStatusDashboard,   'label' => 'My Roster Status',    'route' => 'dashboard', 'phase' => '', 'group' => 'chase', 'why' => 'Who is outstanding, next call first, and a button that dials them.'],
+    ['cap' => Capability::ViewRoster,            'label' => 'View My Roster',      'route' => 'roster', 'phase' => '', 'group' => 'chase', 'why' => 'Everyone you can see, searched by name or number, with their history.'],
+    ['cap' => Capability::ViewRoster,            'label' => 'Dropped Members',     'route' => 'dropped', 'phase' => '', 'group' => 'chase', 'why' => 'People the last roster did not list — ring them and find out.'],
+    ['cap' => Capability::AssignOfficers,        'label' => 'Assign Officers',     'route' => 'assign', 'phase' => '', 'group' => 'lead', 'why' => 'Who chases whom: the unassigned, the re-pointing, one team at a time.'],
+    ['cap' => Capability::ViewCommitteeDashboard, 'label' => 'Committee Dashboard', 'route' => 'committee', 'phase' => '', 'group' => 'lead', 'why' => 'Every division, area and team rolled up, sorted by where nobody is working.'],
+    ['cap' => Capability::CreateForms,           'label' => 'Create Forms',        'route' => 'forms', 'phase' => '', 'group' => 'lead', 'why' => 'The committee’s own paperwork, filled in from the roster and downloaded.'],
+    ['cap' => Capability::ExportRoster,          'label' => 'Export Roster',       'route' => 'export', 'phase' => '', 'group' => 'lead', 'why' => 'The members you can see, as a spreadsheet, for one show year.'],
+    ['cap' => Capability::ImportRoster,          'label' => 'Import Roster',       'route' => 'import', 'phase' => '', 'group' => 'administer', 'why' => 'Rodeo Houston’s file, diffed before a row is written.'],
+    ['cap' => Capability::ImportRoster,          'label' => 'Import History',      'route' => 'import-history', 'phase' => '', 'group' => 'administer', 'why' => 'What every import changed, and when a member disappeared.'],
+    ['cap' => Capability::ImportContactHistory,  'label' => 'Import Contact History', 'route' => 'import-contacts', 'phase' => '', 'group' => 'administer', 'why' => 'Contacts made before the application existed, on their real dates.'],
+    ['cap' => Capability::ImportRoster,          'label' => 'Flagged for Purge',   'route' => 'purge',  'phase' => '', 'group' => 'administer', 'why' => 'Members an import did not see; purge the ones you know have gone.'],
+    ['cap' => Capability::DesignateAllowedUser,  'label' => 'Designate Users',     'route' => 'designate', 'phase' => '', 'group' => 'administer', 'why' => 'Give a member a level, a scope, or a fresh password.'],
+    ['cap' => Capability::ManageTeams,           'label' => 'Manage Teams',        'route' => 'teams',  'phase' => '', 'group' => 'administer', 'why' => 'Which area a team groups under on the Committee Dashboard.'],
+    ['cap' => Capability::ManageShowYear,        'label' => 'Show Year',           'route' => 'show-year', 'phase' => '', 'group' => 'administer', 'why' => 'Create, activate, close and carry assignments forward.'],
+    ['cap' => Capability::ViewAuditLog,          'label' => 'Audit Log',           'route' => 'audit',  'phase' => '', 'group' => 'administer', 'why' => 'Every grant, import, purge and reset, with who and when.'],
+];
+
+$groups = [
+    'chase'      => ['Chase',      'The working list, the roster, and the people who fell off it.'],
+    'lead'       => ['Lead',       'Assignment, the roll-up, and what leaves the building.'],
+    'administer' => ['Administer', 'The import, the record it keeps, and the accounts.'],
 ];
 ?>
 <h1>Menu</h1>
@@ -44,21 +58,35 @@ $tiles = [
     <?= e($user->level->label()) ?>, member number <?= e($user->memberNumber) ?>.
 </p>
 
-<?php foreach ($tiles as $tile) { ?>
-    <?php if (!Access::mayUse($user, $tile['cap'])) { continue; } ?>
-    <div class="card">
-        <?php if ($tile['route'] !== null) { ?>
-            <h2><a href="<?= e($app->url($tile['route'])) ?>"><?= e($tile['label']) ?></a></h2>
-        <?php } else { ?>
-            <h2><?= e($tile['label']) ?></h2>
-            <span class="why">Arrives with <?= e($tile['phase']) ?>.</span>
+<?php foreach ($groups as $groupKey => [$groupWord, $groupWhy]) {
+    $shown = array_filter($tiles, static fn (array $t): bool => $t['group'] === $groupKey && Access::mayUse($user, $t['cap']));
+    if ($shown === []) {
+        continue;
+    }
+?>
+    <h2 class="menu-group"><?= e($groupWord) ?> <span class="why"><?= e($groupWhy) ?></span></h2>
+    <ul class="menu">
+        <?php foreach ($shown as $tile) { ?>
+            <li>
+                <?php if ($tile['route'] !== null) { ?>
+                    <a href="<?= e($app->url($tile['route'])) ?>">
+                        <span class="what"><?= e($tile['label']) ?></span>
+                        <span class="why"><?= e($tile['why']) ?></span>
+                    </a>
+                <?php } else { ?>
+                    <span class="what"><?= e($tile['label']) ?></span>
+                    <span class="why">Arrives with <?= e($tile['phase']) ?>.</span>
+                <?php } ?>
+            </li>
         <?php } ?>
-    </div>
+    </ul>
 <?php } ?>
 
-<div class="card">
-    <h2><a href="<?= e($app->url('password')) ?>">Change password</a></h2>
-</div>
+<h2 class="menu-group">Account</h2>
+<ul class="menu">
+    <li><a href="<?= e($app->url('password')) ?>"><span class="what">Change password</span>
+        <span class="why">Signs out every other device this account is signed in on.</span></a></li>
+</ul>
 
 <form method="post" action="<?= e($app->url('logout')) ?>">
     <?= Rerm\Csrf::field() ?>

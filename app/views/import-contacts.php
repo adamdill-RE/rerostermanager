@@ -33,6 +33,7 @@ declare(strict_types=1);
  * @var array<int, array<string, mixed>>     $officers
  */
 
+use Rerm\View;
 use Rerm\Csrf;
 use Rerm\Import\ContactHeaderMap;
 use Rerm\Import\ContactImporter;
@@ -463,8 +464,7 @@ $typeWord = static fn (string $type): string => ucfirst(str_replace('_', ' ', $t
         <div class="card">
             <p>
                 <?= $chip('ok', 'Loaded') ?>
-                <?= e((string) $batch['applied_at']) ?> UTC
-                (<?= e($app->toDisplay((string) $batch['applied_at'])->format('D j M, H:i T')) ?>).
+                <?= View::timeFull($app, (string) $batch['applied_at']) ?>.
                 These contacts now appear in each member's history, and on My Roster Status
                 as the date they were last contacted.
             </p>
@@ -495,8 +495,8 @@ $typeWord = static fn (string $type): string => ucfirst(str_replace('_', ' ', $t
                     <td data-label="Read" class="num"><?= e($number((int) $row['rows_read'])) ?></td>
                     <td data-label="Ready" class="num"><?= e($number((int) $row['rows_ready'])) ?></td>
                     <td data-label="Skipped" class="num"><?= e($number((int) $row['rows_skipped'])) ?></td>
-                    <td data-label="Read at"><?= e((string) $row['started_at']) ?> UTC</td>
-                    <td data-label="">
+                    <td data-label="Read at"><?= View::timeFull($app, (string) $row['started_at']) ?></td>
+                    <td data-label="Open">
                         <a href="<?= e($app->url('import-contacts')) ?>?batch=<?= e((string) $row['id']) ?>">Open</a>
                     </td>
                 </tr>
@@ -527,11 +527,11 @@ $typeWord = static fn (string $type): string => ucfirst(str_replace('_', ' ', $t
                     <td data-label="Batch" class="mono"><?= e((string) $row['id']) ?></td>
                     <td data-label="File"><?= e((string) $row['filename']) ?></td>
                     <td data-label="Written" class="num"><?= e($number((int) $row['rows_inserted'])) ?></td>
-                    <td data-label="Loaded"><?= e((string) $row['applied_at']) ?> UTC</td>
+                    <td data-label="Loaded"><?= View::timeFull($app, (string) $row['applied_at']) ?></td>
                     <td data-label="By"><?= e($shown(trim(
                         (string) ($row['uploader_first'] ?? '') . ' ' . (string) ($row['uploader_last'] ?? '')
                     ))) ?></td>
-                    <td data-label="">
+                    <td data-label="Open">
                         <a href="<?= e($app->url('import-contacts')) ?>?batch=<?= e((string) $row['id']) ?>">Open</a>
                     </td>
                 </tr>

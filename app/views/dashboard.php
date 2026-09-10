@@ -611,14 +611,14 @@ $findTeam = $teams['may_choose'] || $filters['teams'] !== [] ? TeamFilter::param
     <table class="roster">
         <thead>
             <tr>
-                <th>Name</th>
+                <th scope="col">Name</th>
                 <?php foreach (Metric::scored() as $metric) { ?>
-                    <th><?= e($metric->shortLabel()) ?></th>
+                    <th scope="col"><?= e($metric->shortLabel()) ?></th>
                 <?php } ?>
-                <th>Last contact</th>
-                <th>By</th>
-                <th>Result</th>
-                <th>Actions</th>
+                <th scope="col">Last contact</th>
+                <th scope="col">By</th>
+                <th scope="col">Result</th>
+                <th scope="col">Actions</th>
             </tr>
         </thead>
 <?php
@@ -660,6 +660,12 @@ $findTeam = $teams['may_choose'] || $filters['teams'] !== [] ? TeamFilter::param
 
     $openSheet = (int) ($statusPage['log_open'] ?? 0);
 
+    // The way to one member's card (Phase 10.4): the name is the link, and
+    // it carries this list's state as `back`, so the card's way back lands
+    // on the same group, page and search — re-whitelisted there by
+    // dashboard_return_query(), the same rule the sheet's 303 obeys.
+    $cardUrl = $app->url('member') . '?from=dashboard&back=' . rawurlencode($returnState) . '&id=';
+
     foreach ($statusPage['rows'] as $row) {
         echo '<tbody class="member" id="m', e((string) $row['id']), '"><tr class="entry">';
         // Number, then the TITLE the last import gave them, then the team.
@@ -667,7 +673,8 @@ $findTeam = $teams['may_choose'] || $filters['teams'] !== [] ? TeamFilter::param
         // not the level this application derived from it: an officer working
         // a list of calls needs to know which of these people already hold a
         // job, and the two are not the same sentence (CLAUDE.md, spec 6.6).
-        echo '<td class="who">', e($row['display_name']),
+        echo '<td class="who"><a class="card-link" href="', e($cardUrl), e((string) $row['id']), '">',
+            e($row['display_name']), '</a>',
             ' <span class="sub">', e($row['member_number']),
             $row['title'] !== '' ? ' &middot; ' . e($row['title']) : '',
             $row['team_name'] !== '' ? ' &middot; ' . e($row['team_name']) : '',
@@ -682,8 +689,7 @@ $findTeam = $teams['may_choose'] || $filters['teams'] !== [] ? TeamFilter::param
             echo '<td data-label="Last contact"><span class="chip chip-muted">Never contacted</span></td>';
             echo '<td data-label="By">&mdash;</td>';
         } else {
-            [$words, $absolute] = View::when($app, (string) $row['last_contact']['occurred_at']);
-            echo '<td data-label="Last contact"><span title="', e($absolute), '">', e($words), '</span></td>';
+            echo '<td data-label="Last contact">', View::time($app, (string) $row['last_contact']['occurred_at']), '</td>';
             echo '<td data-label="By">', e((string) $row['last_contact']['officer_name']),
                 ' &middot; ', e($contactTypes[$row['last_contact']['contact_type']]
                     ?? (string) $row['last_contact']['contact_type']), '</td>';
@@ -706,15 +712,18 @@ $findTeam = $teams['may_choose'] || $filters['teams'] !== [] ? TeamFilter::param
         // measured at over twice the spec 10 first-paint budget, so the one
         // row being worked carries it (~1.6KB) and the other forty-nine
         // carry this ~100-byte link.
+        // The hrefs from one place (Phase 10.4): the CELL PHONE rule, and
+        // the text and the subject that start themselves.
+        $links = View::contactLinks($app, $user, $row);
         echo '<td class="actions">';
-        if ($row['can_call']) {
-            echo '<a href="tel:', e($row['phone_e164']), '">Call</a>';
+        if (isset($links['call'])) {
+            echo '<a href="', e($links['call']), '">Call</a>';
         }
-        if ($row['can_text']) {
-            echo '<a href="sms:', e($row['phone_e164']), '">Text</a>';
+        if (isset($links['text'])) {
+            echo '<a href="', e($links['text']), '">Text</a>';
         }
-        if ($row['can_email']) {
-            echo '<a href="mailto:', e($row['email']), '">Email</a>';
+        if (isset($links['email'])) {
+            echo '<a href="', e($links['email']), '">Email</a>';
         }
         if ($year['is_open']) {
             echo '<a href="', e($href(['page' => $statusPage['page'], 'log' => $row['id']])),
@@ -767,8 +776,7 @@ $findTeam = $teams['may_choose'] || $filters['teams'] !== [] ? TeamFilter::param
         } else {
             echo '<ul class="rows">';
             foreach ($row['contacts'] as $entry) {
-                [$words, $absolute] = View::when($app, (string) $entry['occurred_at']);
-                echo '<li><span title="', e($absolute), '">', e($words), '</span> &middot; ',
+                echo '<li>', View::time($app, (string) $entry['occurred_at']), ' &middot; ',
                     e($contactTypes[$entry['contact_type']] ?? (string) $entry['contact_type']),
                     ' &middot; ', e((string) $entry['officer_name']);
                 if (trim((string) $entry['notes']) !== '') {
@@ -817,7 +825,7 @@ $findTeam = $teams['may_choose'] || $filters['teams'] !== [] ? TeamFilter::param
                 (string) $row['display_name'],
                 $row['statuses'],
                 9,
-                $row
+                ['links' => $links] + $row
             );
         }
         echo '</tbody>', "\n";

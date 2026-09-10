@@ -994,7 +994,7 @@ test('log-contact comes back to the roster through its own whitelist, with the s
 
     // And the handler reads `screen` and routes on it.
     assertTrue(str_contains($source, "'roster' . roster_return_query(\$state)"), 'the roster return path');
-    assertTrue(str_contains($source, "(\$_POST['screen'] ?? '') === 'roster'"), 'chosen by the screen field');
+    assertTrue(str_contains($source, "in_array(\$_POST['screen'] ?? '', ['roster', 'member'], true)"), 'chosen by the screen field');
     assertTrue(str_contains($source, "'notices' => flash_take(),\n            'roster'"), 'and the roster screen shows the flash');
 });
 

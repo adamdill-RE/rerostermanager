@@ -29,8 +29,20 @@ declare(strict_types=1);
         sub-committee, up to twenty-five people at a time. Pick people off your
         own roster, or type in somebody who is not on it yet.
     </p>
-    <p class="hint">Downloads as an <code>.xlsx</code> for show year.</p>
+    <p class="hint">Downloads as an <code>.xlsx</code><?php
+        if (($year ?? null) !== null) { ?> for show year <?= e((string) $year['label']) ?><?php } ?>.</p>
 </div>
+
+<?php if (($last ?? null) !== null) { ?>
+    <?php /* The acknowledgement a streamed download cannot give (Phase 10.4). */ ?>
+    <p class="hint">
+        <span class="chip chip-ok">Your last form</span>
+        Roster Change Form for <?= e((string) ($last['after']['sub_committee'] ?? '')) ?>,
+        <?= e((string) (int) ($last['after']['rows'] ?? 0)) ?>
+        <?= (int) ($last['after']['rows'] ?? 0) === 1 ? 'person' : 'people' ?>,
+        <?= Rerm\View::time($app, $last['at']) ?>. It was logged with your name.
+    </p>
+<?php } ?>
 
 <div class="card">
     <span class="chip chip-warn">A filled-in form is personal data</span>

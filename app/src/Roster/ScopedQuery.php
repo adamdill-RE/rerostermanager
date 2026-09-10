@@ -179,6 +179,23 @@ final class ScopedQuery
     }
 
     /**
+     * The members a contact may be logged with: present OR dropped, never
+     * purged and never the system row (Phase 10.4). A drop is automatic and
+     * the next import undoes it (CLAUDE.md), and the person an officer rings
+     * to ask "have you left?" is exactly the dropped one — the answer belongs
+     * in contact_log, which is the record. Scope is still Access's question,
+     * asked separately with a Subject; this is the visibility half alone.
+     *
+     * @param string $alias the member table's alias in the caller's FROM
+     */
+    public static function contactable(string $alias = 'm'): string
+    {
+        self::assertAlias($alias);
+
+        return "{$alias}.is_system = 0 AND {$alias}.purged_at IS NULL";
+    }
+
+    /**
      * The alias reaches the SQL string, so it is held to identifier
      * characters however unlikely a dynamic value is. Everything the USER
      * controls travels as a binding.

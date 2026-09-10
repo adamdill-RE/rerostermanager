@@ -34,6 +34,7 @@ declare(strict_types=1);
             nowhere to go. Contact an officer on your team — an Admin can help
             you back into the account.
         </p>
+        <p class="hint"><a href="<?= e($app->url('forgot')) ?>">Typed the wrong number? Try again</a></p>
     </div>
 <?php } elseif ($sent) { ?>
     <div class="card">
@@ -44,6 +45,7 @@ declare(strict_types=1);
             names the member number it applies to — check it if your household
             shares an inbox.
         </p>
+        <p class="hint"><a href="<?= e($app->url('forgot')) ?>">Typed the wrong number? Try again</a></p>
     </div>
 <?php } else { ?>
     <form method="post" action="<?= e($app->url('forgot')) ?>">

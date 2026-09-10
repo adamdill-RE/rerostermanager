@@ -865,18 +865,19 @@ test('a dropped member is on the dropped list and nowhere else', function (): vo
 
     assertTrue(!in_array('FF000009', ff_visible($coord), true), 'not on the roster');
 
-    // Access answers SCOPE, not visibility — deliberately, and it always
-    // has: "two inputs only… deliberately nothing else". What keeps a
-    // dropped member unreachable is that every read which could produce a
-    // Subject for one excludes them first, so the question is never asked.
-    // That is the guarantee worth testing, so it is tested against the write
-    // path rather than against the matrix.
+    // A dropped member is hidden from every roster READ, and since Phase
+    // 10.4 takes a CONTACT: the person an officer rings to ask "have you
+    // left?" is exactly this one, and their answer belongs in contact_log,
+    // which is the record (ScopedQuery::contactable). Scope is still the
+    // matrix's question, asked with a Subject — an out-of-scope dropped
+    // member is as unreachable as ever, which the purge test below and
+    // tests/callloop_test.php hold.
     $logged = Rerm\Roster\LogContact::fromApp($GLOBALS['rerm_app'])->log($coord, [
         'member_id'    => (string) ff_fixture()['ids']['drop_a'],
         'contact_type' => 'call',
-        'notes'        => 'should never land',
+        'notes'        => 'they say they have moved away',
     ]);
-    assertSame('not_found', $logged['outcome'], 'a dropped member takes no contact');
+    assertSame('logged', $logged['outcome'], 'a dropped member takes a contact (Phase 10.4)');
 
     $dropped = DroppedPage::fromApp($GLOBALS['rerm_app'])
         ->page($coord, ff_fixture()['year'], []);
@@ -1114,6 +1115,22 @@ test('the team-scope picker is offered to Officers and Senior Officers alike', f
 
     // The reset control is offered for both, because both have accounts.
     assertTrue(str_contains($html, 'value="reset_password"'), 'the reset is offered');
+});
+
+test('a dropped member has a card, says so, and a stranger to their scope has none', function (): void {
+    // Phase 10.4: the card reads through forUser() and then droppedForUser(),
+    // so Dropped Members can open the person it wants rung.
+    $f    = ff_fixture();
+    $page = Rerm\Roster\MemberPage::fromApp($GLOBALS['rerm_app'])
+        ->page(ff_user('coord'), $f['year'], (int) $f['ids']['drop_a']);
+    assertTrue($page !== null, 'the coordinator can open their dropped member');
+    assertSame(true, $page['dropped']);
+    assertSame('FF000009', $page['member_number']);
+    assertTrue($page['dropped_batch'] !== null, 'and which import dropped them');
+
+    // Out of scope is null whichever list they are on.
+    $stranger = new User(1, 1, 'FF999', Level::Officer, null, 999999, false, 'Nobody');
+    assertSame(null, Rerm\Roster\MemberPage::fromApp($GLOBALS['rerm_app'])->page($stranger, $f['year'], (int) $f['ids']['drop_a']));
 });
 
 test('the fixture cleans up after itself', function (): void {

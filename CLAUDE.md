@@ -375,6 +375,23 @@ Note, Stopped — rendered by the layout inside the sticky bar with
 shows the word. No view renders a notice loop of its own; a test reads them
 all for one.
 
+**One person is one screen** (Phase 10.4): `/member?id=` renders
+`Rerm\Roster\MemberPage`, which reads through `ScopedQuery::forUser()` and
+then `droppedForUser()` — out of scope is null and the route's 404 — and
+derives every status, the Result and the contact flags with the functions
+the lists use, so the card cannot disagree with the row it was opened from.
+It carries every show year's contacts (OI-12: a query, because §5.5 kept the
+data) and the log form open. Every list links a name to it with that list's
+state as `back`, re-whitelisted on the way back by the list's own rule. A
+**dropped** member takes a contact through `ScopedQuery::contactable()` —
+present or dropped, never purged — because the person rung to ask "have you
+left?" is exactly the dropped one; scope is still the matrix's question.
+
+**The text and the email start themselves**: `View::contactLinks()` is the
+one place `tel:`, `sms:` and `mailto:` are built, on the CELL PHONE rule, with
+`contact.sms_body` and `contact.mail_subject` from config filled in per
+member. Nothing is sent by this application; the officer's phone sends it.
+
 **One member's four statuses also read as one word**, in My Roster Status's
 Result column: what the last contact actually produced. `Rerm\Roster\
 ContactOutcome` derives it from the four effective statuses already on the row
@@ -597,6 +614,7 @@ Each phase ends shippable. `docs/spec-v1.md` carries the detail through 8.7,
 | **10.1 · What the call produced** | My Roster Status carries the imported title, a Result column saying what the last contact produced, and a per-row expansion holding the show year's contact history | An officer reads what a member actually said without opening anything, and the whole conversation by opening one row |
 | **10.2 · Find and log** | My Roster Status gains spec 7.2's search box, under either half of the toggle; View My Roster gains Log contact on the row, through the one sheet and the one write | An officer finds one member on the working list without paging, and logs a call from the screen that found them by name |
 | **10.3 · The call loop, and the shell** | Phone folds and a days-to-go on My Roster Status; short chip words; a search that finds a full name; dial buttons in the log sheet; anchored returns; a shell nav, Sign out and one notice component; link contrast and colour-scheme; All teams on the Committee Dashboard; CSS-counter selection counts; gating by consequence on import, Show Year and purge; a one-form export; a refusal page that says which of three things it means | A Captain on a 360px phone sees the first call without scrolling, finds a member by full name, and lands back on the row they logged |
+| **10.4 · The member card, and the rest** | `/member`: one person, narrow column, the log form open, every year's history; one answer for everything open; text and email templates; dropped members take a contact; share complete and its sort on the roll-up; the Assign chooser sorted by work; roster team tick boxes; a grouped menu; one `<time>` helper; print; a web manifest; absent-not-disabled; post-redirect-get on five screens; the last download named; the accessibility pass | One person's whole record is one narrow page every list can reach, and the way back keeps the list |
 | **10.x · v2** | Recruiting and retention automation; multi-year contact history (OI-12) | see `docs/spec-v2.md` |
 
 Phases 4 and 5 are the product. Everything before them is plumbing and
