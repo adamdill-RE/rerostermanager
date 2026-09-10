@@ -239,6 +239,23 @@ final class Purge
      * @param array<int, int> $ids
      * @return array<int, array<string, mixed>>
      */
+    /**
+     * The members a purge would touch, for the confirmation page (Phase
+     * 10.3): the same read apply() makes, so the names shown are exactly the
+     * rows the word will act on. Ids outside the purgeable population — not
+     * flagged, already purged, the master administrator — are not returned,
+     * exactly as apply() would skip them.
+     *
+     * @param array<int, mixed> $rawIds
+     * @return array<int, array<string, mixed>>
+     */
+    public function preview(array $rawIds): array
+    {
+        $ids = self::memberIds($rawIds);
+
+        return $ids === [] ? [] : $this->membersFor($ids, 'purge');
+    }
+
     private function membersFor(array $ids, string $action): array
     {
         $places = [];

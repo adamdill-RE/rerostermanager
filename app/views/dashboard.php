@@ -196,9 +196,11 @@ $dash  = $statusPage['dashboard'];
 $total = (int) $dash['total'];
 $fully = (int) $dash['fully_complete'];
 ?>
+<?php $daysLeft = View::daysLeft($app, $year['ends_on'] ?? null); ?>
 <h1>My Roster Status</h1>
 <p class="lede">
-    Show year <?= e((string) $year['label']) ?> &middot;
+    Show year <?= e((string) $year['label']) ?><?php
+        if ($daysLeft !== '') { ?> &middot; <strong><?= e($daysLeft) ?></strong><?php } ?> &middot;
     <?= $statusPage['mode'] === 'mine'
         ? 'members assigned to you'
         : ($teams['all'] ? 'everyone in your scope' : 'everyone on the team below') ?><?php
@@ -206,6 +208,9 @@ $fully = (int) $dash['fully_complete'];
     The list below is <?= $statusPage['show'] === 'outstanding'
         ? 'the working set: outstanding on at least one requirement, next call first'
         : 'everyone in this view, next call first' ?>.
+    <?php if ($total > 0 && $statusPage['total'] > 0) { ?>
+        <a class="skip" href="#list">Skip to the <?= $statusPage['show'] === 'outstanding' ? 'next calls' : 'list' ?></a>
+    <?php } ?>
 </p>
 
 <?php if ($filters['active']) { ?>
@@ -227,15 +232,6 @@ $fully = (int) $dash['fully_complete'];
     </div>
 <?php } ?>
 
-<?php foreach ($notices as [$level, $message]) { ?>
-    <div class="card">
-        <span class="chip chip-<?= e($level === 'ok' ? 'ok' : ($level === 'warn' ? 'warn' : 'danger')) ?>">
-            <?= e($level === 'ok' ? 'Done' : ($level === 'warn' ? 'Note' : 'Stopped')) ?>
-        </span>
-        <span><?= e($message) ?></span>
-    </div>
-<?php } ?>
-
 <?php if (!$year['is_open']) { ?>
     <div class="card">
         <span class="chip chip-warn">Read-only</span>
@@ -251,6 +247,30 @@ $fully = (int) $dash['fully_complete'];
         <?= $statusPage['mode'] === 'team' ? 'class="current" aria-current="page"' : '' ?>>My team</a>
 </nav>
 
+<?php
+/*
+ * THE FOLDS (Phase 10.3). On a phone the list a Captain came for sat under
+ * the toggle, the team picker and its hint, the search box and its hint,
+ * the banner and four cards each with a legend — roughly two screens of
+ * scroll before "The next calls to make", on the screen spec 1.2 describes
+ * as "one screen: who is outstanding, and a button that dials them". So
+ * below 720px the controls and the cards each fold behind a 56px label,
+ * and the list rises to the first screen. Above 720px nothing folds.
+ *
+ * A checkbox and a label, not <details>: <details> cannot be told to be
+ * open at one width and closed at another without a script, and a
+ * checkbox can — the CSS ignores it above the breakpoint. Not a byte of
+ * the folded content changes, so the budget is untouched; and the fold is
+ * OPEN whenever something inside it is in force — a search term, a chosen
+ * team — because a narrowed list must never hide the control that narrowed
+ * it. The checkbox is outside every form and posts nowhere.
+ */
+$findOpen = $statusPage['search'] !== ''
+    || ($teams['may_choose'] && !$filters['drilled'] && !$teams['defaulted']);
+?>
+<input type="checkbox" id="fold-find" class="fold vh"<?= $findOpen ? ' checked' : '' ?>>
+<label for="fold-find" class="fold-label">Find or narrow the list</label>
+<div class="folded">
 <?php if ($teams['may_choose'] && !$filters['drilled']) {
     /*
      * WHICH TEAM (Phase 10) — for a caller whose scope holds more than one:
@@ -430,6 +450,7 @@ $findTeam = $teams['may_choose'] || $filters['teams'] !== [] ? TeamFilter::param
         </p>
     <?php } ?>
 </form>
+</div>
 
 <?php if ($total === 0) { ?>
     <div class="card">
@@ -512,7 +533,19 @@ $findTeam = $teams['may_choose'] || $filters['teams'] !== [] ? TeamFilter::param
         </div>
     </div>
 
-    <div class="cards">
+    <?php /* The strip is the four cards in one line — each requirement's
+             outstanding count — and it is the fold's label on a phone.
+             Above 720px the label is not drawn and the cards always are. */ ?>
+    <input type="checkbox" id="fold-cards" class="fold vh">
+    <label for="fold-cards" class="fold-label">
+        <span class="strip">
+            <?php foreach (Metric::scored() as $metric) { ?>
+                <span><?= e($metric->shortLabel()) ?> <strong><?= e($number((int) $dash['cards'][$metric->value]['outstanding'])) ?></strong></span>
+            <?php } ?>
+            <span class="out">outstanding</span>
+        </span>
+    </label>
+    <div class="cards folded">
         <?php foreach (Metric::scored() as $metric) {
             $card     = $dash['cards'][$metric->value];
             $counts   = $card['statuses'];
@@ -782,7 +815,9 @@ $findTeam = $teams['may_choose'] || $filters['teams'] !== [] ? TeamFilter::param
                 $lcShared,
                 (int) $row['id'],
                 (string) $row['display_name'],
-                $row['statuses']
+                $row['statuses'],
+                9,
+                $row
             );
         }
         echo '</tbody>', "\n";
@@ -850,7 +885,3 @@ foreach (MetricStatus::cases() as $s) {
     </dl>
 </details>
 
-<p>
-    <a href="<?= e($app->url('roster')) ?>">View My Roster</a> &middot;
-    <a href="<?= e($app->url('menu')) ?>">Menu</a>
-</p>

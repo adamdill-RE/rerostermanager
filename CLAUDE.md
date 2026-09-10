@@ -355,8 +355,25 @@ member. The screens differ only in where the 303 lands, which the form's
 `screen` field decides and each screen's own return whitelist bounds. A test
 reads both views for a sheet of their own and fails on one. In the other
 direction, the **search** is one clause: `RosterPage::searchClause()` and its
-three-character floor serve both screens, so the same word finds the same
-people on either.
+three-character floor serve both screens — and Designate Users and Import
+History since Phase 10.3 — so the same word finds the same people on any of
+them. **A term is words, and every word has to land**: "John Smith", "Smith,
+John" and "Zeb Fin" all find one person, because each word must match one of
+the four name columns and the words are ANDed. One pattern against four
+columns separately found nobody for a full name, which read as "gone".
+
+**A chip carries a short word; the legend carries the owner's.**
+`MetricStatus::chipLabel()` is Open, Reported and Handling where `label()` is
+Open/No Contact, Reported Complete and Member Handling, so four chips fit one
+line of a phone card (spec 8.2); the full word rides in the chip's title and
+is spelled everywhere else. It is a shorter form of one vocabulary, never a
+second one — `label()` is still the only place the owner's words are spelled.
+
+**Every notice comes through `View::notice()`**, with one vocabulary — Done,
+Note, Stopped — rendered by the layout inside the sticky bar with
+`role="status"`, so a 303 that lands on the row it changed (`#m<id>`) still
+shows the word. No view renders a notice loop of its own; a test reads them
+all for one.
 
 **One member's four statuses also read as one word**, in My Roster Status's
 Result column: what the last contact actually produced. `Rerm\Roster\
@@ -579,6 +596,7 @@ Each phase ends shippable. `docs/spec-v1.md` carries the detail through 8.7,
 | **10 · History and scope** | `import_change` and the Import History screen; the team default on My Roster Status and the export; the version footer; the RE tab icon | "When did this person disappear" is answered without keeping a single spreadsheet |
 | **10.1 · What the call produced** | My Roster Status carries the imported title, a Result column saying what the last contact produced, and a per-row expansion holding the show year's contact history | An officer reads what a member actually said without opening anything, and the whole conversation by opening one row |
 | **10.2 · Find and log** | My Roster Status gains spec 7.2's search box, under either half of the toggle; View My Roster gains Log contact on the row, through the one sheet and the one write | An officer finds one member on the working list without paging, and logs a call from the screen that found them by name |
+| **10.3 · The call loop, and the shell** | Phone folds and a days-to-go on My Roster Status; short chip words; a search that finds a full name; dial buttons in the log sheet; anchored returns; a shell nav, Sign out and one notice component; link contrast and colour-scheme; All teams on the Committee Dashboard; CSS-counter selection counts; gating by consequence on import, Show Year and purge; a one-form export; a refusal page that says which of three things it means | A Captain on a 360px phone sees the first call without scrolling, finds a member by full name, and lands back on the row they logged |
 | **10.x · v2** | Recruiting and retention automation; multi-year contact history (OI-12) | see `docs/spec-v2.md` |
 
 Phases 4 and 5 are the product. Everything before them is plumbing and

@@ -88,20 +88,12 @@ final class DesignatePage
         $search    = $tooShort ? '' : $searchRaw;
 
         if ($search !== '') {
-            // RosterPage::escapeLike(), so %, _ and \ typed by a person are
-            // literals. Four columns means four placeholders — a named
-            // placeholder cannot be reused within one statement here.
-            $like = '%' . RosterPage::escapeLike($search) . '%';
-
-            $where .= " AND (m.preferred_name LIKE :search_preferred ESCAPE '\\\\'"
-                . " OR m.first_name LIKE :search_first ESCAPE '\\\\'"
-                . " OR m.last_name LIKE :search_last ESCAPE '\\\\'"
-                . " OR m.member_number LIKE :search_number ESCAPE '\\\\')";
-
-            $bind[':search_preferred'] = $like;
-            $bind[':search_first']     = $like;
-            $bind[':search_last']      = $like;
-            $bind[':search_number']    = $like;
+            // RosterPage::searchClause(), the one spelling (Phase 10.3): the
+            // same words-ANDed rule, the same escaping, so a full name finds
+            // here exactly who it finds on the rosters.
+            [$clause, $searchBind] = RosterPage::searchClause($search);
+            $where .= ' AND ' . $clause;
+            $bind  += $searchBind;
         }
 
         // "Show me only the people who already hold something." Not a scope

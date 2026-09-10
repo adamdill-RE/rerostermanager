@@ -199,4 +199,3 @@ $filtered = $audit['actor'] !== '' || $audit['action'] !== ''
 
 <?php } ?>
 
-<p><a href="<?= e($app->url('menu')) ?>">Back to the menu</a></p>

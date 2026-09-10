@@ -109,15 +109,6 @@ $number = static fn (int $n): string => number_format($n);
     the reference view, not just the outstanding.
 </p>
 
-<?php foreach ($notices as [$level, $message]) { ?>
-    <div class="card">
-        <span class="chip chip-<?= e($level === 'ok' ? 'ok' : ($level === 'warn' ? 'warn' : 'danger')) ?>">
-            <?= e($level === 'ok' ? 'Done' : ($level === 'warn' ? 'Note' : 'Stopped')) ?>
-        </span>
-        <span><?= e($message) ?></span>
-    </div>
-<?php } ?>
-
 <?php if (!$year['is_open']) { ?>
     <div class="card">
         <span class="chip chip-warn">Read-only</span>
@@ -373,7 +364,9 @@ $number = static fn (int $n): string => number_format($n);
                     $lcShared,
                     (int) $row['id'],
                     (string) $row['display_name'],
-                    $row['statuses']
+                    $row['statuses'],
+                    9,
+                    $row
                 );
             }
 
@@ -398,4 +391,3 @@ $number = static fn (int $n): string => number_format($n);
 
 <?php } ?>
 
-<p><a href="<?= e($app->url('dashboard')) ?>">&larr; My Roster Status</a> &middot; <a href="<?= e($app->url('menu')) ?>">Menu</a></p>

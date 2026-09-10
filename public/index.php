@@ -275,6 +275,10 @@ function password_act(Rerm\App $app, Rerm\Auth\Auth $auth, Rerm\Auth\User $user)
         ':ip'         => request_ip(),
     ]);
 
+    // Said, not assumed (Phase 10.3): the lede promised every other device
+    // would be signed out, and a landing with no word about it reads as a
+    // form that did nothing.
+    flash_set('ok', 'Your password is changed, and every other device this account was signed in on is signed out.');
     redirect($app);
 }
 
@@ -733,7 +737,7 @@ function setup_set_admin_password(Rerm\App $app): array
  */
 function active_show_year(Rerm\App $app): ?array
 {
-    $row = $app->db()->query('SELECT id, label, is_open FROM show_year WHERE is_active = 1')->fetch();
+    $row = $app->db()->query('SELECT id, label, is_open, ends_on FROM show_year WHERE is_active = 1')->fetch();
 
     return is_array($row)
         ? [
@@ -743,6 +747,10 @@ function active_show_year(Rerm\App $app): ?array
             // to say a closed year is read-only instead of offering forms
             // whose submissions would be refused.
             'is_open' => (int) $row['is_open'] === 1,
+            // When it ends, for the "41 days to go" in the ledes (Phase
+            // 10.3). NULL for a year nobody gave dates; the ledes then say
+            // nothing about it.
+            'ends_on' => $row['ends_on'] === null ? null : (string) $row['ends_on'],
         ]
         : null;
 }
@@ -933,7 +941,7 @@ function dashboard_screen(Rerm\App $app, Rerm\Auth\User $user): void
 {
     $year = active_show_year($app);
     if ($year === null) {
-        render($app, 'not-found', 'Not found', [], 404);
+        render($app, 'not-found', 'No show year is active', ['reason' => 'no_year'], 404);
 
         return;
     }
@@ -1001,7 +1009,9 @@ function log_contact_act(Rerm\App $app, Rerm\Auth\User $user): never
             );
         }
         flash_set('ok', $message);
-        redirect($app, $return);
+        // Anchored to the row (Phase 10.3): the tbody every roster row
+        // carries is id="m<member id>", so the officer lands where they were.
+        redirect($app, $return . '#m' . (int) $result['member_id']);
     }
 
     if ($outcome === 'year_closed') {
@@ -1032,7 +1042,7 @@ function dropped_screen(Rerm\App $app, Rerm\Auth\User $user): void
 {
     $year = active_show_year($app);
     if ($year === null) {
-        render($app, 'not-found', 'Not found', [], 404);
+        render($app, 'not-found', 'No show year is active', ['reason' => 'no_year'], 404);
 
         return;
     }
@@ -1058,7 +1068,7 @@ function committee_screen(Rerm\App $app, Rerm\Auth\User $user): void
 {
     $year = active_show_year($app);
     if ($year === null) {
-        render($app, 'not-found', 'Not found', [], 404);
+        render($app, 'not-found', 'No show year is active', ['reason' => 'no_year'], 404);
 
         return;
     }
@@ -1083,7 +1093,7 @@ function assign_screen(Rerm\App $app, Rerm\Auth\User $user): void
 {
     $year = active_show_year($app);
     if ($year === null) {
-        render($app, 'not-found', 'Not found', [], 404);
+        render($app, 'not-found', 'No show year is active', ['reason' => 'no_year'], 404);
 
         return;
     }
@@ -1248,7 +1258,7 @@ function assign_act(Rerm\App $app, Rerm\Auth\User $user): never
     // An if-chain, not a switch: tests/auth_test.php reads every `case '…':`
     // in this file as a route label, and these outcomes are not routes.
     if ($result['outcome'] === 'no_year') {
-        render($app, 'not-found', 'Not found', [], 404);
+        render($app, 'not-found', 'No show year is active', ['reason' => 'no_year'], 404);
         exit;
     }
 
@@ -1313,6 +1323,14 @@ function designate_act(Rerm\App $app, Rerm\Auth\User $user): never
     $result  = Rerm\Admin\Designate::fromApp($app)->apply($user, $_POST);
     $outcome = $result['outcome'];
     $who     = (string) $result['member_name'];
+
+    // Back to the row acted on (Phase 10.3), by its anchor, with the row
+    // still open: an Admin granting a level and then a scope should not
+    // have to find the person twice.
+    $memberId = (int) ($_POST['member_id'] ?? 0);
+    if ($memberId > 0) {
+        $return .= (str_contains($return, '?') ? '&' : '?') . 'member=' . $memberId . '#m' . $memberId;
+    }
 
     // An if-chain, not a switch: tests/auth_test.php reads every `case '…':`
     // in this file as a route label, and these outcomes are not routes.
@@ -1516,7 +1534,44 @@ function purge_act(Rerm\App $app, Rerm\Auth\User $user): never
         redirect($app, $return);
     }
 
-    flash_set(...purge_notice(Rerm\Admin\Purge::fromApp($app)->apply($user, $_POST)));
+    $purge = Rerm\Admin\Purge::fromApp($app);
+
+    // THE WORD IS TYPED ON A PAGE THAT NAMES THEM (Phase 10.3). The list
+    // page ticks; a purge without the word lands here, on a page listing
+    // exactly who was ticked, with the word to type and the ids carried in
+    // hidden fields — so a mistyped word re-renders THIS page with the names
+    // still on it, where before it 303'd back to a fresh list and forty
+    // ticks were gone. An empty or oversized selection never reaches the
+    // page: those are the list's own refusals, as before.
+    if (($_POST['action'] ?? '') === 'purge'
+        && (string) ($_POST['confirm'] ?? '') !== Rerm\Admin\Purge::CONFIRM_WORD
+    ) {
+        $ids  = is_array($_POST['member_id'] ?? null) ? $_POST['member_id'] : [];
+        $rows = count($ids) > Rerm\Admin\Purge::MAX_SELECTION ? [] : $purge->preview($ids);
+
+        if ($rows === []) {
+            // Nothing selected, too many, or nothing purgeable among them:
+            // apply() names which, and writes nothing on any of them.
+            flash_set(...purge_notice($purge->apply($user, ['confirm' => Rerm\Admin\Purge::CONFIRM_WORD] + $_POST)));
+            redirect($app, $return);
+        }
+
+        $attempted = (string) ($_POST['confirm'] ?? '') !== '';
+        render($app, 'purge-confirm', 'Purge these members?', [
+            'wide'    => false,
+            'user'    => $user,
+            'notices' => $attempted
+                ? [['danger', 'Type ' . Rerm\Admin\Purge::CONFIRM_WORD . ' exactly, in the box, to purge. '
+                    . 'Nothing was changed, and the members you ticked are still listed below.']]
+                : [],
+            'rows'    => $rows,
+            'return'  => is_string($_POST['return'] ?? null) ? $_POST['return'] : '',
+            'back'    => $return,
+        ]);
+        exit;
+    }
+
+    flash_set(...purge_notice($purge->apply($user, $_POST)));
     redirect($app, $return);
 }
 
@@ -1531,12 +1586,18 @@ function purge_act(Rerm\App $app, Rerm\Auth\User $user): never
 /** Renders the Export screen — the year, the team filter and the row count. */
 function export_screen(Rerm\App $app, Rerm\Auth\User $user): void
 {
+    // The one form posts both buttons (Phase 10.3): "Update the count" is a
+    // POST that re-renders from the posted boxes, exactly what Download
+    // reads. A GET still renders, from the query, so a link to a selection
+    // keeps working.
+    $input = $_SERVER['REQUEST_METHOD'] === 'POST' ? $_POST : $_GET;
+
     render($app, 'export', 'Export Roster', [
         // A list of choices, not a data table (spec 8.2): the narrow column.
         'wide'    => false,
         'user'    => $user,
         'notices' => flash_take(),
-        'export'  => Rerm\Admin\ExportPage::fromApp($app)->page($user, $_GET),
+        'export'  => Rerm\Admin\ExportPage::fromApp($app)->page($user, $input),
     ]);
 }
 
@@ -1550,11 +1611,18 @@ function export_screen(Rerm\App $app, Rerm\Auth\User $user): void
  * and the file has been built by then, which is the fact worth keeping, and a
  * client that disconnects mid-download has still had the data.
  */
-function export_act(Rerm\App $app, Rerm\Auth\User $user): never
+function export_act(Rerm\App $app, Rerm\Auth\User $user): void
 {
     if (!Rerm\Csrf::check()) {
         flash_set(...stale_form_notice());
         redirect($app, 'export');
+    }
+
+    // Update the count: the same POST, without the file (Phase 10.3).
+    if (($_POST['action'] ?? '') !== 'download') {
+        export_screen($app, $user);
+
+        return;
     }
 
     $page = Rerm\Admin\ExportPage::fromApp($app)->page($user, $_POST);
@@ -1745,6 +1813,29 @@ function show_year_screen(Rerm\App $app, Rerm\Auth\User $user): void
         $preview = $years->rolloverPreview($from, $to);
     }
 
+    // The step before Make active and Re-open (Phase 10.3): ?confirm= names
+    // the action and ?year= the year, chosen FROM the list — an id that is
+    // not a year, or a year already in that state, is simply no card.
+    $confirm     = null;
+    $confirmWhat = is_string($_GET['confirm'] ?? null) && in_array($_GET['confirm'], ['activate', 'open'], true)
+        ? $_GET['confirm']
+        : null;
+    if ($confirmWhat !== null) {
+        $wanted = (int) ($_GET['year'] ?? 0);
+        foreach ($all as $row) {
+            $applies = $confirmWhat === 'activate' ? !$row['is_active'] : !$row['is_open'];
+            if ($row['id'] === $wanted && $applies) {
+                $current = null;
+                foreach ($all as $other) {
+                    if ($other['is_active']) {
+                        $current = $other['label'];
+                    }
+                }
+                $confirm = ['what' => $confirmWhat, 'year' => $row, 'current' => $current];
+            }
+        }
+    }
+
     render($app, 'show-year', 'Show Year', [
         // A data screen (spec 8.2): the wide container above 720px.
         'wide'     => true,
@@ -1755,6 +1846,7 @@ function show_year_screen(Rerm\App $app, Rerm\Auth\User $user): void
             'from_year' => $from,
             'to_year'   => $to,
             'preview'   => $preview,
+            'confirm'   => $confirm,
         ],
     ]);
 }
@@ -1935,7 +2027,10 @@ function teams_act(Rerm\App $app, Rerm\Auth\User $user): never
         flash_set('danger', 'That team does not exist. Nothing was changed.');
     }
 
-    redirect($app, 'teams');
+    // Anchored to the row (Phase 10.3): ninety-six rows, and the one that
+    // changed is the one to land on.
+    $teamId = (int) ($_POST['team_id'] ?? 0);
+    redirect($app, $teamId > 0 ? 'teams#t' . $teamId : 'teams');
 }
 
 // ---------------------------------------------------------------------------
@@ -2174,6 +2269,19 @@ function import_act(Rerm\App $app, Rerm\Auth\User $actor): array
 
         if ($action === 'apply') {
             $batchId = (int) ($_POST['batch_id'] ?? 0);
+
+            // The pause on the most consequential press in the application
+            // (Phase 10.3): the preview is the diff, and the box says the
+            // diff was read. Refused here as well as required in the form,
+            // because reaching the route proves nothing.
+            if (($_POST['confirmed'] ?? '') !== '1') {
+                return [
+                    'notices' => [['danger', 'Tick the box to say you have read the diff, then apply. '
+                        . 'Nothing was written.']],
+                    'batch'   => $batchId,
+                ];
+            }
+
             $result  = $importer->apply($batchId, $actor->id);
 
             return [
@@ -2415,7 +2523,11 @@ if ($guard !== Rerm\Routes::PUBLIC
     if ($guard !== Rerm\Routes::SIGNED_IN
         && !Rerm\Auth\Access::mayUse($user, Rerm\Auth\Capability::from($guard))
     ) {
-        render($app, 'not-found', 'Not found', [], 404);
+        // Said, since Phase 10.3: the person is signed in and the menu
+        // already shows which screens exist, so "not open to your level"
+        // gives nothing away that "nothing at this address" kept — and it
+        // is true, which the other was not. Members and keys stay 404.
+        render($app, 'not-found', 'Not open to your level', ['reason' => 'refused'], 403);
         exit;
     }
 }
@@ -2503,7 +2615,7 @@ switch ($path) {
     case 'roster':
         $year = active_show_year($app);
         if ($year === null) {
-            render($app, 'not-found', 'Not found', [], 404);
+            render($app, 'not-found', 'No show year is active', ['reason' => 'no_year'], 404);
             break;
         }
 
@@ -2565,9 +2677,11 @@ switch ($path) {
 
     case 'export':
         // Both verbs on one route. A POST never falls through: export_act()
-        // sends the file and exits, or 303s back with a flash.
+        // sends the file and exits, 303s back with a flash, or — for Update
+        // the count (Phase 10.3) — renders the screen from the posted boxes.
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             export_act($app, $user);
+            break;
         }
 
         export_screen($app, $user);

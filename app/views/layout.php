@@ -27,6 +27,16 @@ declare(strict_types=1);
 <title><?= e($title) ?> · <?= e((string) $app->config()->get('app.name')) ?></title>
 <meta name="robots" content="noindex, nofollow">
 <?php /*
+    The dark theme is declared to the browser as well as painted by the CSS
+    (Phase 10.3): without color-scheme, a <select>'s drop-down, the date
+    picker, the checkboxes and the scrollbars are drawn light on a dark page,
+    and without theme-color the phone's own browser chrome stays white above
+    it. Two theme-color metas, one per scheme, in the page colours.
+*/ ?>
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#FFFFFF">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#191310">
+<?php /*
     The "RE" tab icon, RESM's own file byte for byte (bin/gen-icons.php says
     why the two applications share one mark rather than having one each).
 
@@ -58,6 +68,15 @@ declare(strict_types=1);
     --text: var(--ink);
     --muted: var(--rodeo-brown);
     --border: var(--rodeo-dust);
+    /* Links, in a token of their own (Phase 10.3). Action Orange is 4.9:1 on
+       white and 4.1:1 on Dust Light — under spec 10's 4.5:1 — and the links
+       that matter sit on Dust Light: menu tiles, empty states, notices, the
+       hints under a form. This is 6.4:1 on white and 5.4:1 on the surface.
+       Buttons keep Action Orange, where white text is what is measured. */
+    --link: #9C4512;
+
+    /* The browser draws its own parts of a form control in this scheme. */
+    color-scheme: light dark;
 
     /* Menu, login and single-record screens keep the narrow phone column at
        every width. Roster and dashboard screens use --page-wide. */
@@ -72,6 +91,8 @@ declare(strict_types=1);
         --text: #F2EAE2;
         --muted: #C9B29B;
         --border: #4A3729;
+        /* Rodeo Orange on the dark surface is 5.9:1. */
+        --link: var(--rodeo-orange);
 
         --ok: #6FBF7F;
         --warn: #D9A441;
@@ -155,6 +176,9 @@ h2 { font-size: 1.05rem; margin: 2rem 0 .5rem; }
     margin-left: auto;
     color: var(--muted);
     font-size: .85rem;
+    display: flex;
+    align-items: center;
+    gap: .75rem;
     /* Last on a phone, where the name would otherwise push the link off. */
     flex: 1 0 100%;
     padding-bottom: .4rem;
@@ -162,6 +186,53 @@ h2 { font-size: 1.05rem; margin: 2rem 0 .5rem; }
 @media (min-width: 40rem) {
     .topbar .who { flex: 0 1 auto; padding-bottom: 0; }
 }
+/* Sign out, on every signed-in screen (Phase 10.3): small, quiet, and the
+   only control offered while a password change is forced. */
+.topbar form.signout { margin: 0; margin-left: auto; }
+.topbar form.signout button {
+    width: auto;
+    min-width: 0;
+    min-height: 44px;
+    padding: 0 .75rem;
+    font-size: .85rem;
+    font-weight: 600;
+}
+
+/* The screens, in the bar (Phase 10.3). Text links, each a 56px target,
+   the current one underlined in the accent; on a phone they wrap to their
+   own line under the brand. A desk user hops between Status, Roster and
+   Committee all day, and each hop was two taps through the menu. */
+.topbar nav.nav { display: flex; flex-wrap: wrap; align-items: center; gap: 0 .15rem; }
+.topbar nav.nav a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 56px;
+    padding: 0 .5rem;
+    font-weight: 700;
+    font-size: .95rem;
+    text-decoration: none;
+    color: var(--link);
+}
+.topbar nav.nav a:hover { text-decoration: underline; }
+.topbar nav.nav a:focus-visible { outline: 3px solid var(--rodeo-orange); outline-offset: -3px; }
+.topbar nav.nav a.current,
+.topbar nav.nav a[aria-current="page"] { color: var(--text); box-shadow: inset 0 -3px 0 var(--action-orange); }
+
+/* The notices (Phase 10.3): inside the sticky bar so they survive a landing
+   further down the page, and small so they cost the phone one line. */
+.topbar .inner.notes { min-height: 0; }
+.notices { padding: .3rem 0 .5rem; }
+.notice { display: flex; align-items: flex-start; gap: .6rem; padding: .25rem 0; font-size: .92rem; line-height: 1.4; }
+.notice .chip { flex: 0 0 auto; margin-top: .1rem; }
+main > .notices { margin: -.5rem 0 1rem; }
+
+/* The row a 303 landed on (Phase 10.3): a rule down its left edge, from the
+   :target the anchor sets, so "Done" in the bar and the row that changed
+   are read together. scroll-margin keeps it out from under the bar. */
+tbody.member:target, tr:target, .roster tbody:target { scroll-margin-top: 8rem; }
+tbody.member:target > tr.entry > td:first-child,
+tbody.member:target > tr:first-child > td:first-child,
+tr:target > td:first-child { box-shadow: inset 4px 0 0 var(--rodeo-orange); }
 
 .lede { color: var(--muted); margin: 0 0 1.5rem; }
 
@@ -427,7 +498,7 @@ button.deflink:focus-visible { outline: 3px solid var(--rodeo-orange); outline-o
 [popover] button.close {
     all: unset;
     cursor: pointer;
-    color: var(--action-orange);
+    color: var(--link);
     font-weight: 700;
     min-height: 44px;
     margin-top: .5rem;
@@ -456,9 +527,9 @@ details.defs dd { margin: 0; color: var(--muted); font-size: .9rem; }
 
 /* --- Assign Officers (spec 7.4) --------------------------------------------
    The checkbox column, the sticky action bar and the bucket counts. The bar
-   is CSS position: sticky and nothing else — there is no JavaScript in this
-   application, so it cannot count a live selection and does not pretend to;
-   the count comes back in the flash after the write. */
+   is CSS position: sticky, and since Phase 10.3 a CSS counter (form.pick,
+   below) reads "12 selected" in it live — no JavaScript in this application,
+   and none needed. The flash after the write still names what landed. */
 .toggle a .n {
     margin-left: .4rem;
     padding: 0 .4rem;
@@ -469,6 +540,16 @@ details.defs dd { margin: 0; color: var(--muted); font-size: .9rem; }
 }
 .toggle { flex-wrap: wrap; }
 .toggle a { flex: 1 1 10rem; padding: 0 .6rem; text-align: center; }
+
+/* "12 selected", with no script (Phase 10.3). CSS counters count the ticked
+   boxes in document order, and the action bar sits after the table, so the
+   count in it is live as the boxes are ticked. The comment above once said
+   this could not be done; it can, in three rules. :has() only dims the
+   button while nothing is ticked — the server still answers a bare press. */
+form.pick { counter-reset: sel; }
+form.pick input[type="checkbox"]:checked { counter-increment: sel; }
+form.pick .count::before { content: counter(sel); font-variant-numeric: tabular-nums; }
+form.pick:not(:has(input[type="checkbox"]:checked)) .actionbar button.needs { opacity: .55; }
 
 /* 56px minimum, one-handed, in gloves: the whole name is the label, so the
    target is the row's width rather than the box. */
@@ -523,6 +604,60 @@ form.quick button { margin-top: .5rem; }
     form.quick.find input[type="search"] { min-height: 48px; }
     form.quick.find button { width: auto; min-width: 12rem; min-height: 48px; margin: 0; }
     form.quick.find p.hint { grid-column: 1 / -1; margin: 0; }
+}
+
+/* The folds on My Roster Status (Phase 10.3). Below 720px a fold is a
+   56px label that opens its content; above it the label is not drawn and
+   the content always is. The checkbox is visually hidden but focusable, so
+   a keyboard toggles it with Space and the label shows the ring. */
+.fold-label { display: none; }
+@media (max-width: 719px) {
+    .fold-label {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: .75rem;
+        min-height: 56px;
+        margin: 0 0 .75rem;
+        padding: .4rem .9rem;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        font-weight: 700;
+        cursor: pointer;
+    }
+    .fold-label::after { content: "Show"; color: var(--link); font-size: .9rem; flex: 0 0 auto; }
+    .fold:checked + .fold-label::after { content: "Hide"; }
+    .fold:focus-visible + .fold-label { outline: 3px solid var(--rodeo-orange); outline-offset: 2px; }
+    .fold:not(:checked) + .fold-label + .folded { display: none; }
+    .fold-label .strip { display: flex; flex-wrap: wrap; gap: .1rem .6rem; font-weight: 400; font-size: .92rem; }
+    .fold-label .strip strong { font-variant-numeric: tabular-nums; }
+    .fold-label .strip .out { color: var(--muted); }
+}
+
+/* The way past the cards to the list, in the lede (Phase 10.3). */
+.lede a.skip { display: inline-block; font-weight: 700; margin-top: .25rem; }
+
+/* Call, Text and Email inside the open log-contact sheet (Phase 10.3):
+   the sheet's first and largest targets, 64px like a primary button, so
+   the dial happens from the sheet and the return lands on the form. */
+.roster p.dials { display: flex; flex-wrap: wrap; gap: .5rem; margin: .5rem 0; }
+.roster p.dials a.dial {
+    flex: 1 1 8rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 64px;
+    padding: 0 1rem;
+    border-radius: 8px;
+    background: var(--action-orange);
+    color: #FFFFFF;
+    font-weight: 700;
+    text-decoration: none;
+}
+.roster p.dials a.dial:hover { filter: brightness(1.08); }
+.roster p.dials a.dial:focus-visible { outline: 3px solid var(--rodeo-orange); outline-offset: 2px; }
+@media (min-width: 720px) {
+    .roster p.dials a.dial { flex: 0 1 auto; min-width: 10rem; min-height: 48px; }
 }
 
 /* Visible to a screen reader, not to the eye: the checkbox column header and
@@ -581,10 +716,13 @@ form.quick button { margin-top: .5rem; }
     .committee tr.lv-team td.grp { padding-left: 1.2rem; }
 }
 
+/* All teams on one page (Phase 10.3): no tree, so no indentation. */
+.committee.flat tr.lv-team td.grp { padding-left: .6rem; }
 @media (min-width: 720px) {
     .committee td.grp .lvl { min-width: 0; margin-right: .4rem; }
     .committee tr.lv-area td.grp { padding-left: 1.6rem; }
     .committee tr.lv-team td.grp { padding-left: 3rem; }
+    .committee.flat tr.lv-team td.grp { padding-left: .6rem; }
     .committee tr.lv-division td.grp { border-left: 3px solid var(--action-orange); }
     .committee td.metric { white-space: nowrap; }
     /* inline-FLEX, not inline-block: .bar lays its segments out with flex
@@ -677,7 +815,27 @@ select, input[type="file"] {
 .choice .what { font-weight: 700; }
 .choice .why { display: block; color: var(--muted); font-size: .88rem; }
 
-button.quiet { background: transparent; color: var(--action-orange); border: 1px solid var(--border); min-height: 56px; }
+button.quiet { background: transparent; color: var(--link); border: 1px solid var(--border); min-height: 56px; }
+
+/* A link that leads to a step, drawn as the quiet button it stands where
+   (Phase 10.3): Make active… and Re-open… on Show Year open the confirm
+   card by GET, so they are links, and a link in a cell of buttons should
+   be the same 56px target. */
+a.btnlink {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 56px;
+    padding: 0 1.25rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-weight: 700;
+    text-decoration: none;
+}
+a.btnlink:hover { text-decoration: underline; }
+a.btnlink:focus-visible { outline: 3px solid var(--rodeo-orange); outline-offset: 2px; }
+@media (min-width: 720px) { a.btnlink { width: auto; min-width: 12rem; min-height: 48px; } }
 button.danger { background: var(--danger); }
 
 details { margin: .35rem 0; }
@@ -720,8 +878,7 @@ footer.shell {
 }
 footer.shell.wide { max-width: var(--page-wide); }
 footer.shell .ver { font-variant-numeric: tabular-nums; }
-a { color: var(--action-orange); }
-@media (prefers-color-scheme: dark) { a { color: var(--rodeo-orange); } }
+a { color: var(--link); }
 </style>
 </head>
 <body>
@@ -733,18 +890,76 @@ a { color: var(--action-orange); }
     reset and an anonymous not-found pass none, and get the plain brand
     below instead.
 */ ?>
+<?php
+/*
+    The notices (Phase 10.3): one component, View::notice(), one vocabulary —
+    Done / Note / Stopped — and one place, so a screen cannot spell its own.
+    They ride INSIDE the sticky bar for a signed-in user: a 303 that lands on
+    the row it changed (R5) scrolls the top of the page away, and a notice
+    that scrolled with it is a write nobody saw confirmed. role="status" so a
+    screen reader hears it without focus moving. An anonymous screen has no
+    bar, so there they sit at the top of the column.
+*/
+$noticeHtml = '';
+foreach ($notices ?? [] as [$level, $message]) {
+    $noticeHtml .= Rerm\View::notice((string) $level, (string) $message);
+}
+if ($noticeHtml !== '') {
+    $noticeHtml = '<div class="notices" role="status">' . $noticeHtml . '</div>';
+}
+
+/*
+    The screens in the bar (Phase 10.3): the four working screens, filtered by
+    capability exactly as the menu filters its tiles — presentation only,
+    every route re-checks. Whichever one is being drawn carries aria-current.
+    $view is render()'s own parameter, in scope because the layout is
+    required from there; a caller that renders another way gets no current.
+*/
+$navItems = [
+    ['dashboard', 'Status',    Rerm\Auth\Capability::ViewStatusDashboard],
+    ['roster',    'Roster',    Rerm\Auth\Capability::ViewRoster],
+    ['assign',    'Assign',    Rerm\Auth\Capability::AssignOfficers],
+    ['committee', 'Committee', Rerm\Auth\Capability::ViewCommitteeDashboard],
+];
+$currentView = isset($view) && is_string($view) ? $view : '';
+?>
 <?php if (isset($user) && $user instanceof Rerm\Auth\User) { ?>
     <header class="topbar<?= ($wide ?? false) ? ' wide' : '' ?>">
         <div class="inner">
             <span class="brand"><?= e((string) $app->config()->get('app.name')) ?></span>
-            <a class="back" href="<?= e($app->url('menu')) ?>">&larr; Menu</a>
-            <span class="who"><?= e($user->displayName) ?> &middot; <?= e($user->level->label()) ?></span>
+            <?php if ($user->mustChangePassword) { ?>
+                <?php /* Every other route 303s back to /password until the
+                         change is made (spec 3.2), so a Menu link here is a
+                         link that loops. Sign out is the one other thing a
+                         person half signed-in may do, and it is offered. */ ?>
+            <?php } else { ?>
+                <nav class="nav" aria-label="Screens">
+                    <?php foreach ($navItems as [$route, $word, $capability]) { ?>
+                        <?php if (!Rerm\Auth\Access::mayUse($user, $capability)) { continue; } ?>
+                        <a href="<?= e($app->url($route)) ?>"<?= $currentView === $route
+                            ? ' class="current" aria-current="page"' : '' ?>><?= e($word) ?></a>
+                    <?php } ?>
+                    <a class="back" href="<?= e($app->url('menu')) ?>"<?= $currentView === 'menu'
+                        ? ' aria-current="page"' : '' ?>>&larr; Menu</a>
+                </nav>
+            <?php } ?>
+            <div class="who">
+                <span><?= e($user->displayName) ?> &middot; <?= e($user->level->label()) ?></span>
+                <form class="signout" method="post" action="<?= e($app->url('logout')) ?>">
+                    <?= Rerm\Csrf::field() ?>
+                    <button type="submit" class="quiet">Sign out</button>
+                </form>
+            </div>
         </div>
+        <?php if ($noticeHtml !== '') { ?>
+            <div class="inner notes"><?= $noticeHtml ?></div>
+        <?php } ?>
     </header>
 <?php } ?>
 <main<?= ($wide ?? false) ? ' class="wide"' : '' ?>>
 <?php if (!isset($user) || !$user instanceof Rerm\Auth\User) { ?>
     <span class="brand"><?= e((string) $app->config()->get('app.name')) ?></span>
+    <?= $noticeHtml ?>
 <?php } ?>
 <?= $body ?>
 </main>

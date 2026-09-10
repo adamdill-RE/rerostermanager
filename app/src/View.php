@@ -68,12 +68,35 @@ final class View
         int $memberId,
         string $displayName,
         array $statuses,
-        int $colspan = 9
+        int $colspan = 9,
+        array $contact = []
     ): string {
         $typeOptions = '';
         foreach (LogContact::TYPES as $type) {
             $typeOptions .= '<option value="' . e($type) . '">'
                 . e(self::CONTACT_TYPES[$type] ?? $type) . '</option>';
+        }
+
+        // CALL, THEN LOG (Phase 10.3, spec 8.4's intent without a script).
+        // The row's own Call, Text and Email are here again, as the sheet's
+        // first and largest targets, so the natural order is: open the
+        // sheet, dial from inside it, come back to a page already open on
+        // this row with the form waiting. Absent, never disabled, on the
+        // row's own terms — Text only for a cell phone, Email only with an
+        // address. An older caller that passes nothing gets no buttons.
+        $dial = '';
+        if (($contact['can_call'] ?? false) && (string) ($contact['phone_e164'] ?? '') !== '') {
+            $dial .= '<a class="dial" href="tel:' . e((string) $contact['phone_e164']) . '">Call'
+                . ((string) ($contact['phone'] ?? '') !== '' ? ' ' . e((string) $contact['phone']) : '') . '</a>';
+        }
+        if (($contact['can_text'] ?? false) && (string) ($contact['phone_e164'] ?? '') !== '') {
+            $dial .= '<a class="dial" href="sms:' . e((string) $contact['phone_e164']) . '">Text</a>';
+        }
+        if (($contact['can_email'] ?? false) && (string) ($contact['email'] ?? '') !== '') {
+            $dial .= '<a class="dial" href="mailto:' . e((string) $contact['email']) . '">Email</a>';
+        }
+        if ($dial !== '') {
+            $dial = '<p class="dials">' . $dial . '</p>';
         }
 
         // The choices a per-metric progress select offers, spelled as the
@@ -90,7 +113,11 @@ final class View
             . '<form method="post" action="' . e($action) . '">'
             . $shared
             . '<input type="hidden" name="member_id" value="' . e((string) $memberId) . '">'
-            . '<p class="lc"><select name="contact_type" aria-label="How the contact happened">'
+            . $dial
+            // autofocus: the link that opened this sheet re-rendered the page,
+            // and the page should open on the sheet's first control rather
+            // than on the top of the tbody the anchor named.
+            . '<p class="lc"><select name="contact_type" aria-label="How the contact happened" autofocus>'
             . $typeOptions
             . '</select><textarea name="note" rows="2" maxlength="1000" aria-label="Note"'
             . ' placeholder="Note &mdash; optional, kept forever"></textarea></p>';
@@ -117,6 +144,26 @@ final class View
     }
 
     /**
+     * A notice — the one component every screen's "Done" / "Note" / "Stopped"
+     * comes through (Phase 10.3). Before this, fourteen views each spelled
+     * their own six lines, and the same danger level read "Refused" on the
+     * auth screens, "Failed" on setup and "Stopped" everywhere else. The
+     * layout renders these, inside the sticky bar for a signed-in user, so no
+     * view carries a loop of its own. Returns escaped HTML, safe to echo.
+     */
+    public static function notice(string $level, string $message): string
+    {
+        [$class, $word] = match ($level) {
+            'ok'   => ['chip-ok', 'Done'],
+            'warn' => ['chip-warn', 'Note'],
+            default => ['chip-danger', 'Stopped'],
+        };
+
+        return '<div class="notice"><span class="chip ' . $class . '">' . $word . '</span>'
+            . '<span>' . e($message) . '</span></div>';
+    }
+
+    /**
      * A chip: always a word plus a colour, never a colour alone (spec 8.3).
      * The inner span exists only on the filled variant, where the word has to
      * take the page colour; everywhere else the word rides directly in the
@@ -126,11 +173,47 @@ final class View
     public static function chip(MetricStatus $status): string
     {
         $class = $status->chipClass();
+        $label = $status->chipLabel();
         $word  = str_contains($class, 'chip-fill')
-            ? '<span class="chip-word">' . e($status->label()) . '</span>'
-            : e($status->label());
+            ? '<span class="chip-word">' . e($label) . '</span>'
+            : e($label);
 
-        return '<span class="chip ' . e($class) . '">' . $word . '</span>';
+        // The full word travels as the title where the chip carries the
+        // short one (Phase 10.3), so a hover reads what the legend reads.
+        $title = $label === $status->label() ? '' : ' title="' . e($status->label()) . '"';
+
+        return '<span class="chip ' . e($class) . '"' . $title . '>' . $word . '</span>';
+    }
+
+    /**
+     * How long the show year has left, in words, from its end date — or
+     * nothing at all for a year with none (Phase 10.3). The four requirements
+     * have to be met before the show, and the number of days until then is
+     * the one every Division Chairman quotes; it was in the table and on no
+     * screen. Returns a PLAIN string the caller escapes.
+     */
+    public static function daysLeft(App $app, ?string $endsOn): string
+    {
+        if ($endsOn === null || $endsOn === '') {
+            return '';
+        }
+
+        $zone  = $app->displayTimezone();
+        $today = new DateTimeImmutable('today', $zone);
+        $end   = DateTimeImmutable::createFromFormat('!Y-m-d', $endsOn, $zone);
+        if ($end === false) {
+            return '';
+        }
+
+        $days = (int) $today->diff($end)->format('%r%a');
+
+        return match (true) {
+            $days > 1   => number_format($days) . ' days to go',
+            $days === 1 => '1 day to go',
+            $days === 0 => 'closes today',
+            $days === -1 => 'ended yesterday',
+            default     => 'ended ' . $end->format('j M Y'),
+        };
     }
 
     /**

@@ -101,15 +101,6 @@ $href = static function (array $overrides = []) use ($app, $assign): string {
     Assigning is additive: run it once for each officer who should share the team.
 </p>
 
-<?php foreach ($notices as [$level, $message]) { ?>
-    <div class="card">
-        <span class="chip chip-<?= e($level === 'ok' ? 'ok' : ($level === 'warn' ? 'warn' : 'danger')) ?>">
-            <?= e($level === 'ok' ? 'Done' : ($level === 'warn' ? 'Note' : 'Stopped')) ?>
-        </span>
-        <span><?= e($message) ?></span>
-    </div>
-<?php } ?>
-
 <?php if (!$isOpen) { ?>
     <div class="card">
         <span class="chip chip-warn">Read-only</span>
@@ -289,7 +280,7 @@ $href = static function (array $overrides = []) use ($app, $assign): string {
         <?php } ?>
     </p>
 
-    <?php if ($canAct) { ?><form method="post" action="<?= $action ?>"><?= $shared ?><?php } ?>
+    <?php if ($canAct) { ?><form method="post" action="<?= $action ?>" class="pick"><?= $shared ?><?php } ?>
     <table class="roster assign">
         <thead>
             <tr>
@@ -367,8 +358,9 @@ $href = static function (array $overrides = []) use ($app, $assign): string {
             <p class="ab">
                 <label class="vh" for="ab-officer">Officer to assign</label>
                 <select name="officer_member_id" id="ab-officer"><?= $officerOptions ?></select>
-                <button type="submit" name="action" value="assign">
-                    <?= $bucket === 'ineligible' ? 'Assign replacement to selected' : 'Assign selected' ?>
+                <button type="submit" name="action" value="assign" class="needs">
+                    <?= $bucket === 'ineligible' ? 'Assign replacement to' : 'Assign' ?>
+                    <span class="count"></span> selected
                 </button>
             </p>
             <?php if ($assign['holders'] !== []) { ?>
@@ -382,7 +374,7 @@ $href = static function (array $overrides = []) use ($app, $assign): string {
                                     $holder['eligible'] ? '' : ' (no longer eligible)' ?></option>
                         <?php } ?>
                     </select>
-                    <button type="submit" name="action" value="remove" class="quiet">Remove selected from</button>
+                    <button type="submit" name="action" value="remove" class="quiet needs">Remove <span class="count"></span> selected from</button>
                 </p>
             <?php } ?>
         </div>
@@ -450,8 +442,3 @@ $href = static function (array $overrides = []) use ($app, $assign): string {
     </div>
 <?php } ?>
 
-<p>
-    <a href="<?= e($app->url('dashboard')) ?>">My Roster Status</a> &middot;
-    <a href="<?= e($app->url('roster')) ?>">View My Roster</a> &middot;
-    <a href="<?= e($app->url('menu')) ?>">Menu</a>
-</p>

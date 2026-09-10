@@ -44,7 +44,7 @@ $teams = $export['team_choice'];
  *
  * @var array<int, string|int> $carryTeams
  */
-$carryTeams = (array) TeamFilter::param($teams);
+
 ?>
 <h1>Export Roster</h1>
 <p class="lede">
@@ -53,15 +53,6 @@ $carryTeams = (array) TeamFilter::param($teams);
     people every other screen shows you. Which of them are in the file is the
     count below, and it is exact.
 </p>
-
-<?php foreach ($notices as [$level, $message]) { ?>
-    <div class="card">
-        <span class="chip chip-<?= e($level === 'ok' ? 'ok' : ($level === 'warn' ? 'warn' : 'danger')) ?>">
-            <?= e($level === 'ok' ? 'Done' : ($level === 'warn' ? 'Note' : 'Stopped')) ?>
-        </span>
-        <span><?= e($message) ?></span>
-    </div>
-<?php } ?>
 
 <?php if ($year === null) { ?>
     <div class="card">
@@ -80,7 +71,16 @@ $carryTeams = (array) TeamFilter::param($teams);
     </p>
 </div>
 
-<form method="get" action="<?= e($app->url('export')) ?>">
+<?php /* ONE FORM (Phase 10.3). The year and the teams used to sit in a GET
+         form under "Update the count", and the download was a second POST
+         form carrying hidden copies of the LAST LOADED selection — so a
+         person who ticked two more teams and pressed Download got the file
+         for the boxes as they were before they ticked, with no error. Now
+         both buttons read the same boxes: Update the count re-renders from
+         them, Download streams from them, and the file can never disagree
+         with the controls above it. */ ?>
+<form method="post" action="<?= e($app->url('export')) ?>">
+    <?= Csrf::field() ?>
     <label for="year">Show year</label>
     <select id="year" name="year">
         <?php foreach ($export['years'] as $option) { ?>
@@ -139,33 +139,26 @@ $carryTeams = (array) TeamFilter::param($teams);
         </fieldset>
     <?php } ?>
 
-    <button type="submit" class="quiet">Update the count</button>
-</form>
+    <button type="submit" name="action" value="count" class="quiet">Update the count</button>
 
-<div class="card">
-    <h2><?= e($number($rows)) ?> <?= $rows === 1 ? 'row' : 'rows' ?></h2>
-    <p>
-        <?php if ($rows === 0) { ?>
-            Nothing matches. The file would be a header row and nothing else, so
-            there is nothing to download.
-        <?php } else { ?>
-            <?= e($number($rows)) ?> <?= $rows === 1 ? 'member' : 'members' ?>
-            &times; <?= e($number(count($export['columns']))) ?> columns, for show year
-            <?= e((string) $year['label']) ?>.
-        <?php } ?>
-    </p>
-
-    <?php if ($rows > 0) { ?>
-        <form method="post" action="<?= e($app->url('export')) ?>">
-            <?= Csrf::field() ?>
-            <input type="hidden" name="year" value="<?= e((string) $year['id']) ?>">
-            <?php foreach ($carryTeams as $teamValue) { ?>
-                <input type="hidden" name="team[]" value="<?= e($teamValue) ?>">
+    <div class="card">
+        <h2><?= e($number($rows)) ?> <?= $rows === 1 ? 'row' : 'rows' ?></h2>
+        <p>
+            <?php if ($rows === 0) { ?>
+                Nothing matches the selection as it was counted. The file would be
+                a header row and nothing else.
+            <?php } else { ?>
+                <?= e($number($rows)) ?> <?= $rows === 1 ? 'member' : 'members' ?>
+                &times; <?= e($number(count($export['columns']))) ?> columns, for show year
+                <?= e((string) $year['label']) ?>, as counted for the boxes above when
+                this page was drawn.
             <?php } ?>
-            <button type="submit">Download the spreadsheet</button>
-        </form>
-    <?php } ?>
-</div>
+            The file always holds exactly what is ticked now &mdash; change a box
+            and press <strong>Update the count</strong> to see the number first.
+        </p>
+        <button type="submit" name="action" value="download">Download the spreadsheet</button>
+    </div>
+</form>
 
 <details>
     <summary>What the columns are (<?= e($number(count($export['columns']))) ?>)</summary>
@@ -184,4 +177,3 @@ $carryTeams = (array) TeamFilter::param($teams);
 
 <?php } ?>
 
-<p><a href="<?= e($app->url('menu')) ?>">Back to the menu</a></p>
