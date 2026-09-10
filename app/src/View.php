@@ -7,21 +7,115 @@ namespace Rerm;
 use DateTimeImmutable;
 use DateTimeZone;
 use Rerm\Roster\ContactOutcome;
+use Rerm\Roster\LogContact;
+use Rerm\Roster\Metric;
 use Rerm\Roster\MetricStatus;
 
 /**
  * The rendering fragments the roster-shaped screens repeat: the status chip,
- * the contact-outcome chip, the stacked proportion bar and the relative
- * timestamp. Promoted out of app/views/roster.php when Phase 5's dashboard
- * became the second screen to need them — one spelling of each, because a
- * chip that renders differently on two screens is a status that reads
- * differently on two screens.
+ * the contact-outcome chip, the stacked proportion bar, the relative
+ * timestamp and — since Phase 10.2 — the log-contact sheet. Promoted out of
+ * app/views/roster.php when Phase 5's dashboard became the second screen to
+ * need them — one spelling of each, because a chip that renders differently
+ * on two screens is a status that reads differently on two screens, and a
+ * sheet that posts different fields from two screens is a write that
+ * behaves differently depending on where the officer was standing.
  *
  * Everything here returns ALREADY-ESCAPED HTML or plain strings the caller
  * still escapes; each method says which it is.
  */
 final class View
 {
+    /**
+     * What a contact type is called on screen — the history lists and the
+     * sheet's select, on both roster screens, from one table.
+     */
+    public const CONTACT_TYPES = [
+        'call'      => 'Call',
+        'text'      => 'Text',
+        'email'     => 'Email',
+        'in_person' => 'In person',
+        'other'     => 'Other',
+    ];
+
+    /**
+     * The per-row log-contact sheet (spec 7.1 + 8.4, Phase 5 decided 2): a
+     * whole table row holding an open <details> and its own small <form> —
+     * type, optional note, and a progress select for every scored metric the
+     * member is not yet Complete on. Its own form, so a submit posts only
+     * this row's fields and max_input_vars stays distant.
+     *
+     * One renderer for the two screens that offer it, My Roster Status and
+     * (since Phase 10.2) View My Roster: the POST it produces is read by ONE
+     * handler, LogContact, and a sheet that differed between the screens by
+     * a field name would be a contact that logs from one and 404s from the
+     * other. The caller supplies what differs — the action URL and the
+     * $shared block (the CSRF token, the return state and the screen to
+     * come back to), built ONCE per page rather than once per row.
+     *
+     * Rendered for ONE row at a time (?log=id), never for every row: the
+     * option lists are ~1.6KB and fifty copies are half the spec 10
+     * first-paint budget by themselves.
+     *
+     * Returns escaped HTML, safe to echo. $shared is already-escaped HTML.
+     *
+     * @param array<string, MetricStatus> $statuses the row's effective
+     *        statuses, Metric->value => status, as the screen derived them
+     */
+    public static function logContactSheet(
+        string $action,
+        string $shared,
+        int $memberId,
+        string $displayName,
+        array $statuses,
+        int $colspan = 9
+    ): string {
+        $typeOptions = '';
+        foreach (LogContact::TYPES as $type) {
+            $typeOptions .= '<option value="' . e($type) . '">'
+                . e(self::CONTACT_TYPES[$type] ?? $type) . '</option>';
+        }
+
+        // The choices a per-metric progress select offers, spelled as the
+        // chips are — one spelling, from the one enum.
+        $progressChoices = [
+            ''                 => 'No change',
+            'in_progress'      => MetricStatus::InProgress->label() . ' — they are taking care of it',
+            'claimed_complete' => MetricStatus::Reported->label() . ' — they say it is done',
+            'not_started'      => 'Not started — clear a status set by mistake',
+        ];
+
+        $html = '<tr class="detail"><td class="expand" colspan="' . e((string) $colspan) . '">'
+            . '<details open><summary>Log contact &mdash; ' . e($displayName) . '</summary>'
+            . '<form method="post" action="' . e($action) . '">'
+            . $shared
+            . '<input type="hidden" name="member_id" value="' . e((string) $memberId) . '">'
+            . '<p class="lc"><select name="contact_type" aria-label="How the contact happened">'
+            . $typeOptions
+            . '</select><textarea name="note" rows="2" maxlength="1000" aria-label="Note"'
+            . ' placeholder="Note &mdash; optional, kept forever"></textarea></p>';
+
+        // A select only for what is still open: a member already Complete on
+        // HLSR dues has nothing to say about them.
+        $pending = array_filter(
+            Metric::scored(),
+            static fn (Metric $m): bool => ($statuses[$m->value] ?? null) !== MetricStatus::Complete
+        );
+        if ($pending !== []) {
+            $html .= '<p class="pgh">What they said &mdash; optional</p>';
+            foreach ($pending as $metric) {
+                $html .= '<label class="pg">' . e($metric->shortLabel())
+                    . '<select name="progress[' . e($metric->value) . ']">';
+                foreach ($progressChoices as $value => $label) {
+                    $html .= '<option value="' . e((string) $value) . '">' . e($label) . '</option>';
+                }
+                $html .= '</select></label>';
+            }
+        }
+
+        return $html . '<button type="submit">Log this contact</button></form></details></td></tr>';
+    }
+
     /**
      * A chip: always a word plus a colour, never a colour alone (spec 8.3).
      * The inner span exists only on the filled variant, where the word has to

@@ -884,8 +884,31 @@ function dashboard_return_query(array $input): string
         'team'     => ['ints' => 0, 'token' => Rerm\Roster\TeamFilter::ALL],
         'contact'  => ['never'],
         'assigned' => ['none'],
+        // The search term (Phase 10.2), bounded like Designate Users' own.
+        'q'        => ['text' => 120],
         'page'     => ['int' => 1],
         'size'     => ['int' => 0],
+    ]);
+}
+
+/**
+ * View My Roster: the search, the team filter, the sort and the page
+ * (spec 7.2) — what its log-contact sheet carries so the 303 after a write
+ * lands the officer back on the row they found (Phase 10.2). The sort keys
+ * are RosterPage's own whitelist, spelled a second time here on purpose:
+ * this table is what may travel, and a key it does not name is dropped.
+ *
+ * No `log`: the sheet that was just submitted must not come back open.
+ */
+function roster_return_query(array $input): string
+{
+    return return_query($input, [
+        'q'    => ['text' => 120],
+        'team' => ['ints' => 0],
+        'sort' => ['name', 'team', 'contact', 'number'],
+        'dir'  => ['desc'],
+        'page' => ['int' => 1],
+        'size' => ['int' => 0],
     ]);
 }
 
@@ -934,6 +957,12 @@ function dashboard_screen(Rerm\App $app, Rerm\Auth\User $user): void
  * that is not a redirect is not_found: an out-of-scope or non-existent
  * member gets the same 404 a typed URL would, because this application does
  * not discuss what exists with people who cannot see it.
+ *
+ * Since Phase 10.2 the sheet is on two screens, and `screen` says which one
+ * to come back to: 'roster' for View My Roster, anything else — including
+ * nothing, which is what every older form says — for My Roster Status. The
+ * write is the same either way; only the return differs, and each screen's
+ * own whitelist decides what travels.
  */
 function log_contact_act(Rerm\App $app, Rerm\Auth\User $user): never
 {
@@ -942,10 +971,14 @@ function log_contact_act(Rerm\App $app, Rerm\Auth\User $user): never
     // like any other input.
     $state = [];
     parse_str(is_string($_POST['return'] ?? null) ? $_POST['return'] : '', $state);
-    $return = 'dashboard' . dashboard_return_query($state);
+
+    $screen = ($_POST['screen'] ?? '') === 'roster' ? 'roster' : 'dashboard';
+    $return = $screen === 'roster'
+        ? 'roster' . roster_return_query($state)
+        : 'dashboard' . dashboard_return_query($state);
 
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-        redirect($app, 'dashboard');
+        redirect($app, $screen);
     }
 
     if (!Rerm\Csrf::check()) {
@@ -2474,16 +2507,19 @@ switch ($path) {
             break;
         }
 
-        // Read-only: the guard above answered "may they use this screen" and
-        // ScopedQuery inside RosterPage answers "which rows". The moment a
-        // later phase puts a button on these rows, that action checks
-        // Access::allows() with a Subject per member.
+        // The guard above answered "may they use this screen" and
+        // ScopedQuery inside RosterPage answers "which rows". The one write
+        // on these rows — Log contact, since Phase 10.2 — posts to
+        // /log-contact, where LogContact checks Access::allows() with a
+        // Subject per member; this screen only draws the sheet.
         render($app, 'roster', 'View My Roster', [
             // A data screen (spec 8.2): the wide container above 720px.
-            'wide'   => true,
-            'user'   => $user,
-            'year'   => $year,
-            'roster' => Rerm\Roster\RosterPage::fromApp($app)->page($user, $year['id'], $_GET),
+            'wide'    => true,
+            'user'    => $user,
+            'year'    => $year,
+            // The flash log-contact leaves when its 303 comes back here.
+            'notices' => flash_take(),
+            'roster'  => Rerm\Roster\RosterPage::fromApp($app)->page($user, $year['id'], $_GET),
         ]);
         break;
 

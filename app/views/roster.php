@@ -19,9 +19,19 @@ declare(strict_types=1);
  * screen shows 1,954 people's names and contact details, the largest
  * injection surface in the application.
  *
+ * SINCE PHASE 10.2 THE ROW HAS A WRITE: Log contact, the same action and
+ * the same sheet My Roster Status carries (View::logContactSheet(), one
+ * renderer), posting to the same route, which re-checks Access::allows()
+ * with a Subject per member. An officer who has found somebody here — by
+ * name, which this screen searches and the working list did not — logs the
+ * call where they are standing instead of carrying the name to the other
+ * screen. The 303 comes back HERE, with the search, filter, sort and page
+ * intact, through roster_return_query()'s whitelist.
+ *
  * @var Rerm\App              $app
  * @var Rerm\Auth\User        $user
- * @var array<string, mixed>  $year    the active show year row (id, label)
+ * @var array<string, mixed>  $year    the active show year row (id, label, is_open)
+ * @var array<int, array{0:string,1:string}> $notices
  * @var array<string, mixed>  $roster  everything RosterPage::page() decided
  */
 
@@ -88,13 +98,8 @@ $sortHeader = static function (string $key, string $word) use ($roster, $href): 
 
 $when = static fn (string $utc): array => View::when($app, $utc);
 
-$contactTypes = [
-    'call'      => 'Call',
-    'text'      => 'Text',
-    'email'     => 'Email',
-    'in_person' => 'In person',
-    'other'     => 'Other',
-];
+/** What a contact type is called — View's table, shared with the dashboard. */
+$contactTypes = View::CONTACT_TYPES;
 
 $number = static fn (int $n): string => number_format($n);
 ?>
@@ -103,6 +108,23 @@ $number = static fn (int $n): string => number_format($n);
     Everyone in your scope for show year <?= e((string) $year['label']) ?> —
     the reference view, not just the outstanding.
 </p>
+
+<?php foreach ($notices as [$level, $message]) { ?>
+    <div class="card">
+        <span class="chip chip-<?= e($level === 'ok' ? 'ok' : ($level === 'warn' ? 'warn' : 'danger')) ?>">
+            <?= e($level === 'ok' ? 'Done' : ($level === 'warn' ? 'Note' : 'Stopped')) ?>
+        </span>
+        <span><?= e($message) ?></span>
+    </div>
+<?php } ?>
+
+<?php if (!$year['is_open']) { ?>
+    <div class="card">
+        <span class="chip chip-warn">Read-only</span>
+        Show year <?= e((string) $year['label']) ?> is closed. Everything here is
+        still visible, but contacts can no longer be logged.
+    </div>
+<?php } ?>
 
 <div class="card">
     <form method="get" action="<?= e($app->url('roster')) ?>">
@@ -212,8 +234,26 @@ $number = static fn (int $n): string => number_format($n);
         // first-paint budget (spec 10), and pretty whitespace at 30 bytes a
         // line was measured costing more than the data. Every value still
         // goes through e() — compact never means unescaped.
+        // The log-contact sheet's shared block, built ONCE (Phase 10.2): the
+        // token, the screen to come back to, and this screen's list state as
+        // one query string — whitelisted again on the way back by
+        // roster_return_query(), so a 303 that dropped the search would not
+        // land the officer on page one of everyone after logging one call.
+        $lcAction = $app->url('log-contact');
+        $lcShared = Rerm\Csrf::field()
+            . '<input type="hidden" name="screen" value="roster">'
+            . '<input type="hidden" name="return" value="' . e(http_build_query(array_filter([
+                'q'    => $roster['search'] !== '' ? $roster['search'] : null,
+                'team' => $roster['selected_teams'] !== [] ? $roster['selected_teams'] : null,
+                'sort' => $roster['sort'] !== 'name' ? $roster['sort'] : null,
+                'dir'  => $roster['dir'] !== 'asc' ? $roster['dir'] : null,
+                'page' => $roster['page'] > 1 ? $roster['page'] : null,
+                'size' => $roster['size'] !== $roster['size_default'] ? $roster['size'] : null,
+            ]))) . '">';
+        $openSheet = (int) ($roster['log_open'] ?? 0);
+
         foreach ($roster['rows'] as $row) {
-            echo '<tbody class="member"><tr class="entry">';
+            echo '<tbody class="member" id="m', e((string) $row['id']), '"><tr class="entry">';
             echo '<td class="who">', e($row['display_name']),
                 ' <span class="sub">', e($row['member_number']), '</span></td>';
             echo '<td data-label="Team">',
@@ -247,6 +287,13 @@ $number = static fn (int $n): string => number_format($n);
             }
             if ($row['can_email']) {
                 echo '<a href="mailto:', e($row['email']), '">Email</a>';
+            }
+            // Log contact (Phase 10.2), the dashboard's fourth action, on
+            // the same terms: a link that re-renders this page with THIS
+            // row's sheet open, one row at a time, absent on a closed year.
+            if ($year['is_open']) {
+                echo '<a href="', e($href(['page' => $roster['page'], 'log' => $row['id']])),
+                    '#m', e((string) $row['id']), '">Log contact</a>';
             }
             echo '</td></tr>';
 
@@ -316,7 +363,21 @@ $number = static fn (int $n): string => number_format($n);
                 echo '</ul>';
             }
 
-            echo '</details></td></tr></tbody>', "\n";
+            echo '</details></td></tr>';
+
+            // The one open sheet, if it is this row's — the same renderer My
+            // Roster Status uses, so the two screens post the same fields.
+            if ($year['is_open'] && $row['id'] === $openSheet) {
+                echo View::logContactSheet(
+                    $lcAction,
+                    $lcShared,
+                    (int) $row['id'],
+                    (string) $row['display_name'],
+                    $row['statuses']
+                );
+            }
+
+            echo '</tbody>', "\n";
         }
         ?>
     </table>

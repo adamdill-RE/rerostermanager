@@ -18,6 +18,22 @@ file copy.
 
 ## Where this build stands
 
+**Phase 10.2 — find, and log where you found them.** Two things an officer
+kept having to leave a screen to do. My Roster Status now carries View My
+Roster's **search box** — name or member number, from three characters, the
+same clause and the same floor from `Rerm\Roster\RosterPage` — so one member
+can be found on the working list under either half of the My members / My
+team toggle without paging through fifty rows. It narrows the same predicate
+the four cards and the list share, so the cards above a searched list
+describe exactly the people in it; the term rides on every link, on the team
+picker and on the log-contact sheet's return state, so nothing about the view
+is lost by using it. And View My Roster, the screen that could always find
+somebody by name, gains **Log contact** on the row: the same sheet, rendered
+once by `Rerm\View::logContactSheet()` for both screens, posting to the same
+route and the same per-member permission check, and coming back to the row it
+was opened from with the search, filter, sort and page intact. Design:
+`docs/spec-v2.md` §8.
+
 **Phase 10.1 — what the call produced.** My Roster Status now answers the
 question an officer rings back to find out. Each row carries the member's
 **imported title** — Rodeo Houston's word, never the level derived from it —
