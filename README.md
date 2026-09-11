@@ -18,6 +18,51 @@ file copy.
 
 ## Where this build stands
 
+### For the next session
+
+`main` is **1.10.5**: Phase 10.5 merged as
+[#25](https://github.com/adamdill-RE/rerostermanager/pull/25), which closes
+the UX review that began after 10.2 — all thirty-eight of its items (R1 to
+R38) are on `main`, across Phases 10.3, 10.4 and 10.5. Nothing from the
+review is left queued. The server carries whatever was last deployed with
+cPanel's **Deploy HEAD Commit**; the footer of every screen and `/status`
+say which build that is, and 10.5 needs **no migration** — `php bin/migrate.php
+--status` should report nothing pending after the deploy.
+
+**How each phase was worked, and what to keep doing:** one branch per phase
+restarted from `origin/main`; `php tests/run.php --strict` against a
+reachable database (`RERM_DB_HOST`, `RERM_DB_NAME`, `RERM_DB_USER`,
+`RERM_DB_PASS` — the docker database, or any MySQL 8 / MariaDB 10.11 with the
+migrations applied); the three CI scripts locally before a commit
+(`.github/check-no-pii.py`, `.github/check-deployment.py`,
+`.github/check-mail-safety.php`); a PR against `main`; CI green on **both**
+MySQL 8.0 and MariaDB 10.11; then the merge. Every phase bumps `app.version`
+in `config/config.php` in the commit that closes it, adds a paragraph below
+this one, a section to `docs/spec-v2.md`, and a row to `CLAUDE.md`'s phase
+table. Tests are transcribed beside a generated fixture, never computed from
+the code under test, and every new file's examples come from `example.com`
+and `(555) 555-01xx` — the repository is public and the PII check fails the
+build on anything else.
+
+**What is next is a decision, not a backlog.** The candidates, all
+documented and none started:
+
+- **`docs/spec-v2.md` §11**, the open items. The nearest to ready are V2-3
+  (which form follows the Roster Change Form — `/forms` is shaped for it),
+  V2-7 and V2-8 (the team default and the Result column on View My Roster,
+  both deliberately withheld so far), and V2-6 (whether `import_change` is
+  retained forever).
+- **OI-12, multi-year contact history reporting.** The member card already
+  shows every show year's contacts for one person (§9.1); what remains is the
+  report across people, and `import_change` is the shape it should take.
+- **`CLAUDE.md`'s 10.x row** — recruiting and retention automation — which
+  has no design yet and should get a spec-v2 section before any code.
+
+Whichever it is, the constraints that shaped the last three phases still
+hold: no script, no framework, no build step, one template with two layouts
+at 720px, every figure landing on exactly the people it counted, and nothing
+that ever deletes a member or a contact.
+
 **Phase 10.5 — the rest of the review.** The seven "later" items from the
 UX review of 10.2, closing it: none a script, a framework, a schema change or
 a second layout. The one new reader is `Rerm\Roster\SinceImport`, which
@@ -209,11 +254,11 @@ application. It now serves a holding page, and `/status` — guarded by
 and whether `var/` is writable, which is how a bad deploy gets diagnosed on a
 host with no shell to hand.
 
-Phase 3 is next: authentication and the capability matrix
-(`docs/spec-v1.md` §3 and §4). `Rerm\Auth\TitleMap` and `Rerm\Auth\Level`
-already exist, because the import writes `member.title_level` on every row and
-creates an account for every officer title; what remains is login, the forced
-first reset, recovery, rotating tokens, the rate limit and `ScopedQuery`.
+Phases 3 to 8.7 — authentication and the capability matrix, View My Roster,
+My Roster Status, Assign Officers, the Committee Dashboard, the Admin
+screens, and the fit-and-finish sub-phases — are complete and are described
+screen by screen in `docs/spec-v1.md`; the paragraphs above pick up from
+Phase 9, where `docs/spec-v2.md` begins.
 
 ```sh
 php bin/migrate.php --status      # what is applied, what is pending
