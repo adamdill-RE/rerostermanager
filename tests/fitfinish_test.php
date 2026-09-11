@@ -744,7 +744,7 @@ test('the scope form cannot clear a team override it does not render', function 
     // A division-only POST, exactly as the form now sends it.
     $designate->apply(ff_user('exec'), [
         'action' => 'scope', 'member_id' => (string) $f['ids']['coord'],
-        'scope_division_id' => (string) $f['divisions']['FF Division'],
+        'scope_division_id' => (string) $f['division'],
     ]);
     assertSame(
         $f['teams']['FF Beta'],

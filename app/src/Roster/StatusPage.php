@@ -405,6 +405,9 @@ final class StatusPage
                 'total'          => $total,
                 'fully_complete' => $fullyComplete,
                 'cards'          => $cards,
+                // What the last import did for exactly these people (Phase
+                // 10.5): the same WHERE the cards were counted through.
+                'since'          => $this->since($where, $bind),
             ],
             'rows'         => $this->detailRows($pageCandidates, $showYearId),
             'total'        => $listTotal,
@@ -617,5 +620,31 @@ final class StatusPage
         }
 
         return $rows;
+    }
+
+    /**
+     * The last applied import and, per requirement, how many of the people
+     * this screen counts it moved to Y (Phase 10.5, SinceImport). Null
+     * before the first import.
+     *
+     * @param array<string, mixed> $bind
+     * @return ?array{batch_id: int, applied_at: string, per_metric: array<string, int>, total: int}
+     */
+    private function since(string $where, array $bind): ?array
+    {
+        $since  = new SinceImport($this->pdo);
+        $latest = $since->latest();
+        if ($latest === null) {
+            return null;
+        }
+
+        $perMetric = $since->flipsToY($latest['id'], $where, $bind);
+
+        return [
+            'batch_id'   => $latest['id'],
+            'applied_at' => $latest['applied_at'],
+            'per_metric' => $perMetric,
+            'total'      => array_sum($perMetric),
+        ];
     }
 }

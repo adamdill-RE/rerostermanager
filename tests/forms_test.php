@@ -1169,9 +1169,11 @@ test('the screen renders, escapes what it shows and shares its three long lists'
 
     // Both tick boxes are tick boxes on the screen because both are tick
     // boxes on the paper.
+    // (The codes fold on a phone, Phase 10.5, is a checkbox too and is not
+    // a tick box on the paper — counted by its name, not by its type.)
     assertSame(
         RcfPage::VISIBLE_ROWS * 2,
-        substr_count($html, '<input type="checkbox"'),
+        substr_count($html, '<input type="checkbox" name="row['),
         'rookie and wait list, one pair per drawn row'
     );
 

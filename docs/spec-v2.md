@@ -1062,7 +1062,88 @@ every header cell, focus rings on links and selects, and no empty
 
 ---
 
-## 10. Open items
+## 10. The rest of the review
+
+Phase 10.5 closes the UX review that began at 10.2: the seven "later" items,
+R32 to R38. As before, none of them is a script, a framework, a schema change
+or a second layout, and every figure lands on exactly the people it counts.
+
+### 10.1 What the last import did
+
+An officer chasing twenty people for weeks never saw whether it was working:
+the only feedback was the next roster, read as a whole. Phase 10's
+`import_change` records every metric flip per member per import, so "how
+many of mine moved to Complete in the last file" is a count and not a
+migration. `Rerm\Roster\SinceImport` answers it three ways — the last
+applied batch, the flips to Y per scored metric, and the flips per member —
+and every one reads through the caller's predicate over `m`: the scope, the
+toggle, a drill-down, a search. The number under a card therefore describes
+exactly the people the card counts, the rule every other figure on My Roster
+Status obeys (§4.4).
+
+Three rules bound it. A **first appearance is not a flip**: somebody who
+arrives with a Y was never chased. A **flip to N is a loss**, never counted as
+met. And it reads only what an import wrote — never a contact, a progress
+value or an assignment — so it can never claim credit for a call the roster
+has not yet confirmed. My Roster Status prints the total in the banner
+(`+3 requirements met since the import of 4 Sep`) and each metric's figure
+under its card; the Committee Dashboard tallies the per-member flips into a
+**Newly met** column per division, area and team, sortable like the rest.
+Before the first applied import, nothing is printed rather than a zero.
+
+### 10.2 The import forms
+
+The roster import asked "what this import is" with a bare label above three
+radios and a team select beneath all three, as though it applied to each. It
+is now one `fieldset` with the question as its `legend`, and the team chooser
+sits indented under the Team option it belongs to. The contact import (§8.7)
+opened with the column manual and put the form beneath it; the form is now
+first — choose the file, the officer and the team — and the manual folds
+below under "What the file needs to contain", linked from the file field.
+After a discard, or a file that would not stage, the officer and the team come
+back chosen: the next file is nearly always for the same pair.
+
+### 10.3 Manage Teams, grouped and findable
+
+Ninety-six rows in a flat list, captioned "grouped by area" of a list that
+was not. The rows are now one `<tbody>` per area, named areas first and
+`(No area)` last, each under a heading row that counts its teams; and a find
+box on the roster's word rule (`RosterPage::searchTokens()`, §7.1) over the
+team's name, its area and its division, filtered in PHP over rows already
+read. The count of everything is kept for the sentence beside the box, and a
+find that lands on nothing says what it looked for.
+
+### 10.4 Import History paged, and the Audit Log asked about one member
+
+The list of imports stopped at fifty with no count and no way past it. It is
+now counted and paged on its own `bpage`, so it never collides with a change
+list's `page`; a member's history links to their card (§9.1). The Audit Log
+gained the question it could not answer — "everything that happened to
+1234567" — as a member-number filter that resolves the number to the member
+row and, where one exists, the account row, because a purge names the member
+and a grant names the account. A number nobody holds matches nothing, not
+everything; the filter narrows the others rather than replacing them.
+
+### 10.5 The Roster Change Form's Enter key, and its codes
+
+Enter in any field submits the first submit button in a form, and on the RCF
+that was "Load the team", which threw away every row typed so far. A
+visually hidden Download button now comes first, `tabindex="-1"` and hidden
+from assistive technology, so Enter downloads and a keyboard reaches only
+the visible one. The "What the codes mean" legend, shut behind a `<details>`
+on every width, follows §8.1's fold: open beside the rows on a desktop, a
+56px label on a phone.
+
+### 10.6 The Status page's words
+
+Mail off is the shipped state (`CLAUDE.md`), so the health check says
+**Disabled** in green rather than amber; its migration hint names `/setup`
+before `php bin/migrate.php`, because this host has no shell; and the page
+ends with a way into the application and to Setup instead of nowhere.
+
+---
+
+## 11. Open items
 
 Carried from spec-v1 §12 where they bear on v2, plus those this document
 raises.

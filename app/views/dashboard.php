@@ -516,11 +516,23 @@ $findTeam = $teams['may_choose'] || $filters['teams'] !== [] ? TeamFilter::param
     </div>
 <?php } else { ?>
 
+    <?php
+    // What the last import did for these people (Phase 10.5): one line
+    // under the banner, one under each card. Said only when there has been
+    // an import, and "none" is a number too — an officer who chased twenty
+    // people and sees +0 knows the file has not caught up yet.
+    $since     = $dash['since'];
+    $sinceWord = $since === null ? '' : 'since the import of ' . $app->toDisplay((string) $since['applied_at'])->format('j M');
+    ?>
     <div class="overall">
         <h2><button type="button" class="deflink" popovertarget="d-fully">Fully Complete</button></h2>
         <p class="headline"><strong><?= e($number($fully)) ?></strong>
             of <?= e($number($total)) ?> members have met all four requirements
-            <span class="out"><?= e($number($total - $fully)) ?> still have at least one outstanding</span></p>
+            <span class="out"><?= e($number($total - $fully)) ?> still have at least one outstanding</span>
+            <?php if ($since !== null) { ?>
+                <span class="since"><strong>+<?= e($number((int) $since['total'])) ?></strong>
+                    requirement<?= (int) $since['total'] === 1 ? '' : 's' ?> met <?= e($sinceWord) ?></span>
+            <?php } ?></p>
         <div class="bar">
             <?php if ($fully > 0) { ?>
                 <span class="s-complete" style="width:<?= e($pct($fully, $total)) ?>%"
@@ -555,7 +567,10 @@ $findTeam = $teams['may_choose'] || $filters['teams'] !== [] ? TeamFilter::param
             <h2><?= e($metric->label()) ?></h2>
             <p class="headline"><strong><?= e($number($complete)) ?></strong>
                 of <?= e($number($total)) ?> complete
-                <span class="out"><?= e($number((int) $card['outstanding'])) ?> outstanding</span></p>
+                <span class="out"><?= e($number((int) $card['outstanding'])) ?> outstanding</span>
+                <?php if ($since !== null) { ?>
+                    <span class="since">+<?= e($number((int) $since['per_metric'][$metric->value])) ?> <?= e($sinceWord) ?></span>
+                <?php } ?></p>
             <?= View::bar($counts, $total, true) ?>
             <ul class="legend">
                 <?php foreach ($ladder as $s) {

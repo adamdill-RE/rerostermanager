@@ -451,6 +451,9 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .overall .headline strong { font-size: 1.6rem; }
 .mcard .headline strong { font-size: 1.3rem; }
 .headline .out { color: var(--muted); font-size: .85rem; display: block; }
+/* What the last import did (Phase 10.5): the one line that says whether
+   the chasing is working, in the ok colour with its word. */
+.headline .since { color: var(--ok); font-size: .85rem; display: block; }
 
 .cards { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; margin-bottom: 1.5rem; }
 @media (min-width: 720px) { .cards { grid-template-columns: repeat(4, 1fr); } }
@@ -655,6 +658,17 @@ a.card-link:hover { color: var(--link); text-decoration-color: currentColor; }
 
 /* One answer for everything open (Phase 10.4): the radio row, and the
    per-metric selects folded under it. */
+/* The import's mode fieldset (Phase 10.5): the legend reads as the label
+   it replaced, and the team chooser is indented under the Team option. */
+fieldset.modes { border: 0; padding: 0; margin: .75rem 0; min-width: 0; }
+fieldset.modes legend { font-weight: 600; padding: 0; margin-bottom: .35rem; }
+fieldset.modes .under { margin: .25rem 0 .75rem 2.4rem; }
+fieldset.modes .under p.hint { margin-top: .4rem; }
+/* The RCF codes (Phase 10.5): open on a desktop, a fold on a phone. */
+section.codes { margin-top: 1.5rem; }
+section.codes h2 { font-size: 1.1rem; margin: 0 0 .25rem; }
+section.codes h3 { font-size: 1rem; margin: 1rem 0 .2rem; }
+@media (max-width: 719px) { section.codes h2 { display: none; } }
 fieldset.pgall { border: 1px solid var(--border); border-radius: 8px; padding: .4rem .75rem .6rem; margin: .35rem 0; }
 fieldset.pgall legend { font-size: .9rem; font-weight: 600; padding: 0 .3rem; }
 label.pga { display: flex; align-items: center; gap: .6rem; min-height: 44px; font-weight: 600; }
@@ -702,6 +716,13 @@ ul.menu a, ul.menu li > span.what { display: block; padding: .7rem .25rem; min-h
 ul.menu a .what { display: block; font-weight: 700; color: var(--link); }
 ul.menu a .why, ul.menu li > span.why { display: block; font-size: .9rem; color: var(--muted); }
 ul.menu a:hover .what { text-decoration: underline; }
+
+/* Manage Teams' area headings (Phase 10.5): a row that reads as a heading. */
+tr.area th { padding-top: 1rem; font-size: .95rem; font-weight: 700; color: var(--text); text-transform: none; letter-spacing: 0; }
+tr.area th .why { font-weight: 400; margin-left: .5rem; }
+@media (max-width: 719px) { tr.area { display: block; border: 0; padding: .75rem 0 .25rem; } tr.area th { display: block; border: 0; } }
+/* The Audit Log's detail cell wraps on a phone rather than overflowing. */
+td pre.mono { white-space: pre-wrap; overflow-wrap: anywhere; }
 
 /* The roster's team filter (Phase 10.4): a fold of tick boxes, compact. */
 details.teams { border: 1px dashed var(--border); border-radius: 8px; padding: 0 .75rem; margin: .5rem 0 1rem; }

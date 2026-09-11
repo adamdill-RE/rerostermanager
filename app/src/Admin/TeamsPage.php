@@ -9,6 +9,7 @@ use Rerm\App;
 use Rerm\Audit\Action;
 use Rerm\Audit\AuditLog;
 use Rerm\Auth\User;
+use Rerm\Roster\RosterPage;
 use Rerm\Roster\ScopedQuery;
 
 /**
@@ -88,8 +89,38 @@ final class TeamsPage
         // editor and every other row is a link.
         $selected = (int) ($input['team'] ?? 0);
 
+        // A find box (Phase 10.5): ninety-six rows and the only way to one
+        // was to scroll. The same words rule the roster search has, over the
+        // team's name and its area, in PHP over rows already read.
+        $query  = trim(is_string($input['q'] ?? null) ? $input['q'] : '');
+        $all    = count($teams);
+        if ($query !== '') {
+            $tokens = RosterPage::searchTokens($query);
+            $teams  = array_values(array_filter($teams, static function (array $t) use ($tokens): bool {
+                $haystack = mb_strtolower($t['name'] . ' ' . $t['area'] . ' ' . $t['division_name']);
+                foreach ($tokens as $token) {
+                    if (!str_contains($haystack, mb_strtolower($token))) {
+                        return false;
+                    }
+                }
+
+                return true;
+            }));
+        }
+
+        // Grouped under their area (Phase 10.5), in the order the query
+        // already put them: the caption said "grouped by area" of a flat
+        // list, and now it is true.
+        $groups = [];
+        foreach ($teams as $team) {
+            $groups[$team['area'] === '' ? '(No area)' : $team['area']][] = $team;
+        }
+
         return [
             'teams'    => $teams,
+            'groups'   => $groups,
+            'q'        => $query,
+            'all'      => $all,
             'selected' => $selected > 0 ? $selected : null,
 
             // The areas already in use, offered as a datalist so an Admin

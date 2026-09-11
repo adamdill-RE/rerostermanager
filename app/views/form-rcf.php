@@ -98,6 +98,13 @@ foreach ($subcommittees as $option) {
 
 <form method="post" action="<?= e($app->url('form-rcf')) ?>">
     <?= Csrf::field() ?>
+    <?php /* Phase 10.5: Enter in any field submits the FIRST submit button
+             in the form, and until now that was "Load the team" — which
+             threw away every row typed so far. This visually hidden button
+             comes first so Enter downloads, the action a completed form
+             wants. It is out of the tab order; the visible one below is
+             the one a keyboard reaches. */ ?>
+    <button type="submit" name="action" value="download" class="vh" tabindex="-1" aria-hidden="true">Download the form</button>
 
     <div class="card">
         <h2>About this form</h2>
@@ -321,8 +328,14 @@ foreach ($subcommittees as $option) {
 <?php } ?>
 </form>
 
-<details>
-    <summary>What the codes mean</summary>
+<?php /* Phase 10.5: the codes are the form's own footnotes, and on a desktop
+         they sit beside the rows that use them — open, not behind a
+         summary. On a phone the same content folds under a 56px label. */ ?>
+<section class="codes">
+    <input type="checkbox" id="fold-codes" class="fold vh">
+    <label for="fold-codes" class="fold-label">What the codes mean</label>
+    <div class="folded">
+    <h2>What the codes mean</h2>
     <p class="hint">
         Printed on the form itself, so this is the same list the Division
         Chairman reads.
@@ -358,6 +371,7 @@ foreach ($subcommittees as $option) {
         Tick it if they have never been on Rodeo Express before. It is a tick
         box on the form itself, which is why it is one here.
     </p>
-</details>
+    </div>
+</section>
 
 <p><a href="<?= e($app->url('forms')) ?>">Back to Create Forms</a></p>

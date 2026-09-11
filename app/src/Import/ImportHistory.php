@@ -148,8 +148,39 @@ final class ImportHistory
         return [
             'view'     => 'batches',
             'q'        => '',
-            'batches'  => $this->batches(),
-        ] + self::emptyPaging();
+        ] + $this->batchesPage($input) + self::emptyPaging();
+    }
+
+    /**
+     * The batch list, counted and paged (Phase 10.5): the list stopped at
+     * fifty with no count and no way past it. `bpage` is the list's own
+     * page so it never collides with a change list's `page`.
+     *
+     * @param array<string, mixed> $input
+     * @return array{batches: array<int, array<string, mixed>>, batches_total: int,
+     *               batches_page: int, batches_pages: int, batches_from: int, batches_to: int}
+     */
+    private function batchesPage(array $input): array
+    {
+        $total = (int) $this->pdo->query(
+            'SELECT COUNT(*) FROM import_batch WHERE applied_at IS NOT NULL OR failed_at IS NOT NULL'
+        )->fetchColumn();
+
+        $size   = $this->pageSize;
+        $pages  = max(1, (int) ceil($total / $size));
+        $page   = min(max(1, (int) ($input['bpage'] ?? 1)), $pages);
+        $offset = ($page - 1) * $size;
+
+        $rows = $this->batches($size, $offset);
+
+        return [
+            'batches'       => $rows,
+            'batches_total' => $total,
+            'batches_page'  => $page,
+            'batches_pages' => $pages,
+            'batches_from'  => $total === 0 ? 0 : $offset + 1,
+            'batches_to'    => $offset + count($rows),
+        ];
     }
 
     // -----------------------------------------------------------------------
@@ -168,7 +199,7 @@ final class ImportHistory
      *
      * @return array<int, array<string, mixed>>
      */
-    public function batches(int $limit = 50): array
+    public function batches(int $limit = 50, int $offset = 0): array
     {
         $read = $this->pdo->query(
             'SELECT b.id, b.mode, b.filename, b.rows_read, b.rows_created, b.rows_updated,'
@@ -183,7 +214,7 @@ final class ImportHistory
             . ' LEFT JOIN app_user u ON u.id = b.uploaded_by'
             . ' LEFT JOIN member m ON m.id = u.member_id'
             . ' WHERE b.applied_at IS NOT NULL OR b.failed_at IS NOT NULL'
-            . ' ORDER BY b.id DESC LIMIT ' . max(1, $limit)
+            . ' ORDER BY b.id DESC LIMIT ' . max(1, $limit) . ' OFFSET ' . max(0, $offset)
         );
 
         $batches = [];
@@ -223,8 +254,7 @@ final class ImportHistory
                 'view'    => 'batches',
                 'q'       => '',
                 'missing' => $batchId,
-                'batches' => $this->batches(),
-            ] + self::emptyPaging();
+            ] + $this->batchesPage($input) + self::emptyPaging();
         }
 
         $batch = self::decorateBatch($row);
