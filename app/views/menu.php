@@ -29,12 +29,12 @@ use Rerm\Auth\Capability;
  * @var array<int, array{cap: Capability, label: string, route: ?string, phase: string, group: string, why: string}> $tiles
  */
 $tiles = [
-    ['cap' => Capability::ViewStatusDashboard,   'label' => 'My Roster Status',    'route' => 'dashboard', 'phase' => '', 'group' => 'chase', 'why' => 'Who is outstanding, next call first, and a button that dials them.'],
+    ['cap' => Capability::ViewStatusDashboard,   'label' => 'My Roster Status',    'route' => 'dashboard', 'phase' => '', 'group' => 'chase', 'why' => 'Current status for your members and a button that dials them.'],
     ['cap' => Capability::ViewRoster,            'label' => 'View My Roster',      'route' => 'roster', 'phase' => '', 'group' => 'chase', 'why' => 'Everyone you can see, searched by name or number, with their history.'],
-    ['cap' => Capability::ViewRoster,            'label' => 'Dropped Members',     'route' => 'dropped', 'phase' => '', 'group' => 'chase', 'why' => 'People the last roster did not list — ring them and find out.'],
-    ['cap' => Capability::AssignOfficers,        'label' => 'Assign Officers',     'route' => 'assign', 'phase' => '', 'group' => 'lead', 'why' => 'Who chases whom: the unassigned, the re-pointing, one team at a time.'],
+    ['cap' => Capability::ViewRoster,            'label' => 'Dropped Members',     'route' => 'dropped', 'phase' => '', 'group' => 'chase', 'why' => 'Members dropped from your Roster this show year.'],
+    ['cap' => Capability::AssignOfficers,        'label' => 'Assign Officers',     'route' => 'assign', 'phase' => '', 'group' => 'lead', 'why' => 'Assign Officers to call members.'],
     ['cap' => Capability::ViewCommitteeDashboard, 'label' => 'Committee Dashboard', 'route' => 'committee', 'phase' => '', 'group' => 'lead', 'why' => 'Every division, area and team rolled up, sorted by where nobody is working.'],
-    ['cap' => Capability::CreateForms,           'label' => 'Create Forms',        'route' => 'forms', 'phase' => '', 'group' => 'lead', 'why' => 'The committee’s own paperwork, filled in from the roster and downloaded.'],
+    ['cap' => Capability::CreateForms,           'label' => 'Create Forms',        'route' => 'forms', 'phase' => '', 'group' => 'lead', 'why' => 'The committee’s paperwork, filled in from the roster and downloaded.'],
     ['cap' => Capability::ExportRoster,          'label' => 'Export Roster',       'route' => 'export', 'phase' => '', 'group' => 'lead', 'why' => 'The members you can see, as a spreadsheet, for one show year.'],
     ['cap' => Capability::ImportRoster,          'label' => 'Import Roster',       'route' => 'import', 'phase' => '', 'group' => 'administer', 'why' => 'Rodeo Houston’s file, diffed before a row is written.'],
     ['cap' => Capability::ImportRoster,          'label' => 'Import History',      'route' => 'import-history', 'phase' => '', 'group' => 'administer', 'why' => 'What every import changed, and when a member disappeared.'],
@@ -46,10 +46,12 @@ $tiles = [
     ['cap' => Capability::ViewAuditLog,          'label' => 'Audit Log',           'route' => 'audit',  'phase' => '', 'group' => 'administer', 'why' => 'Every grant, import, purge and reset, with who and when.'],
 ];
 
+// The headings are the owner's words (Phase 10.4 fit): what the group is
+// FOR, in the committee's own vocabulary, with no line under them.
 $groups = [
-    'chase'      => ['Chase',      'The working list, the roster, and the people who fell off it.'],
-    'lead'       => ['Lead',       'Assignment, the roll-up, and what leaves the building.'],
-    'administer' => ['Administer', 'The import, the record it keeps, and the accounts.'],
+    'chase'      => ['This Show Year’s To-Do Items:', ''],
+    'lead'       => ['Team Functions:', ''],
+    'administer' => ['Administer', ''],
 ];
 ?>
 <h1>Menu</h1>
@@ -64,7 +66,7 @@ $groups = [
         continue;
     }
 ?>
-    <h2 class="menu-group"><?= e($groupWord) ?> <span class="why"><?= e($groupWhy) ?></span></h2>
+    <h2 class="menu-group"><?= e($groupWord) ?><?php if ($groupWhy !== '') { ?> <span class="why"><?= e($groupWhy) ?></span><?php } ?></h2>
     <ul class="menu">
         <?php foreach ($shown as $tile) { ?>
             <li>

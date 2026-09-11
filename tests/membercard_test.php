@@ -249,13 +249,14 @@ test('on paper the table is a table, every details is open, and the controls are
 
 test('the menu is three groups by job, each screen with one line on what it is for', function (): void {
     $officer = mc_render('menu', 'Menu', ['user' => mc_user(Level::Officer)]);
-    assertTrue(str_contains($officer, '>Chase '), 'Chase');
-    assertTrue(str_contains($officer, '>Lead '), 'Lead — Assign is an Officer\'s');
-    assertTrue(!str_contains($officer, '>Administer '), 'no Administer for an Officer');
+    assertTrue(str_contains($officer, 'To-Do Items:'), 'the owner\'s word for the officer\'s loop');
+    assertTrue(str_contains($officer, 'Team Functions:'), 'and for the desk — Assign is an Officer\'s');
+    assertTrue(!str_contains($officer, '>Administer<'), 'no Administer for an Officer');
     assertTrue(str_contains($officer, 'a button that dials them'), 'the line under a screen');
+    assertTrue(str_contains($officer, 'Assign Officers to call members.'), 'in the owner\'s words');
 
     $admin = mc_render('menu', 'Menu', ['user' => mc_user(Level::Admin)]);
-    assertTrue(str_contains($admin, '>Administer '));
+    assertTrue(str_contains($admin, '>Administer<'));
     assertSame(3, substr_count($admin, '<h2 class="menu-group">') - 1, 'three job groups, plus Account');
 
     $source = mc_source('app/views/menu.php');
