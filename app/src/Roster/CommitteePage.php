@@ -76,7 +76,7 @@ final class CommitteePage
      * no sort key reaches a SQL string at all, which is a stronger version
      * of the RosterPage::SORTS rule rather than an exception to it.
      */
-    public const SORTS = ['contact', 'unassigned', 'no_officer', 'members', 'name'];
+    public const SORTS = ['contact', 'unassigned', 'no_officer', 'members', 'improved', 'name'];
 
     /**
      * Never contacted, descending (spec 7.3, decided 1). At 50–65% of the
@@ -202,6 +202,13 @@ final class CommitteePage
             ];
         }
 
+        // What the last import did for these people (Phase 10.5): per
+        // member, how many requirements it moved to Y, tallied into every
+        // group below exactly as the other facts are.
+        $sinceReader = new SinceImport($this->pdo);
+        $sinceBatch  = $sinceReader->latest();
+        $flips       = $sinceBatch === null ? [] : $sinceReader->flipsByMember($sinceBatch['id'], $where, $bind);
+
         // Eligible officers per team, every team and not only this user's:
         // a team's officers are a fact about the team, and the write path on
         // the Assign screen enforces the same fact whoever is looking.
@@ -275,6 +282,7 @@ final class CommitteePage
                 'contacted' => $isContacted,
                 'noOfficer' => $noOfficer,
                 'statuses'  => $statuses,
+                'improved'  => $flips[$id] ?? 0,
             ];
 
             self::apply($divisionTally[$divisionId], $facts, $scoredCount);
@@ -375,6 +383,7 @@ final class CommitteePage
                 'sort'          => $sort,
                 'dir'           => $dir,
                 'by'            => $by,
+                'since'         => $sinceBatch,
                 'open_division' => null,
                 'open_area'     => null,
                 'sole_division' => $soleDivision,
@@ -480,6 +489,7 @@ final class CommitteePage
             'sort'          => $sort,
             'dir'           => $dir,
             'by'            => $by,
+            'since'         => $sinceBatch,
             'open_division' => $openDivision,
             'open_area'     => $openArea,
             'sole_division' => $soleDivision,
@@ -641,6 +651,9 @@ final class CommitteePage
             'no_officer'      => 0,
             'never_contacted' => 0,
             'fully_complete'  => 0,
+            // Requirements the last import moved to Y, summed over the
+            // group's members (Phase 10.5).
+            'improved'        => 0,
             'metrics'         => $metrics,
         ];
     }
@@ -665,6 +678,7 @@ final class CommitteePage
         if ($facts['noOfficer']) {
             $tally['no_officer']++;
         }
+        $tally['improved'] += (int) ($facts['improved'] ?? 0);
 
         $complete = 0;
         foreach ($facts['statuses'] as $metricKey => $status) {

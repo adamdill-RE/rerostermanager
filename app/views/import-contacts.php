@@ -121,8 +121,79 @@ $typeWord = static fn (string $type): string => ucfirst(str_replace('_', ' ', $t
 <?php return; } ?>
 
 <?php if ($preview === null) { ?>
+    <?php /* The form first, the manual second (Phase 10.5): the reference
+             table is for the first upload, and it sat above the file input
+             on every upload after. It is a fold below, linked from the hint. */ ?>
     <div class="card">
-        <h2>1 &middot; What the file needs to contain</h2>
+        <h2>Choose the file, the officer and the team</h2>
+        <form method="post" action="<?= e($app->url('import-contacts')) ?>" enctype="multipart/form-data">
+            <?= Csrf::field() ?>
+            <input type="hidden" name="action" value="stage">
+
+            <p>
+                <label for="history">The contact history file</label><br>
+                <input type="file" id="history" name="history" accept=".xls,.xlsx,.csv" required>
+                <span class="hint why">One row per contact; <a href="#needs">what the columns are called</a>.</span>
+            </p>
+
+            <p>
+                <label for="officer_id">Who made these contacts</label><br>
+                <select id="officer_id" name="officer_id" required>
+                    <option value="">(choose an officer)</option>
+                    <?php foreach ($officers as $officer) { ?>
+                        <option value="<?= e((string) $officer['id']) ?>"<?=
+                            (int) $officer['id'] === (int) ($preselect['officer'] ?? 0) ? ' selected' : '' ?>>
+                            <?= e(trim(
+                                (trim((string) $officer['preferred_name']) !== ''
+                                    ? (string) $officer['preferred_name']
+                                    : (string) $officer['first_name'])
+                                . ' ' . (string) $officer['last_name']
+                            )) ?>
+                            &middot; <?= e((string) $officer['member_number']) ?>
+                            <?php if (trim((string) ($officer['team_name'] ?? '')) !== '') { ?>
+                                &middot; <?= e((string) $officer['team_name']) ?>
+                            <?php } ?>
+                        </option>
+                    <?php } ?>
+                </select>
+            </p>
+            <p class="hint">
+                Every row that does not name its own officer is recorded against this
+                one. A row <em>with</em> a &ldquo;Contacted By&rdquo; overrides it &mdash;
+                and if that person has no active account the row is listed and skipped,
+                rather than being attributed to somebody who did not make the call.
+            </p>
+
+            <p>
+                <label for="team_id">Which team the file is about</label><br>
+                <select id="team_id" name="team_id">
+                    <option value="">(the file uses member numbers throughout)</option>
+                    <?php foreach ($teams as $team) { ?>
+                        <option value="<?= e((string) $team['id']) ?>"<?=
+                            (int) $team['id'] === (int) ($preselect['team'] ?? 0) ? ' selected' : '' ?>>
+                            <?= e((string) $team['name']) ?> &middot; <?= e($number((int) $team['members'])) ?> members
+                        </option>
+                    <?php } ?>
+                </select>
+            </p>
+            <p class="hint">
+                Names are matched <strong>within this team only</strong>. Committee-wide,
+                names are not unique and this application never keys on one; inside a single
+                team it is a safe question to ask, and a name still matching two people is
+                reported rather than guessed. A file carrying Customer Numbers does not need
+                a team at all.
+            </p>
+
+            <button type="submit">Read the file</button>
+        </form>
+        <p class="hint">
+            <?= $chip('ok', 'Nothing is written') ?>
+            Reading it writes nothing to the contact log. You get the list below first.
+        </p>
+    </div>
+
+    <details class="defs" id="needs">
+        <summary>What the file needs to contain</summary>
         <p>
             One row per contact. Column order does not matter, extra columns are
             ignored, and each of these is matched by any of the spellings listed
@@ -187,72 +258,8 @@ $typeWord = static fn (string $type): string => ucfirst(str_replace('_', ' ', $t
             quotes &mdash; otherwise the comma splits it into two columns. An
             <code>.xlsx</code> or <code>.xls</code> has no such problem.
         </p>
-    </div>
+    </details>
 
-    <div class="card">
-        <h2>2 &middot; Choose the file, the officer and the team</h2>
-        <form method="post" action="<?= e($app->url('import-contacts')) ?>" enctype="multipart/form-data">
-            <?= Csrf::field() ?>
-            <input type="hidden" name="action" value="stage">
-
-            <p>
-                <label for="history">The contact history file</label><br>
-                <input type="file" id="history" name="history" accept=".xls,.xlsx,.csv" required>
-            </p>
-
-            <p>
-                <label for="officer_id">Who made these contacts</label><br>
-                <select id="officer_id" name="officer_id" required>
-                    <option value="">(choose an officer)</option>
-                    <?php foreach ($officers as $officer) { ?>
-                        <option value="<?= e((string) $officer['id']) ?>">
-                            <?= e(trim(
-                                (trim((string) $officer['preferred_name']) !== ''
-                                    ? (string) $officer['preferred_name']
-                                    : (string) $officer['first_name'])
-                                . ' ' . (string) $officer['last_name']
-                            )) ?>
-                            &middot; <?= e((string) $officer['member_number']) ?>
-                            <?php if (trim((string) ($officer['team_name'] ?? '')) !== '') { ?>
-                                &middot; <?= e((string) $officer['team_name']) ?>
-                            <?php } ?>
-                        </option>
-                    <?php } ?>
-                </select>
-            </p>
-            <p class="hint">
-                Every row that does not name its own officer is recorded against this
-                one. A row <em>with</em> a &ldquo;Contacted By&rdquo; overrides it &mdash;
-                and if that person has no active account the row is listed and skipped,
-                rather than being attributed to somebody who did not make the call.
-            </p>
-
-            <p>
-                <label for="team_id">Which team the file is about</label><br>
-                <select id="team_id" name="team_id">
-                    <option value="">(the file uses member numbers throughout)</option>
-                    <?php foreach ($teams as $team) { ?>
-                        <option value="<?= e((string) $team['id']) ?>">
-                            <?= e((string) $team['name']) ?> &middot; <?= e($number((int) $team['members'])) ?> members
-                        </option>
-                    <?php } ?>
-                </select>
-            </p>
-            <p class="hint">
-                Names are matched <strong>within this team only</strong>. Committee-wide,
-                names are not unique and this application never keys on one; inside a single
-                team it is a safe question to ask, and a name still matching two people is
-                reported rather than guessed. A file carrying Customer Numbers does not need
-                a team at all.
-            </p>
-
-            <button type="submit">Read the file</button>
-        </form>
-        <p class="hint">
-            <?= $chip('ok', 'Nothing is written') ?>
-            Reading it writes nothing to the contact log. You get the list below first.
-        </p>
-    </div>
 <?php } else {
     $batch  = $preview['batch'];
     $counts = $preview['counts'];
@@ -457,6 +464,12 @@ $typeWord = static fn (string $type): string => ucfirst(str_replace('_', ' ', $t
                 <?= Csrf::field() ?>
                 <input type="hidden" name="action" value="discard">
                 <input type="hidden" name="batch_id" value="<?= e((string) $batch['id']) ?>">
+                <?php /* So the form comes back with the same officer and team
+                         chosen (Phase 10.5): the file is not kept, so a wrong
+                         officer means reading it again, and the other two
+                         choices should not have to be made again. */ ?>
+                <input type="hidden" name="officer" value="<?= e((string) ($batch['default_officer_user_id'] ?? '')) ?>">
+                <input type="hidden" name="team" value="<?= e((string) ($batch['team_id'] ?? '')) ?>">
                 <button type="submit" class="quiet">Discard this preview</button>
             </form>
         </div>

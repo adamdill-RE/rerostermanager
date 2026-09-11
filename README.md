@@ -18,6 +18,30 @@ file copy.
 
 ## Where this build stands
 
+**Phase 10.5 — the rest of the review.** The seven "later" items from the
+UX review of 10.2, closing it: none a script, a framework, a schema change or
+a second layout. The one new reader is `Rerm\Roster\SinceImport`, which
+answers **what the last import did for the people on a screen** — how many of
+them Rodeo Houston's file moved to Y on each requirement, read out of Phase
+10's `import_change` through whatever predicate the screen is already using,
+so the `+3 since the import of 4 Sep` under a card describes exactly the
+people the card counts. My Roster Status prints it in the banner and under
+every card; the Committee Dashboard carries it as a **Newly met** column that
+sorts. The **import forms are tidied**: the roster import's three modes are
+one `fieldset` with the question as its legend and the team chooser under the
+Team option it belongs to; the contact import puts the **form first**, folds
+the column manual below it, and keeps the officer and the team chosen after a
+discard. **Manage Teams** groups its ninety-six rows under their areas, with
+`(No area)` last, and gains a find box on the roster's word rule over name,
+area and division. **Import History** counts and pages its list of imports and
+links a member's history to their card; the **Audit Log** answers a member
+number with every row about that member or their account. On the **Roster
+Change Form**, Enter now downloads rather than reloading the team — a hidden
+first submit, off the tab order — and the codes are open on a desktop and a
+fold on a phone. The **Status page** says mail off is fine (it is the shipped
+state), names `/setup` before the shell command this host does not have, and
+ends with a way into the application. Design: `docs/spec-v2.md` §10.
+
 **Phase 10.4 — the member card, and the rest of the review.** The sixteen
 "next" items from the UX review of 10.2, again none of them a script, a
 framework or a second layout. The one new screen is the **member card** at

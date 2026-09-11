@@ -27,8 +27,11 @@ use Rerm\Csrf;
 
 $number = static fn (int $n): string => number_format($n);
 
-$href = static function (?int $team) use ($app): string {
-    return $app->url('teams') . ($team === null ? '' : '?team=' . $team);
+$href = static function (?int $team) use ($app, $teams): string {
+    $params = array_filter(['team' => $team, 'q' => $teams['q'] !== '' ? $teams['q'] : null]);
+    $query  = http_build_query($params);
+
+    return $app->url('teams') . ($query === '' ? '' : '?' . $query);
 };
 ?>
 <h1>Manage Teams</h1>
@@ -59,6 +62,22 @@ $href = static function (?int $team) use ($app): string {
     <?php } ?>
 </datalist>
 
+<form class="quick find" method="get" action="<?= e($app->url('teams')) ?>">
+    <label for="q">Find a team &mdash; by name, area or division</label>
+    <input type="search" id="q" name="q" value="<?= e((string) $teams['q']) ?>" autocomplete="off">
+    <button type="submit" class="quiet">Find</button>
+    <?php if ($teams['q'] !== '') { ?>
+        <p class="hint">
+            <?= e($number(count($teams['teams']))) ?> of <?= e($number((int) $teams['all'])) ?> teams match
+            &ldquo;<?= e((string) $teams['q']) ?>&rdquo; &middot;
+            <a href="<?= e($app->url('teams')) ?>">Show every team</a>
+        </p>
+    <?php } ?>
+</form>
+
+<?php if ($teams['teams'] === []) { ?>
+    <div class="card"><p>No team matches. <a href="<?= e($app->url('teams')) ?>">Show every team</a>.</p></div>
+<?php } else { ?>
 <table>
     <caption>
         <?= e($number(count($teams['teams']))) ?> teams, grouped by area.
@@ -72,8 +91,13 @@ $href = static function (?int $team) use ($app): string {
             <th scope="col">Actions</th>
         </tr>
     </thead>
+    <?php foreach ($teams['groups'] as $groupName => $groupTeams) { ?>
     <tbody>
-    <?php foreach ($teams['teams'] as $team) { ?>
+    <?php /* An area heading row (Phase 10.5): the grouping the caption
+             promised, and the way a team is found by its area. */ ?>
+    <tr class="area"><th scope="colgroup" colspan="5"><?= e((string) $groupName) ?>
+        <span class="why"><?= e($number(count($groupTeams))) ?> <?= count($groupTeams) === 1 ? 'team' : 'teams' ?></span></th></tr>
+    <?php foreach ($groupTeams as $team) { ?>
         <?php $open = $teams['selected'] === $team['id']; ?>
         <tr id="t<?= e((string) $team['id']) ?>">
             <td data-label="Team"><strong><?= e((string) $team['name']) ?></strong></td>
@@ -120,5 +144,7 @@ $href = static function (?int $team) use ($app): string {
         <?php } ?>
     <?php } ?>
     </tbody>
+    <?php } ?>
 </table>
+<?php } ?>
 

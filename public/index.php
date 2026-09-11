@@ -2996,6 +2996,7 @@ switch ($path) {
                 'applied'   => [],
                 'teams'     => [],
                 'officers'  => [],
+                'preselect' => [],
             ]);
             break;
         }
@@ -3010,11 +3011,28 @@ switch ($path) {
             $outcome = contacts_act($app, $user);
             flash_notices($outcome['notices']);
             $batchId = $outcome['batch'] ?? null;
-            redirect($app, 'import-contacts' . ($batchId !== null && $batchId > 0 ? '?batch=' . (int) $batchId : ''));
+            if ($batchId !== null && $batchId > 0) {
+                redirect($app, 'import-contacts?batch=' . (int) $batchId);
+            }
+            // Phase 10.5: a discard, or a file that would not stage, lands
+            // back on the form with the officer and the team still chosen —
+            // the next file is almost always for the same pair.
+            $keep = [];
+            foreach (['officer' => 'officer_id', 'team' => 'team_id'] as $k => $field) {
+                $chosen = (int) ($_POST[$k] ?? $_POST[$field] ?? 0);
+                if ($chosen > 0) {
+                    $keep[$k] = $chosen;
+                }
+            }
+            redirect($app, 'import-contacts' . ($keep === [] ? '' : '?' . http_build_query($keep)));
         }
 
         $notices = flash_take();
         $batchId = isset($_GET['batch']) ? (int) $_GET['batch'] : null;
+        $preselect = [
+            'officer' => (int) ($_GET['officer'] ?? 0),
+            'team'    => (int) ($_GET['team'] ?? 0),
+        ];
 
         $preview = null;
         if ($batchId !== null && $batchId > 0) {
@@ -3036,6 +3054,7 @@ switch ($path) {
             'applied'  => $contacts->appliedBatches(5),
             'teams'    => import_teams($app),
             'officers' => contacts_officers($app),
+            'preselect' => $preselect,
         ]);
         break;
 

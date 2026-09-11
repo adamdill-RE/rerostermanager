@@ -159,6 +159,10 @@ $view = (string) $history['view'];
     $member = $history['member'];
 ?>
 
+    <?php /* The way back (Phase 10.5): the member view had none but the bar. */ ?>
+    <p><a href="<?= e($href([])) ?>">&larr; Every import</a> &middot;
+        <a href="<?= e($app->url('member')) ?>?from=designate&amp;id=<?= e((string) $member['id']) ?>">This member's card</a></p>
+
     <div class="card">
         <h2><?= e((string) $member['name']) ?></h2>
         <dl class="facts">
@@ -368,6 +372,24 @@ $view = (string) $history['view'];
             <?php } ?>
             </tbody>
         </table>
+        <?php /* Counted and paged (Phase 10.5): the list used to stop at fifty
+                 and say nothing about it. */ ?>
+        <p class="lede">
+            Showing <?= e($number((int) $history['batches_from'])) ?>&ndash;<?= e($number((int) $history['batches_to'])) ?>
+            of <?= e($number((int) $history['batches_total'])) ?> imports<?php
+            if ($history['batches_pages'] > 1) { ?> &middot; page <?= e($number((int) $history['batches_page'])) ?>
+                of <?= e($number((int) $history['batches_pages'])) ?><?php } ?>
+        </p>
+        <?php if ($history['batches_pages'] > 1) { ?>
+            <nav class="toggle" aria-label="Imports">
+                <?php if ($history['batches_page'] > 1) { ?>
+                    <a href="<?= e($href(['bpage' => $history['batches_page'] - 1])) ?>">&larr; Newer</a>
+                <?php } ?>
+                <?php if ($history['batches_page'] < $history['batches_pages']) { ?>
+                    <a href="<?= e($href(['bpage' => $history['batches_page'] + 1])) ?>">Older &rarr;</a>
+                <?php } ?>
+            </nav>
+        <?php } ?>
     <?php } ?>
 
 <?php } ?>

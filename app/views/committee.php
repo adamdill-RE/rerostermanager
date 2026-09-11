@@ -231,6 +231,7 @@ $flat = $committee['level'] === 'teams';
             <?php foreach (Metric::scored() as $metric) { ?>
                 <th scope="col" class="num"<?= $sortState($metric->value) ?>><?= $sortHeader($metric->value, $metric->shortLabel()) ?></th>
             <?php } ?>
+            <th scope="col" class="num"<?= $sortState('improved') ?>><?= $sortHeader('improved', 'Newly met') ?></th>
             <th scope="col" class="num"<?= $sortState('unassigned') ?>><?= $sortHeader('unassigned', 'Unassigned') ?></th>
             <th scope="col" class="num"<?= $sortState('no_officer') ?>><?= $sortHeader('no_officer', 'No officer') ?></th>
             <th scope="col" class="num"<?= $sortState('contact') ?>><?= $sortHeader('contact', 'Never contacted') ?></th>
@@ -308,6 +309,11 @@ foreach ($committee['rows'] as $row) {
             '</span></td>';
     }
 
+    // Requirements the last import moved to Y for this group (Phase 10.5):
+    // a count of requirements, not people, and not a link — spec 7.1 has no
+    // filter that means "improved since the last file".
+    echo '<td class="num" data-label="Newly met">', e($number((int) $row['improved'])), '</td>';
+
     $triage = [
         ['Unassigned', (int) $row['unassigned'], ['show' => 'all', 'assigned' => 'none']],
         ['No officer', (int) $row['no_officer'], null],
@@ -345,6 +351,14 @@ foreach ($committee['rows'] as $row) {
             <?php $words = [];
             foreach (MetricStatus::ladder() as $s) { $words[] = $s->label(); }
             echo e(implode(', ', $words)); ?>.
+        </dd>
+        <dt>Newly met</dt>
+        <dd>
+            Requirements the last applied import moved to Complete for members
+            of the group<?php if ($committee['since'] !== null) { ?> &mdash; the import of
+            <?= e($app->toDisplay((string) $committee['since']['applied_at'])->format('j M Y')) ?><?php } ?>.
+            A count of requirements, so one member paying both dues counts twice.
+            It is the one number here that says whether the chasing is working.
         </dd>
         <dt>Unassigned</dt>
         <dd>Members with no current officer &mdash; the Assign Officers screen's first bucket.</dd>

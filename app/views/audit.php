@@ -48,7 +48,7 @@ $href = static function (array $overrides = []) use ($app, $audit): string {
     return $app->url('audit') . ($query === '' ? '' : '?' . $query);
 };
 
-$filtered = $audit['actor'] !== '' || $audit['action'] !== ''
+$filtered = $audit['member'] !== '' || $audit['actor'] !== '' || $audit['action'] !== ''
     || $audit['from'] !== '' || $audit['to'] !== '';
 ?>
 <h1>Audit Log</h1>
@@ -90,6 +90,10 @@ $filtered = $audit['actor'] !== '' || $audit['action'] !== ''
 
     <label for="to">To</label>
     <input type="date" id="to" name="to" value="<?= e((string) $audit['to']) ?>">
+
+    <label for="member">Member number</label>
+    <input type="text" id="member" name="member" value="<?= e((string) $audit['member']) ?>"
+           inputmode="numeric" autocomplete="off" placeholder="Everything that happened to one member">
 
     <button type="submit">Filter</button>
 </form>

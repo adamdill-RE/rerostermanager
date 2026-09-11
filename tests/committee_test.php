@@ -89,7 +89,7 @@ test('every sort key the URL may spell is a whitelist entry, and the default is 
     // FROM a list, because "it cannot reach SQL today" is not a rule, it is
     // a coincidence of this implementation.
     assertSame(
-        ['contact', 'unassigned', 'no_officer', 'members', 'name',
+        ['contact', 'unassigned', 'no_officer', 'members', 'improved', 'name',
             'hlsr_dues', 'committee_dues', 'indemnity', 'background_check'],
         CommitteePage::sortKeys()
     );

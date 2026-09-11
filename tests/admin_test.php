@@ -2058,7 +2058,7 @@ test('the Audit Log renders, escaped, with payloads behind a details', function 
     // Since Phase 10.4 the instant is in each row's <time datetime> in UTC,
     // spelled in Houston's time for the eye — one way to write a time.
     assertTrue(ad_says($html, 'the exact instant is in each row'), 'the screen says where the instant is');
-    assertTrue($audit['rows'] === [] || str_contains($html, '<time datetime="'), 'and it is there, machine-readable');
+    assertTrue($page['rows'] === [] || str_contains($html, '<time datetime="'), 'and it is there, machine-readable');
 
     // Read-only: nothing on the rendered SCREEN can write. The shell's own
     // Sign out (Phase 10.3) is the one POST on every signed-in page and is

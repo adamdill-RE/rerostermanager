@@ -104,8 +104,10 @@ $chip = static function (string $state, string $word): string {
                         <?= e(implode(', ', $checks['migrations_pending'])) ?>
                     </div>
                     <div class="hint">
-                        Migrations are never applied by a deploy. Run
-                        <code>php bin/migrate.php --status</code> first.
+                        Migrations are never applied by a deploy. Apply them from
+                        <code><?= e($app->url('setup')) ?></code> with <code>app.setup_key</code>
+                        configured &mdash; this host has no shell &mdash; or with
+                        <code>php bin/migrate.php</code> where there is one.
                     </div>
                 <?php } ?>
             </dd>
@@ -129,7 +131,7 @@ $chip = static function (string $state, string $word): string {
         <dt>Delivery</dt>
         <dd>
             <?php if ($checks['mail_can_deliver']) { ?>
-                <?= $chip('warn', 'Armed') ?> this installation can send email
+                <?= $chip('ok', 'Enabled') ?> this installation can send email
             <?php } else { ?>
                 <?= $chip('ok', 'Disabled') ?> nothing can leave this machine
             <?php } ?>
@@ -140,5 +142,11 @@ $chip = static function (string $state, string $word): string {
         <dd><?= $checks['mail_allowlist'] === 0 ? 'empty — every recipient permitted' : e((string) $checks['mail_allowlist']) . ' address(es) permitted' ?></dd>
     </dl>
 </div>
+
+<p>
+    <a href="<?= e($app->url()) ?>">Open the application</a>
+    &middot; <a href="<?= e($app->url('setup')) ?>">Setup</a>
+    <span class="why">(needs <code>app.setup_key</code>)</span>
+</p>
 
 <footer>Generated <?= e($checks['generated_at']) ?> UTC.</footer>

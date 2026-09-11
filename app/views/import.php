@@ -91,36 +91,41 @@ $mode = (string) ($_POST['mode'] ?? Importer::MODE_COMPLETE);
                 <input type="file" id="roster" name="roster" accept=".xls,.xlsx,.csv" required>
             </p>
 
-            <p>
-                <label>What this import is</label>
-            </p>
-            <?php foreach (Importer::MODES as $option) { ?>
-                <label class="choice">
-                    <input type="radio" name="mode" value="<?= e($option) ?>"
-                        <?= $option === $mode ? 'checked' : '' ?>>
-                    <span>
-                        <span class="what"><?= e(ucfirst($option)) ?></span>
-                        <span class="why"><?= e(Importer::modeDescription($option)) ?></span>
-                    </span>
-                </label>
-            <?php } ?>
-
-            <p>
-                <label for="team_id">Team &mdash; for a team import only</label><br>
-                <select id="team_id" name="team_id">
-                    <option value="">(not a team import)</option>
-                    <?php foreach ($teams as $team) { ?>
-                        <option value="<?= e((string) $team['id']) ?>">
-                            <?= e((string) $team['name']) ?> &middot; <?= e($number((int) $team['members'])) ?> members
-                        </option>
+            <?php /* Phase 10.5: the three modes are one question, so they are
+                     one fieldset with the question as its legend, and the team
+                     chooser sits inside the Team option it belongs to rather
+                     than below all three as though it applied to each. */ ?>
+            <fieldset class="modes">
+                <legend>What this import is</legend>
+                <?php foreach (Importer::MODES as $option) { ?>
+                    <label class="choice">
+                        <input type="radio" name="mode" value="<?= e($option) ?>"
+                            <?= $option === $mode ? 'checked' : '' ?>>
+                        <span>
+                            <span class="what"><?= e(ucfirst($option)) ?></span>
+                            <span class="why"><?= e(Importer::modeDescription($option)) ?></span>
+                        </span>
+                    </label>
+                    <?php if ($option === Importer::MODE_TEAM) { ?>
+                        <div class="under">
+                            <label for="team_id">Which team the file is about</label><br>
+                            <select id="team_id" name="team_id">
+                                <option value="">(choose a team)</option>
+                                <?php foreach ($teams as $team) { ?>
+                                    <option value="<?= e((string) $team['id']) ?>">
+                                        <?= e((string) $team['name']) ?> &middot; <?= e($number((int) $team['members'])) ?> members
+                                    </option>
+                                <?php } ?>
+                            </select>
+                            <p class="hint">
+                                A team import verifies every row's <code>Subcommittee 1</code> against the team
+                                you choose. A row belonging elsewhere is reported and skipped, never quietly
+                                moved into this team.
+                            </p>
+                        </div>
                     <?php } ?>
-                </select>
-            </p>
-            <p class="hint">
-                A team import verifies every row's <code>Subcommittee 1</code> against the team
-                you choose. A row belonging elsewhere is reported and skipped, never quietly
-                moved into this team.
-            </p>
+                <?php } ?>
+            </fieldset>
 
             <button type="submit">Read the file</button>
         </form>

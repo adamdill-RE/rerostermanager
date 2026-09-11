@@ -103,6 +103,29 @@ final class AuditPage
             $bind[':to'] = (new DateTimeImmutable($to))->modify('+1 day')->format('Y-m-d') . ' 00:00:00';
         }
 
+        // A member (Phase 10.5): "everything that happened to 1234567" could
+        // not be asked. The number resolves to the member row and, where one
+        // exists, their account, and the filter takes rows on either — a
+        // purge names the member, a grant names the account. Nothing
+        // matches a number that is nobody's, which is the honest answer.
+        $memberNumber = trim(is_string($input['member'] ?? null) ? $input['member'] : '');
+        if ($memberNumber !== '') {
+            $find = $this->pdo->prepare(
+                'SELECT m.id, u.id AS user_id FROM member m LEFT JOIN app_user u ON u.member_id = m.id'
+                . ' WHERE m.member_number = :number'
+            );
+            $find->execute([':number' => mb_substr($memberNumber, 0, 32)]);
+            $found = $find->fetch();
+            if (is_array($found)) {
+                $where[] = "((a.entity = 'member' AND a.entity_id = :member_entity)"
+                    . " OR (a.entity = 'app_user' AND a.entity_id = :user_entity))";
+                $bind[':member_entity'] = (string) (int) $found['id'];
+                $bind[':user_entity']   = $found['user_id'] === null ? '-' : (string) (int) $found['user_id'];
+            } else {
+                $where[] = '1 = 0';
+            }
+        }
+
         $predicate = implode(' AND ', $where);
 
         $count = $this->pdo->prepare("SELECT COUNT(*) FROM audit_log a WHERE {$predicate}");
@@ -178,6 +201,7 @@ final class AuditPage
             'action'  => $action,
             'from'    => $from ?? '',
             'to'      => $to ?? '',
+            'member'  => mb_substr($memberNumber, 0, 32),
 
             'actors'  => $this->actors(),
             'actions' => self::actionOptions($actions),
