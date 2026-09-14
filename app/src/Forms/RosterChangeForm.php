@@ -472,13 +472,16 @@ final class RosterChangeForm
      * is logged for the reason the export is — it is the same data leaving by
      * a different door.
      */
-    public function audit(User $actor, array $form, int $rows): void
+    public function audit(User $actor, array $form, int $rows, ?int $rcfId = null, bool $again = false): void
     {
+        // Since Phase 11 the form is KEPT (spec-v2 §12), so the row names the
+        // record it left behind, and a download of a kept form is its own
+        // verb. Rows written before then say entity_id 'rcf' and carry no id.
         (new AuditLog($this->pdo))->record(
             $actor,
-            Action::CreateForm,
-            'form',
+            $again ? Action::RegenerateForm : Action::CreateForm,
             'rcf',
+            $rcfId === null ? 'rcf' : (string) $rcfId,
             null,
             [
                 'form'          => 'roster_change_form',
@@ -486,6 +489,7 @@ final class RosterChangeForm
                 'sub_committee' => $form['subcommittee'],
                 'submitted_by'  => $form['submitter'],
                 'rows'          => $rows,
+                'rcf_id'        => $rcfId,
             ]
         );
     }

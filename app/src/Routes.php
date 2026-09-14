@@ -186,6 +186,19 @@ final class Routes
         // subdirectory.
         'form-rcf' => Capability::CreateForms->value,
 
+        // Track RCFs (spec-v2 §12), Phase 11 — every form produced here,
+        // kept, and where each line of it has got to. Guarded by
+        // create_forms, because whoever may make a form may see the ones
+        // THEY made; the second half of the list, everybody else's, is
+        // gated inside by Capability::ViewAllForms, and a form somebody may
+        // not see is the same 404 an out-of-scope member is.
+        //
+        // 'rcfs' is the list; 'rcf' is one form, and the only one of the
+        // two with a write: the tracking form posts to it and 303s back,
+        // and Download again is a POST for the reason form-rcf's is.
+        'rcfs'     => Capability::CreateForms->value,
+        'rcf'      => Capability::CreateForms->value,
+
         // Show Year (spec 5.1) — Admin. Create, set active, open/close, and
         // the rollover that carries eligible assignments into a new year.
         // 'show-year', hyphenated like 'log-contact'.

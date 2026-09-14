@@ -34,15 +34,31 @@ declare(strict_types=1);
 </div>
 
 <?php if (($last ?? null) !== null) { ?>
-    <?php /* The acknowledgement a streamed download cannot give (Phase 10.4). */ ?>
+    <?php /* The acknowledgement a streamed download cannot give (Phase 10.4)
+             — and since Phase 11 the form is kept, so the sentence has
+             somewhere to go: the form's own page, where its tracking is. */ ?>
     <p class="hint">
         <span class="chip chip-ok">Your last form</span>
         Roster Change Form for <?= e((string) ($last['after']['sub_committee'] ?? '')) ?>,
         <?= e((string) (int) ($last['after']['rows'] ?? 0)) ?>
         <?= (int) ($last['after']['rows'] ?? 0) === 1 ? 'person' : 'people' ?>,
         <?= Rerm\View::time($app, $last['at']) ?>. It was logged with your name.
+        <?php if ((int) ($last['after']['rcf_id'] ?? 0) > 0) { ?>
+            <a href="<?= e($app->url('rcf?id=' . (int) $last['after']['rcf_id'])) ?>">Track it</a>
+            &mdash; mark it sent, add the RCF number, or download it again.
+        <?php } ?>
     </p>
 <?php } ?>
+
+<div class="card">
+    <h2><a href="<?= e($app->url('rcfs')) ?>">Track RCFs</a></h2>
+    <p>
+        Every Roster Change Form made here is kept. See where each line has got
+        to &mdash; sent to the Division Chairman, numbered, sent to Rosters, and
+        whether the roster now shows it &mdash; find any member on any form, and
+        download a form again.
+    </p>
+</div>
 
 <div class="card">
     <span class="chip chip-warn">A filled-in form is personal data</span>

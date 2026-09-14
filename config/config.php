@@ -36,7 +36,7 @@ return [
         // Phases 8.5 to 8.7 already used. Bump it in the commit that closes
         // the phase, and nowhere else: a version that moves on every commit
         // tells a user nothing they can repeat back.
-        'version' => '1.10.5',
+        'version' => '1.11.0',
 
         // The app is served from https://www.reshiftmanager.com/rerm/, never
         // the domain root — that is the landing page in site/index.html, and

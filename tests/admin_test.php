@@ -166,6 +166,10 @@ test('nothing in the admin screens can delete a member, a contact or a record', 
         // staged parse it was copied from has been swept, so it belongs on
         // this list for exactly the reason import_batch does.
         'import_change',
+        // Phase 11. Every Roster Change Form produced, and where each line
+        // has got to. A kept form is the answer to "was one ever submitted
+        // for this member", and a deletable answer is no answer.
+        'rcf', 'rcf_row',
     ];
 
     foreach ([
@@ -194,6 +198,11 @@ test('nothing in the admin screens can delete a member, a contact or a record', 
         // Phase 10. Read-only by design — it is the record of what the
         // imports did — so it is read here to keep it that way.
         'Import/ImportHistory.php',
+        // Phase 11 (spec-v2 §12). The two paths that write rcf and rcf_row —
+        // one keeps a form, the other tracks its lines — and neither may
+        // ever delete one, or touch anything the roster owns.
+        'Forms/RcfStore.php',
+        'Forms/RcfTracking.php',
     ] as $file) {
         $source = (string) file_get_contents(__DIR__ . '/../app/src/' . $file);
         assertTrue($source !== '', $file . ' is readable');
@@ -293,6 +302,12 @@ test('the audit vocabulary is a type, and every writer uses it', function (): vo
         // verb for every form — what was produced is in the row's details, so
         // a seventh form does not need a seventh verb.
         'create_form',
+        // spec-v2 §12. A kept form downloaded AGAIN is the third read, its
+        // own verb so "how many went out" and "how many were re-sent" are
+        // different questions; and a form's tracking changing — an RCF
+        // number, a line marked sent — is the record of who said it went
+        // where, with before and after.
+        'regenerate_form', 'track_form',
     ];
 
     $actual = array_map(static fn (Action $a): string => $a->value, Action::cases());

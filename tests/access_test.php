@@ -77,6 +77,15 @@ test('the capability matrix matches spec 4.5, transcribed independently', functi
         'create_forms'             => ['officer', Scope::Scoped],
         'view_committee_dashboard' => ['senior_officer', Scope::Scoped],
         'designate_allowed_user'   => ['senior_officer', Scope::Scoped],
+        // spec-v2 §12.3. Executive Officer / Everywhere — the first row with
+        // that shape. Every Roster Change Form anybody produced, with who
+        // made it and where each line has got to: committee-wide by nature,
+        // because the question is asked about a member who fell between a
+        // Vice Chairman, a Division Chairman and Rodeo Houston, and a scope
+        // would hide exactly the hand-off that failed. Not what lets an
+        // officer see their OWN forms — that is create_forms. Transcribed
+        // from the spec-v2 §12.3 table.
+        'view_all_forms'           => ['executive_officer', Scope::Everywhere],
         'import_roster'            => ['admin', Scope::Everywhere],
         // Spec 6.7. Admin / Everywhere like the roster import, and a SEPARATE
         // row rather than a second use of import_roster: this one writes into

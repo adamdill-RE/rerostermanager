@@ -46,6 +46,8 @@ Every one of these is load-bearing on this host — see `docs/hosting.md`.
 | `007_rename_absent_to_dropped.sql` | "Absent" becomes "dropped", column, ENUM value and counter alike. |
 | `008_user_team_scope.sql` | `app_user_team` — a scope that is a SET of teams. |
 | `009_contact_history_import.sql` | The staging tables for a contact history load (§6.7), and `contact_log.contact_import_batch_id`. |
+| `010_import_history.sql` | `import_change` — what each import changed, field by field, member by member (spec-v2 §3). |
+| `011_rcf_tracking.sql` | `rcf` and `rcf_row` — every Roster Change Form produced, as printed, and where each line of it has got to (spec-v2 §12). |
 
 `schema_migration` is created by the migrator itself rather than by a
 migration: something has to exist before the first migration can be recorded,

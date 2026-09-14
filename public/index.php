@@ -1075,6 +1075,8 @@ function member_from(): array
         'dropped'   => ['dropped', 'Dropped Members'],
         'assign'    => ['assign', 'Assign Officers'],
         'designate' => ['designate', 'Designate Users'],
+        // A line of a kept form (Phase 11): back is the form's own id.
+        'rcf'       => ['rcf', 'the Roster Change Form'],
     ];
 }
 
@@ -1118,6 +1120,7 @@ function member_back(string $from, string $back): array
     $query = match ($route) {
         'dashboard' => dashboard_return_query($state),
         'roster'    => roster_return_query($state),
+        'rcf'       => return_query($state, ['id' => ['int' => 0]]),
         default     => '',
     };
 
@@ -1915,8 +1918,41 @@ function rcf_act(Rerm\App $app, Rerm\Auth\User $user): void
         exit;
     }
 
-    $rcf->audit($user, $form, (int) $built['rows']);
+    // KEPT before it is sent (Phase 11, spec-v2 §12): the form and its lines
+    // land in rcf / rcf_row so it can be downloaded again and tracked. A
+    // form that cannot be kept is not sent — a file that left with no
+    // record of it is exactly what this phase exists to stop.
+    $year = active_show_year($app);
+    if ($year === null) {
+        $rcf->discard($built['sheet'], $built['path']);
+        rcf_screen($app, $user, $_POST, [['danger',
+            'No show year is active, so the form cannot be kept and was not downloaded. '
+            . 'An Admin makes a show year active on Show Year.']]);
+        exit;
+    }
 
+    try {
+        $rcfId = Rerm\Forms\RcfStore::fromApp($app)->store($user, $year['id'], $form);
+    } catch (Throwable $e) {
+        $rcf->discard($built['sheet'], $built['path']);
+        rcf_screen($app, $user, $_POST, [['danger',
+            'The form was built but could not be kept, so it was not downloaded: ' . $e->getMessage()]]);
+        exit;
+    }
+
+    $rcf->audit($user, $form, (int) $built['rows'], $rcfId);
+
+    rcf_send($rcf, $built);
+}
+
+/**
+ * Sends a built form and unlinks it — always, whether or not the client got
+ * the whole body. Shared by the first download and by Download again.
+ *
+ * @param array{path: string, filename: string, rows: int, sheet: Rerm\Forms\FormSheet} $built
+ */
+function rcf_send(Rerm\Forms\RosterChangeForm $rcf, array $built): never
+{
     // Nothing about a download is cacheable, and no proxy should keep a copy.
     header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     header('Content-Disposition: attachment; filename="' . $built['filename'] . '"');
@@ -1929,6 +1965,114 @@ function rcf_act(Rerm\App $app, Rerm\Auth\User $user): void
     // Gone, whether or not the client got the whole body.
     $rcf->discard($built['sheet'], $built['path']);
     exit;
+}
+
+// ---------------------------------------------------------------------------
+// Track RCFs (spec-v2 §12), Phase 11 — every form made here, kept, and
+// where each line of it has got to. Guarded by Capability::CreateForms;
+// everybody else's forms are gated inside by Capability::ViewAllForms, and a
+// form the caller may not see is the same 404 an out-of-scope member is.
+// ---------------------------------------------------------------------------
+
+/** The list: a search box, the caller's own forms, and everyone else's. */
+function rcfs_screen(Rerm\App $app, Rerm\Auth\User $user): void
+{
+    $tracking = Rerm\Forms\RcfTracking::fromApp($app);
+
+    render($app, 'rcfs', 'Track RCFs', [
+        // A data screen (spec 8.2): the wide container above 720px.
+        'wide'     => true,
+        'user'     => $user,
+        'notices'  => flash_take(),
+        'tracking' => [
+            'mine'   => $tracking->mine($user),
+            'others' => $tracking->others($user, max(1, (int) ($_GET['page'] ?? 1))),
+            'search' => $tracking->search($user, is_string($_GET['member'] ?? null) ? $_GET['member'] : ''),
+        ],
+    ]);
+}
+
+/** One kept form, or the 404 a form the caller may not see gets. */
+function rcf_one_screen(Rerm\App $app, Rerm\Auth\User $user): void
+{
+    $rcf = Rerm\Forms\RcfTracking::fromApp($app)->one($user, (int) ($_GET['id'] ?? 0));
+    if ($rcf === null) {
+        render($app, 'not-found', 'Not found', [], 404);
+
+        return;
+    }
+
+    render($app, 'rcf', 'Roster Change Form — ' . $rcf['form']['subcommittee'], [
+        'wide'    => true,
+        'user'    => $user,
+        'notices' => flash_take(),
+        'rcf'     => $rcf,
+    ]);
+}
+
+/**
+ * The form's writes: the tracking save, the two "today" buttons, and
+ * Download again. Everything but the download 303s back to the form with a
+ * flash (spec-v2 §9.11); the download streams and exits, like the first
+ * one, and is logged like the first one — it is the same personal data
+ * leaving by the same door.
+ */
+function rcf_one_act(Rerm\App $app, Rerm\Auth\User $user): never
+{
+    $id   = (int) ($_POST['id'] ?? 0);
+    $back = 'rcf?id=' . $id;
+
+    if (!Rerm\Csrf::check()) {
+        flash_set(...stale_form_notice());
+        redirect($app, $back);
+    }
+
+    $tracking = Rerm\Forms\RcfTracking::fromApp($app);
+    $action   = (string) ($_POST['action'] ?? '');
+
+    if ($action === 'download') {
+        if ($tracking->one($user, $id) === null) {
+            render($app, 'not-found', 'Not found', [], 404);
+            exit;
+        }
+
+        $store = Rerm\Forms\RcfStore::fromApp($app);
+        $form  = $store->form($id);
+        $rcf   = Rerm\Forms\RosterChangeForm::fromApp($app);
+
+        try {
+            $built = $rcf->build($form ?? []);
+        } catch (Throwable $e) {
+            flash_set('danger', 'The form could not be rebuilt: ' . $e->getMessage());
+            redirect($app, $back);
+        }
+
+        $rcf->audit($user, $form, (int) $built['rows'], $id, true);
+        $store->regenerated($id);
+
+        rcf_send($rcf, $built);
+    }
+
+    if ($action === 'track') {
+        $changed = $tracking->track($user, $id, $_POST);
+    } elseif (str_ends_with($action, '_today')) {
+        $changed = $tracking->markToday($user, $id, substr($action, 0, -6));
+    } else {
+        $changed = 0;
+    }
+
+    if ($changed === null) {
+        render($app, 'not-found', 'Not found', [], 404);
+        exit;
+    }
+
+    if ($changed === 0) {
+        flash_set('warn', 'Nothing changed — every line already said that.');
+    } else {
+        flash_set('ok', 'Saved. ' . $changed . ($changed === 1 ? ' line' : ' lines') . ' updated, and logged with your name.');
+    }
+
+    redirect($app, $back);
 }
 
 // ---------------------------------------------------------------------------
@@ -2888,6 +3032,21 @@ switch ($path) {
         }
 
         rcf_screen($app, $user, $_GET);
+        break;
+
+    case 'rcfs':
+        // Read-only: a search box and links. No POST, no CSRF.
+        rcfs_screen($app, $user);
+        break;
+
+    case 'rcf':
+        // Both verbs on one route. A POST never falls through: rcf_one_act()
+        // sends a file and exits, or 303s back to the form with a flash.
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            rcf_one_act($app, $user);
+        }
+
+        rcf_one_screen($app, $user);
         break;
 
     case 'show-year':

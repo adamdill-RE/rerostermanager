@@ -20,14 +20,18 @@ file copy.
 
 ### For the next session
 
-`main` is **1.10.5**: Phase 10.5 merged as
-[#25](https://github.com/adamdill-RE/rerostermanager/pull/25), which closes
-the UX review that began after 10.2 — all thirty-eight of its items (R1 to
-R38) are on `main`, across Phases 10.3, 10.4 and 10.5. Nothing from the
-review is left queued. The server carries whatever was last deployed with
-cPanel's **Deploy HEAD Commit**; the footer of every screen and `/status`
-say which build that is, and 10.5 needs **no migration** — `php bin/migrate.php
---status` should report nothing pending after the deploy.
+This branch is **1.11.0**: Phase 11, Track RCFs — the first feature to come
+from a real user rather than a review (`docs/spec-v2.md` §12 quotes the
+feedback). Before it, `main` was 1.10.5: Phase 10.5 merged as
+[#25](https://github.com/adamdill-RE/rerostermanager/pull/25), closing the UX
+review that began after 10.2 — all thirty-eight of its items are on `main`.
+The server carries whatever was last deployed with cPanel's **Deploy HEAD
+Commit**; the footer of every screen and `/status` say which build that is.
+**Phase 11 needs a migration** — `011_rcf_tracking.sql` — so after the deploy
+`php bin/migrate.php --status` reports one pending until `/setup` (or the
+migrator) has run it. Until it runs, downloading a Roster Change Form
+refuses with a sentence rather than a blank page, because the form cannot be
+kept.
 
 **How each phase was worked, and what to keep doing:** one branch per phase
 restarted from `origin/main`; `php tests/run.php --strict` against a
@@ -47,10 +51,13 @@ build on anything else.
 **What is next is a decision, not a backlog.** The candidates, all
 documented and none started:
 
-- **`docs/spec-v2.md` §11**, the open items. The nearest to ready are V2-3
-  (which form follows the Roster Change Form — `/forms` is shaped for it),
-  V2-7 and V2-8 (the team default and the Result column on View My Roster,
-  both deliberately withheld so far), and V2-6 (whether `import_change` is
+- **`docs/spec-v2.md` §11**, the open items. The nearest to ready are
+  V2-11 (the Division Chairman's numbered form, generated from tracked
+  lines — the second half of the feedback that produced Phase 11, and the
+  tracking it needs now exists), V2-10 (a Vice Chairman seeing their
+  Officers' forms), V2-3 (which form follows the Roster Change Form —
+  `/forms` is shaped for it), V2-7 and V2-8 (the team default and the
+  Result column on View My Roster), and V2-6 (whether `import_change` is
   retained forever).
 - **OI-12, multi-year contact history reporting.** The member card already
   shows every show year's contacts for one person (§9.1); what remains is the
@@ -62,6 +69,28 @@ Whichever it is, the constraints that shaped the last three phases still
 hold: no script, no framework, no build step, one template with two layouts
 at 720px, every figure landing on exactly the people it counted, and nothing
 that ever deletes a member or a contact.
+
+**Phase 11 — Track RCFs.** The first feature to come from a real user: a
+member rings to say nobody has asked them to pay their dues, and "was an RCF
+ever submitted for them, and where did it stop" meant sorting through months
+of email. Every Roster Change Form produced is now **kept as it was printed**
+(`rcf`, `rcf_row`, migration 011, `Rerm\Forms\RcfStore`) and can be
+**downloaded again** byte for byte however the roster has moved since. **Track
+RCFs** at `/rcfs` opens with a search for a member across every form, then
+the caller's own forms and — for an Executive Officer, through the new
+`view_all_forms` capability — everyone else's with who made each, every form
+a row of *n of m* fractions: numbered, to the Division Chairman, to Rosters,
+in the roster. One form at `/rcf?id=` is its lines with three controls each,
+**per line** because the Division Chairman bundles lines from several forms
+into one numbered form of their own: the RCF number, the day it went to the
+Division Chairman, the day it went to Rosters — with an **every-line row that
+wins over the lines** and two **today** buttons that date only the lines not
+yet dated, so the whole-form case is one tap. **"In the roster" is derived,
+never typed**: read out of `import_change` at read time, the first import
+after the form that says what the line asked for. The member card lists the
+forms a person is on; Create Forms' "your last form" now ends in Track it;
+every tracking change is one audit row with before and after; nothing
+deletes a form. Design, with the feedback quoted: `docs/spec-v2.md` §12.
 
 **Phase 10.5 — the rest of the review.** The seven "later" items from the
 UX review of 10.2, closing it: none a script, a framework, a schema change or
