@@ -919,6 +919,18 @@ select:focus-visible { outline: 3px solid var(--rodeo-orange); outline-offset: 1
     .card form.today button { width: 100%; }
 }
 
+/* Look Up Members (Phase 12, spec-v2 §13): a cell holding a date, a link
+   and a list is ONE block, so the phone card's label/value flex has one
+   child to place and a chip is never stretched to the row's height; the
+   tracking facts under a form line are their own line at either width. */
+table.lookup td .in { min-width: 0; }
+table.lookup li .why { display: block; }
+@media (max-width: 719px) {
+    table.lookup td .in { text-align: right; }
+    table.lookup td .in ul { display: inline-block; text-align: left; }
+    table.lookup td .in details { text-align: left; }
+}
+
 textarea {
     width: 100%;
     min-height: 56px;

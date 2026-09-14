@@ -245,7 +245,10 @@ different powers over different documents, and either should be grantable
 without the other.
 
 One capability is **Executive Officer / Everywhere, and it is the only one
-with that shape**: `view_all_forms` (spec-v2 §12.3). `create_forms` also
+with that shape**: `view_all_forms` (spec-v2 §12.3). Look Up Members
+(Phase 12, spec-v2 §13) is `look_up_members`, Admin / Everywhere and its
+own row: it reads what the imports recorded and what the forms recorded,
+committee-wide, and neither power implies the other. `create_forms` also
 means "may see the forms they made"; this is the second half of `/rcfs`,
 everybody else's, with who made each. Everywhere because the question is
 committee-wide by nature — a member who fell between a Vice Chairman, a
@@ -659,6 +662,7 @@ Each phase ends shippable. `docs/spec-v1.md` carries the detail through 8.7,
 | **10.4 · The member card, and the rest** | `/member`: one person, narrow column, the log form open, every year's history; one answer for everything open; text and email templates; dropped members take a contact; share complete and its sort on the roll-up; the Assign chooser sorted by work; roster team tick boxes; a grouped menu; one `<time>` helper; print; a web manifest; absent-not-disabled; post-redirect-get on five screens; the last download named; the accessibility pass | One person's whole record is one narrow page every list can reach, and the way back keeps the list |
 | **10.5 · The rest of the review** | `SinceImport`: what the last import did for the people on a screen, in the banner, under every card and as a Newly met column on the roll-up; the import forms tidied; Manage Teams grouped by area with a find box; Import History paged; the Audit Log asked about one member; the RCF's Enter key downloads and its codes are a fold; the Status page's words | An officer sees whether the chasing worked, on exactly the people they chase |
 | **11 · Track RCFs** | Every Roster Change Form produced is kept and can be downloaded again; `/rcfs` and `/rcf`: the caller's own forms, everyone else's for an Executive Officer, a member search across every form; per line, the Division Chairman's RCF number and the day it went to the Division Chairman and to Rosters, with an every-line row and two today buttons; "in the roster" derived from `import_change`; the member card lists the forms about a person; `view_all_forms` | "Was an RCF ever submitted for this member, and where did it stop" is answered on one screen instead of in a pile of emails |
+| **12 · Look Up Members** | `/lookup`, Admin, `look_up_members`: paste a list of member numbers, read the way a person meant it (spreadsheet columns, Excel's `1234567.0`, thousands separators, dropped leading zeros, stray words — every one reported, none dropped), answered in the order given with placement, on the roster or not, first seen, what the last import changed, and every RCF that named them as a fold | Forty member numbers from an email are forty rows on one screen, and nothing typed was silently lost |
 | **10.x · v2** | Recruiting and retention automation; multi-year contact history (OI-12) | see `docs/spec-v2.md` |
 
 Phases 4 and 5 are the product. Everything before them is plumbing and

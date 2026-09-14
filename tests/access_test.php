@@ -98,6 +98,11 @@ test('the capability matrix matches spec 4.5, transcribed independently', functi
         'designate_admin'          => ['admin', Scope::Everywhere],
         'manage_teams'             => ['admin', Scope::Everywhere],
         'view_audit_log'           => ['admin', Scope::Everywhere],
+        // spec-v2 §13.3. Admin / Everywhere, and its own row rather than a
+        // second use of import_roster: it reads what the imports recorded
+        // AND what the forms recorded, committee-wide, and neither power
+        // implies the other. Transcribed from the spec-v2 §13.3 table.
+        'look_up_members'          => ['admin', Scope::Everywhere],
     ];
 
     assertSame(count($spec), count(Capability::cases()), 'spec 4.5 has exactly this many rows');

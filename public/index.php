@@ -1077,6 +1077,9 @@ function member_from(): array
         'designate' => ['designate', 'Designate Users'],
         // A line of a kept form (Phase 11): back is the form's own id.
         'rcf'       => ['rcf', 'the Roster Change Form'],
+        // A row of a looked-up list (Phase 12): back is the numbers, so the
+        // list is drawn again by the GET the route also answers.
+        'lookup'    => ['lookup', 'Look Up Members'],
     ];
 }
 
@@ -1121,6 +1124,7 @@ function member_back(string $from, string $back): array
         'dashboard' => dashboard_return_query($state),
         'roster'    => roster_return_query($state),
         'rcf'       => return_query($state, ['id' => ['int' => 0]]),
+        'lookup'    => return_query($state, ['numbers' => ['text' => 400]]),
         default     => '',
     };
 
@@ -2283,6 +2287,83 @@ function audit_screen(Rerm\App $app, Rerm\Auth\User $user): void
 }
 
 // ---------------------------------------------------------------------------
+// Look Up Members (Phase 12, spec-v2 §13) — Admin, through
+// Capability::LookUpMembers. A pasted list of member numbers, answered with
+// where each one stands: placement, on the roster or not, first seen, what
+// the last import changed, every Roster Change Form that named them.
+//
+// READ-ONLY in every sense: nothing here writes, and the POST exists only
+// because a column of three hundred numbers is longer than a query string
+// the server will carry. It re-renders rather than redirecting, because
+// there is no state change to get past and a 303 would have to carry the
+// whole list to draw the same page. The same list arriving as a GET with
+// `numbers` is looked up too — that is how a short list is a link, and how
+// the way back from a member card keeps the list.
+// ---------------------------------------------------------------------------
+
+/**
+ * Renders Look Up Members: the box, and the answer when there is one.
+ *
+ * @param array<int, array{0: string, 1: string}> $notices
+ */
+function lookup_screen(Rerm\App $app, Rerm\Auth\User $user, string $typed = '', ?array $result = null, array $notices = []): void
+{
+    // The same guard Import History carries, for the same reason: this
+    // reads import_change (010) and rcf_row (011), and a server running
+    // newer code against an older database would render a blank page.
+    $blocker = import_schema_blocker($app);
+    if ($blocker !== null) {
+        render($app, 'import', 'Look Up Members', [
+            'wide'    => false,
+            'user'    => $user,
+            'blocked' => $blocker,
+            'notices' => [],
+            'preview' => null,
+            'staged'  => [],
+            'applied' => [],
+            'failedBatches' => [],
+            'teams'   => [],
+        ]);
+
+        return;
+    }
+
+    render($app, 'lookup', 'Look Up Members', [
+        // A data screen (spec 8.2): the wide container above 720px.
+        'wide'    => true,
+        'user'    => $user,
+        'notices' => $notices,
+        'typed'   => $typed,
+        'result'  => $result,
+    ]);
+}
+
+/**
+ * The lookup itself, for either verb. A POST is CSRF-checked like every
+ * other POST — reaching a route proves nothing — and a stale token draws
+ * the box again with the list still in it, because pasting three hundred
+ * numbers twice is the work this screen exists to remove.
+ */
+function lookup_act(Rerm\App $app, Rerm\Auth\User $user): void
+{
+    $post  = $_SERVER['REQUEST_METHOD'] === 'POST';
+    $typed = is_string(($post ? $_POST : $_GET)['numbers'] ?? null) ? ($post ? $_POST : $_GET)['numbers'] : '';
+
+    if ($post && !Rerm\Csrf::check()) {
+        lookup_screen($app, $user, $typed, null, [stale_form_notice()]);
+        exit;
+    }
+
+    if (!$post && trim($typed) === '') {
+        lookup_screen($app, $user);
+        exit;
+    }
+
+    lookup_screen($app, $user, $typed, Rerm\Admin\LookupPage::fromApp($app)->lookUp($user, $typed));
+    exit;
+}
+
+// ---------------------------------------------------------------------------
 // Manage Teams (spec 7.3) — Admin, through Capability::ManageTeams. team.area
 // only: it is display grouping, and a test holds Access, ScopedQuery,
 // EligibleOfficers and AssignOfficers clean of the column, comments included.
@@ -3062,6 +3143,14 @@ switch ($path) {
     case 'audit':
         audit_screen($app, $user);
         break;
+
+    case 'lookup':
+        // Both verbs on one route, and neither writes: lookup_act() renders
+        // the box for a bare GET, and the answer for a POST or a GET with
+        // `numbers`, then exits.
+        lookup_act($app, $user);
+
+        // Unreachable: lookup_act() exits.
 
     case 'teams':
         // Both verbs on one route. A POST never falls through: teams_act()

@@ -216,6 +216,57 @@ final class RcfTracking
         return $this->lines($read->fetchAll(), $user);
     }
 
+    /**
+     * Every line naming any of several members, for Look Up Members (Phase
+     * 12, spec-v2 §13): the same match forMember() makes — the id the
+     * number resolved to, or the number itself for a line kept before the
+     * member had a row — for a whole pasted list in one query, newest form
+     * first. The caller groups them by member; each line carries both keys.
+     *
+     * @param array<int, int>    $memberIds
+     * @param array<int, string> $memberNumbers
+     * @return array<int, array<string, mixed>>
+     */
+    public function forMembers(User $user, array $memberIds, array $memberNumbers): array
+    {
+        $memberIds     = array_values(array_unique(array_map('intval', $memberIds)));
+        $memberNumbers = array_values(array_unique(array_filter(
+            array_map('strval', $memberNumbers),
+            static fn (string $n): bool => $n !== ''
+        )));
+        if ($memberIds === [] && $memberNumbers === []) {
+            return [];
+        }
+
+        $clauses = [];
+        $bind    = [];
+        if ($memberIds !== []) {
+            $places = [];
+            foreach ($memberIds as $i => $id) {
+                $places[]       = ":i{$i}";
+                $bind[":i{$i}"] = $id;
+            }
+            $clauses[] = 'r.member_id IN (' . implode(', ', $places) . ')';
+        }
+        if ($memberNumbers !== []) {
+            $places = [];
+            foreach ($memberNumbers as $i => $number) {
+                $places[]       = ":n{$i}";
+                $bind[":n{$i}"] = $number;
+            }
+            $clauses[] = 'r.member_number IN (' . implode(', ', $places) . ')';
+        }
+
+        $read = $this->pdo->prepare(
+            $this->rowSelect()
+            . ' WHERE ' . implode(' OR ', $clauses)
+            . ' ORDER BY f.id DESC, r.position'
+        );
+        $read->execute($bind);
+
+        return $this->lines($read->fetchAll(), $user);
+    }
+
     // -----------------------------------------------------------------------
     // One form
     // -----------------------------------------------------------------------
