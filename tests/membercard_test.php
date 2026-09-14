@@ -260,7 +260,7 @@ test('the menu is three groups by job, each screen with one line on what it is f
     assertSame(3, substr_count($admin, '<h2 class="menu-group">') - 1, 'three job groups, plus Account');
 
     $source = mc_source('app/views/menu.php');
-    assertSame(16, preg_match_all("/'route' => '[a-z-]+',.*'group' => '(chase|lead|administer)', 'why' => '/", $source), 'every tile names its group and its why, on one line');
+    assertSame(17, preg_match_all("/'route' => '[a-z-]+',.*'group' => '(chase|lead|administer)', 'why' => '/", $source), 'every tile names its group and its why, on one line');
 });
 
 test('the accessibility pass: a skip link, aria-sort, aria-current on every toggle, scope on every header, no disabled button', function (): void {

@@ -213,6 +213,17 @@ final class Routes
         // and AssignOfficers clean of the column, comments included.
         'teams'    => Capability::ManageTeams->value,
 
+        // Look Up Members (Phase 12, spec-v2 §13) — Admin, through its own
+        // capability. A pasted list of member numbers, and where each one
+        // stands today: placement, first seen, last changed, every form.
+        // Both verbs on one route: the list is POSTed, because a column of
+        // three hundred numbers is longer than a query string the server
+        // will carry; and a GET with `numbers` looks them up too, so a
+        // short list is linkable and the way back from a member card keeps
+        // the list. Nothing is written by either, so the POST re-renders
+        // rather than redirecting — there is no state change to get past.
+        'lookup'   => Capability::LookUpMembers->value,
+
         // Operational, key-guarded, unchanged from Phase 0.
         'status'   => self::STATUS_KEY,
         'setup'    => self::SETUP_KEY,

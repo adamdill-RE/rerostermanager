@@ -1376,3 +1376,150 @@ and the numbering that stops them — is V2-11, and this phase is its
 prerequisite rather than its answer: the numbered form is produced *from*
 tracked lines, and there were no tracked lines. The per-line serial is the
 half of it that lands now.
+
+---
+
+## 13. Look Up Members
+
+Phase 12. The second feature to come from a real user, and the first for the
+Admin's desk rather than an officer's phone: **paste a list of member numbers
+and see where each one stands**, on one screen, in the order pasted.
+
+### 13.1 The question
+
+Lists of member numbers arrive from outside this application all the time.
+Rodeo Houston's membership office writes back about a dozen people; a
+Division Chairman forwards an email naming eight; a spreadsheet has a
+column of forty. For every one of them the Admin wants the same things —
+who are they and where are they filed, are they on the roster or not, when
+did we first see them, what did the last import change about them, and was
+a Roster Change Form ever made that named them, by whom and when — and until
+now that meant one member at a time through Import History, the member card
+and Track RCFs. Forty people was forty round trips.
+
+Everything the screen shows already existed: the member row (spec-v1 §5.2),
+`import_change` (§3) and `rcf_row` (§12). This phase reads them together,
+for a list, and adds no table, no column and no write.
+
+### 13.2 Reading the list
+
+The box asks for "comma-separated", and what arrives is whatever the last
+place the numbers lived produced. The reading is therefore **generous and
+the report exact** — `Rerm\Admin\MemberNumbers`, pure, with every case
+transcribed in `tests/lookup_test.php`:
+
+* **Separators.** Commas, spaces, new lines, tabs, semicolons, pipes and
+  slashes all separate, so a column copied out of a spreadsheet, a
+  sentence from an email and a list typed with the spaces in the wrong
+  places are all the same list. Quotes, brackets, a `#` or `№` before a
+  number and the punctuation a sentence leaves behind are read past.
+* **What Excel does.** A General cell holding a member number as a float
+  arrives as `1234567.0`, or as `1.234567E+6` when the column is narrow, or
+  as `1,234,567` when it was formatted with separators. Each is read as the
+  digits it meant and **reported as read** (`1234567.0 → 1234567`), so
+  nothing is reshaped silently. A fraction that is not zero is left as it
+  came: `1234567.5` is nobody's number.
+* **Leading zeros are kept.** The natural key is a string (CLAUDE.md), and
+  `0123456` is not `123456`. But a person reading a number off a screen
+  that dropped the zeros meant the member who has them, so a digits-only
+  number the roster does not hold is matched against the roster's numbers
+  with *their* leading zeros removed — **exactly one match** is taken and
+  the row says `typed 43101`; two would be a guess, and neither is taken.
+* **Words are set aside and named.** A pasted column heading, an "and", a
+  note: anything with no digit in it is listed under Ignored, never
+  silently dropped. Repeats are counted and the number is listed once.
+  Case does not make two numbers of one.
+* **A run of digits is never split.** Fourteen digits is two numbers run
+  together to a person and one unreadable number to this application,
+  which does not know where the split goes. It is looked up as typed,
+  found nowhere, and printed with the hint that says so. Every number the
+  roster does not hold is listed with what its shape suggests — too short,
+  not all digits, run together — or with nothing, when nothing does.
+* **Three hundred at a time.** The Roster Change Form's picker draws the
+  same line (§2.4) and for the same reason: past it, the page stops being
+  a thing somebody reads and becomes an export, and the export is a
+  different screen with its own audit row. Numbers past the cap are listed
+  as not looked up, ready to paste on their own; a whole spreadsheet pasted
+  by mistake is cut at 64KB and the screen says so.
+
+### 13.3 The capability
+
+| Capability | Minimum level | Scope |
+| --- | --- | --- |
+| `look_up_members` | Admin | Everywhere |
+
+Its own row rather than a second use of `import_roster`, for the reason
+`import_contact_history` is: it reads what the imports recorded (§3) *and*
+what the forms recorded (§12), across the whole committee, and neither of
+those powers implies the other. Admin because the request said so, and
+because the screen is unscoped by nature — the member being asked about is
+the one whose team is not known, which is exactly what a scope would hide
+(the same decision Import History made, §3.3). An Admin holds
+`view_all_forms`, so every form line on the screen is one they may open.
+
+### 13.4 The screen
+
+`/lookup`, the box and then the answer. The decisions:
+
+**The rows are in the order given.** The list was pasted from somewhere,
+and a table in the same order reads across against it. Sorting would be a
+second order the person did not choose; the number is the first column so
+the cross-reference is one glance.
+
+**The report comes before the table**, in a card, so the table can be
+trusted: how many numbers were read, how many members found, how many not
+on the roster, how many repeats set aside, how many words ignored — each
+then listed by name. What was typed stays in the box, so a wrong number is
+fixed in place rather than pasted again.
+
+**One row is nine things**: number, name (a link to the member card), title
+as imported, team, division, **Roster** (On the roster / Dropped, by which
+import / Purged, when — three words, purged winning over dropped, because a
+purge is deliberate and a drop is undone by the next file), **First seen**
+(`first_imported_at`, with the `created` import as a link when the record
+reaches back that far), **Last change** and **RCFs**.
+
+**Last change is the last *import*, not the last cell.** One file can move a
+member's team and title at once, so the column shows every field the most
+recent import that touched them changed — labelled as Import History
+labels them, before → after — with that import as a link to the member's
+whole history. Three other answers are three different sentences, because
+they are three different facts: *None since they appeared* when the only
+row is their `created`; *None recorded* when there are no rows at all,
+which means they predate the record (every member created since §3 has a
+`created` row); and *Dropped from the roster* or *Back on the roster* when
+that is what the last import did.
+
+**RCFs are a fold on the row.** "Was a form ever made for them" is answered
+by the count in the summary — *1 form*, *None* — and "by whom, and when"
+by opening it: each line with the day the form was generated (a link to the
+form), who generated it, what the line asked for, the sub-committee, the
+RCF number and the two tracked dates, and whether the roster shows it —
+the same facts the member card lists (§12.4), read through the same
+`RcfTracking` class in one query for the whole page.
+
+**The list is POSTed, and a GET looks it up too.** Three hundred numbers is
+longer than a query string the server will carry, so the box posts; the
+POST is CSRF-checked like every other, and re-renders rather than
+redirecting because nothing was written and a 303 would have to carry the
+whole list to draw the same page (§9.11 is for writes). The same route
+answers a GET with `numbers`, which is how a short list is a link and how
+**the way back from a member card keeps the list**: a name links to the
+card with `from=lookup`, the numbers ride in `back`, bounded and
+re-whitelisted like every other way back (§9.1).
+
+The table transforms at 720px like every other (spec-v1 §8.2): a card per
+member on a phone, with a cell that holds a date, a link and a list drawn
+as one block so the card's label/value row has one thing to place. The
+page is asserted under spec-v1 §10's 100KB with the fixture's rows.
+
+### 13.5 What it never does
+
+* **Nothing writes.** No table, no column, no `INSERT`, `UPDATE` or
+  `DELETE` anywhere in `LookupPage` or `MemberNumbers`, and a test reads
+  both for exactly that. A lookup is not audited, for the reason a roster
+  view is not: it leaves nothing but the screen.
+* **Nothing is dropped silently.** Every token that was not looked up as a
+  member is on the screen with why.
+* **Nothing is guessed.** A digit run is not split; a number matching two
+  members by leading zeros is matched to neither; a word is a word.

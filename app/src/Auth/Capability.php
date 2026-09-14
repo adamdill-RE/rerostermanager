@@ -126,6 +126,22 @@ enum Capability: string
     case ViewAuditLog   = 'view_audit_log';
 
     /**
+     * Look Up Members (Phase 12, spec-v2 §13) — Admin / Everywhere. A
+     * pasted list of member numbers answered with where each one stands:
+     * placement, when they first appeared, what the last import changed,
+     * and every Roster Change Form that named them.
+     *
+     * Its own capability rather than a second use of import_roster, for
+     * the reason import_contact_history is: it reads what the imports
+     * recorded (§3) AND what the forms recorded (§12), across the whole
+     * committee, and neither of those two powers implies the other. Admin
+     * because the request said so, and because the screen is unscoped by
+     * nature — the member being asked about is the one whose team is not
+     * known, which is exactly what a scope would hide.
+     */
+    case LookUpMembers  = 'look_up_members';
+
+    /**
      * The floor. Levels include everything below them (spec 4.1), so the
      * check is always atLeast(), never equality.
      */
@@ -153,7 +169,8 @@ enum Capability: string
             self::ManageShowYear,
             self::DesignateAdmin,
             self::ManageTeams,
-            self::ViewAuditLog            => Level::Admin,
+            self::ViewAuditLog,
+            self::LookUpMembers           => Level::Admin,
         };
     }
 
@@ -179,7 +196,8 @@ enum Capability: string
             self::ManageShowYear,
             self::DesignateAdmin,
             self::ManageTeams,
-            self::ViewAuditLog            => Scope::Everywhere,
+            self::ViewAuditLog,
+            self::LookUpMembers           => Scope::Everywhere,
         };
     }
 }

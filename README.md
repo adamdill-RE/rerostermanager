@@ -20,18 +20,17 @@ file copy.
 
 ### For the next session
 
-This branch is **1.11.0**: Phase 11, Track RCFs — the first feature to come
-from a real user rather than a review (`docs/spec-v2.md` §12 quotes the
-feedback). Before it, `main` was 1.10.5: Phase 10.5 merged as
-[#25](https://github.com/adamdill-RE/rerostermanager/pull/25), closing the UX
-review that began after 10.2 — all thirty-eight of its items are on `main`.
+This branch is **1.12.0**: Phase 12, Look Up Members — the second feature
+to come from a real user, and the first for the Admin's desk
+(`docs/spec-v2.md` §13). Before it, `main` was 1.11.0: Phase 11, Track RCFs,
+merged as [#27](https://github.com/adamdill-RE/rerostermanager/pull/27).
 The server carries whatever was last deployed with cPanel's **Deploy HEAD
 Commit**; the footer of every screen and `/status` say which build that is.
-**Phase 11 needs a migration** — `011_rcf_tracking.sql` — so after the deploy
-`php bin/migrate.php --status` reports one pending until `/setup` (or the
-migrator) has run it. Until it runs, downloading a Roster Change Form
-refuses with a sentence rather than a blank page, because the form cannot be
-kept.
+**Phase 12 needs no migration** — it reads tables 010 and 011 created and
+adds nothing — but it does need both of those applied, and says so with a
+sentence rather than a blank page if they are not. Phase 11's
+`011_rcf_tracking.sql` is still the one to check with
+`php bin/migrate.php --status` after a deploy.
 
 **How each phase was worked, and what to keep doing:** one branch per phase
 restarted from `origin/main`; `php tests/run.php --strict` against a
@@ -69,6 +68,34 @@ Whichever it is, the constraints that shaped the last three phases still
 hold: no script, no framework, no build step, one template with two layouts
 at 720px, every figure landing on exactly the people it counted, and nothing
 that ever deletes a member or a contact.
+
+**Phase 12 — Look Up Members.** An Admin gets lists of member numbers from
+outside — Rodeo Houston writing back about a dozen people, a Division
+Chairman's email naming eight, a spreadsheet column of forty — and answering
+"where does each of these stand" meant one member at a time through Import
+History, the member card and Track RCFs. **Look Up Members** at `/lookup`
+(Admin, its own `look_up_members` capability, Everywhere) takes the list
+however it arrived and answers it on one screen, **in the order given**.
+`Rerm\Admin\MemberNumbers` reads it the way a person meant it — commas,
+spaces, new lines, semicolons; quotes and brackets; Excel's `1234567.0`,
+`1.234567E+6` and `1,234,567`; full-width digits from a phone; a number
+typed without its leading zeros matched to the one member who has them —
+and **reports every decision** above the table: what was found, what the
+roster does not hold with a hint about its shape, what was read as what,
+what was repeated, what was a word. Nothing is dropped silently and nothing
+is guessed: a fourteen-digit run is never split. Each row is the member's
+number, name (to the card, with the list as the way back), title, team,
+division, **Roster** (on it, dropped by which import, or purged), **First
+seen** with the creating import, **Last change** — every field the last
+import that touched them changed, or *None since they appeared*, or *None
+recorded* for a member who predates the record — and **RCFs** as a fold:
+each form that named them, the day it was generated, who generated it,
+what the line asked for, its RCF number, the two tracked dates and whether
+the roster shows it, through `RcfTracking::forMembers()`. Nothing writes;
+`Rerm\Admin\LookupPage` is four queries for the whole list, capped at
+three hundred with the rest listed. The list is POSTed (a query string will
+not carry it) and a GET with `numbers` answers too, so a short list is a
+link. Design: `docs/spec-v2.md` §13.
 
 **Phase 11 — Track RCFs.** The first feature to come from a real user: a
 member rings to say nobody has asked them to pay their dues, and "was an RCF

@@ -53,12 +53,12 @@ test('the dropped route is guarded, scoped, and shares view_roster', function ()
     // a capability appearing without anybody deciding to add one is the
     // failure this catches. It moved to 16 with spec 6.7's
     // import_contact_history, to 17 with spec-v2 §1.3's create_forms, and to
-    // 18 with spec-v2 §12.3's view_all_forms — each of which IS its own row,
-    // and each raised this line on purpose. See the notes beside them in
-    // tests/access_test.php.
+    // 18 with spec-v2 §12.3's view_all_forms, and to 19 with spec-v2 §13.3's
+    // look_up_members — each of which IS its own row, and each raised this
+    // line on purpose. See the notes beside them in tests/access_test.php.
     assertSame(Capability::ViewRoster->value, Routes::guard('dropped'));
     assertSame(Level::Officer, Capability::ViewRoster->minimumLevel());
-    assertSame(18, count(Capability::cases()), 'the matrix is still 18 rows');
+    assertSame(19, count(Capability::cases()), 'the matrix is still 19 rows');
 });
 
 test('the dropped screen has no write path at all', function (): void {
