@@ -7,6 +7,7 @@ namespace Rerm\Roster;
 use PDO;
 use Rerm\App;
 use Rerm\Auth\User;
+use Rerm\Forms\RcfTracking;
 
 /**
  * One member, on one screen (Phase 10.4, spec-v2 §9.1) — the single-member
@@ -132,6 +133,13 @@ final class MemberPage
                 ? null
                 : (int) $member['dropped_since_import_id'],
             'other_years'   => $this->otherYears($id, $showYearId),
+
+            // Every Roster Change Form this member is on (Phase 11, spec-v2
+            // §12): the question "was one ever submitted for them" is asked
+            // about a person, and this is the person's page. Shown to anyone
+            // who can see the member; each line says whether the caller may
+            // open the form it is on.
+            'rcfs'          => (new RcfTracking($this->pdo))->forMember($user, $id, (string) $member['member_number']),
         ];
     }
 

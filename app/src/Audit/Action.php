@@ -121,6 +121,24 @@ enum Action: string
      */
     case CreateForm              = 'create_form';
 
+    /**
+     * A kept form was downloaded AGAIN (spec-v2 §12). The third READ here,
+     * and its own verb rather than a second create_form: the file that left
+     * is the same personal data, so it is logged like the first time, but
+     * "how many forms went out" and "how many times was one re-sent" are
+     * different questions and the filter should be able to ask either.
+     */
+    case RegenerateForm          = 'regenerate_form';
+
+    /**
+     * A form's tracking changed (spec-v2 §12): an RCF number, or the day a
+     * line went to the Division Chairman or to Rosters. One row per save,
+     * with what changed on which lines, before and after — it is the record
+     * of who said a form had gone where, which is exactly the thing the
+     * screen exists to stop being an email search.
+     */
+    case TrackForm               = 'track_form';
+
     /** What the filter and the log's own rows call it. */
     public function label(): string
     {
@@ -158,6 +176,8 @@ enum Action: string
 
             self::ExportRoster           => 'Roster exported',
             self::CreateForm             => 'Form created',
+            self::RegenerateForm         => 'Form downloaded again',
+            self::TrackForm              => 'Form tracking changed',
         };
     }
 

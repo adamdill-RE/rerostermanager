@@ -876,6 +876,49 @@ select:focus-visible { outline: 3px solid var(--rodeo-orange); outline-offset: 1
     }
 }
 
+/* Track RCFs (spec-v2 §12): the tracking table on one kept form, and the
+   read-only lists. The same transformation at 720px as every other table:
+   a stacked card per line on a phone with full-size controls, the paper
+   form's row order at a desk with the controls at 40px, as the RCF grid
+   above already does and for the same reason. The "Every line" row is
+   marked so the eye reads it as a rule rather than as line zero. */
+.rcf-track input { min-height: 56px; }
+.rcf-track tr.all { background: var(--surface); }
+.rcf-track td .why { display: block; }
+.track td .why { display: block; }
+.card form.today { margin: .5rem 0 0; }
+
+@media (max-width: 719px) {
+    .rcf-track td { display: block; padding: .3rem 0; }
+    .rcf-track td::before { display: block; margin-bottom: .15rem; }
+    .rcf-track td.n {
+        font-weight: 700;
+        color: var(--text);
+        border-bottom: 1px solid var(--border);
+        padding-bottom: .35rem;
+        margin-bottom: .35rem;
+    }
+    .rcf-track td.n::before { content: none; }
+}
+
+@media (min-width: 720px) {
+    .rcf-track th, .rcf-track td { padding: .3rem .4rem; vertical-align: top; }
+    .rcf-track input {
+        min-height: 40px;
+        padding: 0 .35rem;
+        font-size: .88rem;
+        border-radius: 6px;
+    }
+    .rcf-track td.n {
+        text-align: right;
+        color: var(--muted);
+        font-variant-numeric: tabular-nums;
+        font-size: .85rem;
+        white-space: nowrap;
+    }
+    .card form.today button { width: 100%; }
+}
+
 textarea {
     width: 100%;
     min-height: 56px;

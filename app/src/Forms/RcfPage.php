@@ -182,6 +182,18 @@ final class RcfPage
             'date'         => self::american((string) $page['date']),
             'subcommittee' => $subcommittee === null ? '' : (string) $subcommittee['form_label'],
             'entries'      => $entries,
+
+            // What the three header cells NAMED, for the kept record (Phase
+            // 11, spec-v2 §12): the ISO date the American one was made from,
+            // the submitter's member number, and which team or division the
+            // sub-committee label stands for. `RosterChangeForm::build()`
+            // reads none of these; `RcfStore` reads all of them.
+            'form_date'        => (string) $page['date'],
+            'submitter_number' => $page['submitter'] === null
+                ? ''
+                : (string) $page['submitter']['member_number'],
+            'division_id'      => $subcommittee === null ? null : $subcommittee['division_id'],
+            'team_id'          => $subcommittee === null ? null : $subcommittee['team_id'],
         ];
     }
 

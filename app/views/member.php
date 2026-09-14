@@ -134,6 +134,42 @@ $entryHtml = static function (array $entry) use ($app, $contactTypes): string {
     </div>
 <?php } ?>
 
+<?php /* Every Roster Change Form this member is on (Phase 11, spec-v2 §12),
+         newest first — the answer to "did anybody ever submit one for
+         them", on the page the question is asked from. A line the caller
+         may open links to its form; one they may not is still shown, as
+         the fact it is. */ ?>
+<?php if ($member['rcfs'] !== []) { ?>
+    <h2>Roster Change Forms</h2>
+    <?php
+    /** A stored DATE as the day it names, or the words for none. PLAIN. */
+    $day = static function (?string $iso): string {
+        $parsed = $iso === null ? false : DateTimeImmutable::createFromFormat('!Y-m-d', $iso);
+
+        return $parsed instanceof DateTimeImmutable ? $parsed->format('j M Y') : 'not yet';
+    };
+    ?>
+    <ul class="rows">
+        <?php foreach ($member['rcfs'] as $line) { ?>
+            <li>
+                <?php if ($line['viewable']) { ?>
+                    <a href="<?= e($app->url('rcf?id=' . (int) $line['rcf_id'])) ?>"><?= View::time($app, (string) $line['generated_at']) ?></a>
+                <?php } else { ?>
+                    <?= View::time($app, (string) $line['generated_at']) ?>
+                <?php } ?>
+                &middot; <?= e((string) $line['change']) ?>
+                &middot; by <?= e((string) $line['generator_name']) ?>
+                <span class="why">
+                    RCF # <?= (string) $line['serial'] === '' ? 'not yet' : e((string) $line['serial']) ?>
+                    &middot; to the DC <?= e($day($line['sent_to_dc_on'])) ?>
+                    &middot; to Rosters <?= e($day($line['sent_to_rosters_on'])) ?>
+                    &middot; in the roster <?= $line['landed'] === null ? 'not yet' : View::time($app, (string) $line['landed']['at']) ?>
+                </span>
+            </li>
+        <?php } ?>
+    </ul>
+<?php } ?>
+
 <h2>Contact history &mdash; show year <?= e((string) $year['label']) ?></h2>
 <?php if ($member['contacts'] === []) { ?>
     <p class="hint">Never contacted this show year.</p>

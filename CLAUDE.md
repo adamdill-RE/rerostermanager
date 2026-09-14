@@ -244,6 +244,14 @@ taking the roster away as a file and producing committee paperwork are
 different powers over different documents, and either should be grantable
 without the other.
 
+One capability is **Executive Officer / Everywhere, and it is the only one
+with that shape**: `view_all_forms` (spec-v2 §12.3). `create_forms` also
+means "may see the forms they made"; this is the second half of `/rcfs`,
+everybody else's, with who made each. Everywhere because the question is
+committee-wide by nature — a member who fell between a Vice Chairman, a
+Division Chairman and Rodeo Houston — and Executive Officer because that is
+who the forms already pass through.
+
 | Level | Sees | Titles that map here |
 | --- | --- | --- |
 | **Admin** | Everything, plus import/export/show-year | none — designated only |
@@ -588,6 +596,40 @@ twenty-five rows of ten controls against spec §10's 100KB — and the three
 measured decisions that resolve it (shared datalists, five rows drawn at a
 time, a 300-member picker cap) are in spec-v2 §2.4 with the numbers.
 
+### Every form is kept, and every line of it is tracked
+
+Phase 11 (spec-v2 §12) answers the first request to come from a real user:
+"was an RCF ever submitted for this member, and where did it stop" used to
+mean sorting through months of email. So `Rerm\Forms\RcfStore` keeps every
+form as it was **printed** — `rcf` and `rcf_row`, written after the file is
+built and before it is sent — and `Rerm\Forms\RcfTracking` reads it back at
+`/rcfs` (the caller's own forms, then everyone else's for an Executive
+Officer, and a member search across every form) and `/rcf?id=` (one form,
+its lines, Download again). Five rules:
+
+- **What is kept is what was printed, not what was picked.** A regenerated
+  form is byte for byte the original however the roster has moved since —
+  and it will have moved, if the form worked. A test holds the sheet XML
+  equal after changing the member's title in between.
+- **Tracking is per line**: the Division Chairman's RCF number, the day the
+  line went to the Division Chairman, the day it went to Rosters. The
+  Division Chairman bundles lines from several forms into one numbered form
+  of their own, so the number belongs to the line. An **every-line row wins
+  over the lines below it**, and two **today** buttons date only the lines
+  not yet dated, so the whole-form case is one tap and one line can still be
+  the exception.
+- **"In the roster" is derived, never typed** — read out of `import_change`
+  at read time, the first applied import after the form that says what the
+  line asked for (an addition `created`, a removal `dropped`, a title or
+  team change `updated` on that field). The roster says it itself.
+- **Whoever may see a form may track it**, and a form the caller may not see
+  is the same 404 an out-of-scope member is. `RcfTracking::mayView()` is the
+  whole rule.
+- **`rcf` and `rcf_row` are records.** No import writes them, nothing
+  deletes a row, both are on `tests/admin_test.php`'s protected list, and
+  every tracking change is one `track_form` audit row with before and after.
+  A form still never writes the roster.
+
 ---
 
 ## Build phases
@@ -616,6 +658,7 @@ Each phase ends shippable. `docs/spec-v1.md` carries the detail through 8.7,
 | **10.3 · The call loop, and the shell** | Phone folds and a days-to-go on My Roster Status; short chip words; a search that finds a full name; dial buttons in the log sheet; anchored returns; a shell nav, Sign out and one notice component; link contrast and colour-scheme; All teams on the Committee Dashboard; CSS-counter selection counts; gating by consequence on import, Show Year and purge; a one-form export; a refusal page that says which of three things it means | A Captain on a 360px phone sees the first call without scrolling, finds a member by full name, and lands back on the row they logged |
 | **10.4 · The member card, and the rest** | `/member`: one person, narrow column, the log form open, every year's history; one answer for everything open; text and email templates; dropped members take a contact; share complete and its sort on the roll-up; the Assign chooser sorted by work; roster team tick boxes; a grouped menu; one `<time>` helper; print; a web manifest; absent-not-disabled; post-redirect-get on five screens; the last download named; the accessibility pass | One person's whole record is one narrow page every list can reach, and the way back keeps the list |
 | **10.5 · The rest of the review** | `SinceImport`: what the last import did for the people on a screen, in the banner, under every card and as a Newly met column on the roll-up; the import forms tidied; Manage Teams grouped by area with a find box; Import History paged; the Audit Log asked about one member; the RCF's Enter key downloads and its codes are a fold; the Status page's words | An officer sees whether the chasing worked, on exactly the people they chase |
+| **11 · Track RCFs** | Every Roster Change Form produced is kept and can be downloaded again; `/rcfs` and `/rcf`: the caller's own forms, everyone else's for an Executive Officer, a member search across every form; per line, the Division Chairman's RCF number and the day it went to the Division Chairman and to Rosters, with an every-line row and two today buttons; "in the roster" derived from `import_change`; the member card lists the forms about a person; `view_all_forms` | "Was an RCF ever submitted for this member, and where did it stop" is answered on one screen instead of in a pile of emails |
 | **10.x · v2** | Recruiting and retention automation; multi-year contact history (OI-12) | see `docs/spec-v2.md` |
 
 Phases 4 and 5 are the product. Everything before them is plumbing and

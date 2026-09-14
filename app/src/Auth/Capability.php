@@ -84,6 +84,25 @@ enum Capability: string
     case ViewCommitteeDashboard = 'view_committee_dashboard';
     case DesignateAllowedUser   = 'designate_allowed_user';
 
+    /**
+     * Track RCFs (spec-v2 §12) — every Roster Change Form anybody produced,
+     * with who made it and where each line has got to. Executive Officer and
+     * above, EVERYWHERE, and the first capability with that shape.
+     *
+     * Everywhere rather than Scoped because the question it answers is
+     * committee-wide by nature: the Chairman is copied on every form, and
+     * "was an RCF ever submitted for this member" is asked about somebody
+     * who has fallen between a Vice Chairman, a Division Chairman and
+     * Rodeo Houston — a scope would hide exactly the hand-off that failed.
+     * The floor is Executive Officer because that is who the forms already
+     * pass through: a Division Chairman numbers and forwards them.
+     *
+     * It is NOT what lets an officer see their OWN forms. /rcfs is guarded
+     * by `create_forms`, and everybody who may make a form may see the ones
+     * they made; this is the second half of that screen — everybody else's.
+     */
+    case ViewAllForms           = 'view_all_forms';
+
     // Admin, everywhere.
     case ImportRoster   = 'import_roster';
 
@@ -127,6 +146,8 @@ enum Capability: string
             self::ViewCommitteeDashboard,
             self::DesignateAllowedUser    => Level::SeniorOfficer,
 
+            self::ViewAllForms            => Level::ExecutiveOfficer,
+
             self::ImportRoster,
             self::ImportContactHistory,
             self::ManageShowYear,
@@ -152,6 +173,7 @@ enum Capability: string
             self::ExportRoster,
             self::CreateForms             => Scope::Scoped,
 
+            self::ViewAllForms,
             self::ImportRoster,
             self::ImportContactHistory,
             self::ManageShowYear,

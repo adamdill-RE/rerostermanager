@@ -1150,7 +1150,7 @@ raises.
 
 | # | Question | Assumption today |
 | --- | --- | --- |
-| V2-1 | Should a produced form be **kept**, rather than only downloaded and logged? A `form_batch` row would answer "what did we send them in March", and the audit row currently answers only "that we sent one". | Not kept. The audit row names the actor, the sub-committee and the row count; the file is unlinked. Revisit when somebody asks the question the log cannot answer. |
+| V2-1 | Should a produced form be **kept**, rather than only downloaded and logged? A `form_batch` row would answer "what did we send them in March", and the audit row currently answers only "that we sent one". | **Answered by Phase 11 (§12): kept.** Somebody asked the question the log cannot answer — "was an RCF ever submitted for this member, and where did it stop" — within a month of the feature reaching them. `rcf` and `rcf_row` hold what was printed; the file is still unlinked. |
 | V2-2 | Should an RCF be able to **apply itself** to the roster once Rodeo Houston has processed it? | No. An import refreshes what Rodeo Houston knows and this application never writes their columns from anywhere else (`CLAUDE.md`). A form is a request, and the next roster import is the answer. |
 | V2-3 | Which form is next? | Undecided. The menu at `/forms` is shaped for it. |
 | V2-4 | Should the officer lists be **scoped** rather than committee-wide (§2.2)? | Committee-wide, because the sponsor for a new recruit must be a VC or higher and is frequently on another team. Names and titles only. One line to narrow if it is ever unwanted. |
@@ -1162,3 +1162,217 @@ raises.
 | V2-7 | Should the team default apply to **View My Roster** as well? Its team filter is Senior Officer and above, and unchanged by this phase. | Not yet. That screen is a search over a roster rather than a working list, and starting it narrowed would make a search that finds nobody look like a member who is gone. |
 | OI-12 | Multi-year contact history reporting (spec-v1 §12) | Still deferred; the data is retained unconditionally. `import_change` is the shape the answer will take when it lands. |
 | OI-4 | Retention rule for dropped members (spec-v1 §12) | Flag only; an Admin confirms the purge. |
+| V2-10 | Should a **Senior Officer** — a Division Vice Chairman — see the forms made by the Officers on their teams, between "mine" and "everyone's" (§12.3)? | Not yet. The request named Admins and Executive Officers, and a Vice Chairman marking their own form sent is the ordinary case. It is one more group on `/rcfs` and one scope predicate when somebody asks. |
+| V2-11 | Should the **Division Chairman's numbered form** be generated here, from the tracked lines — pick lines from several officers' forms, number them, download one RCF? The feedback that produced §12 asked exactly this: a forwarded form will not do because theirs must be numbered. | Not yet; the tracking has to exist first, and it now does. The shape is clear — a picker over `rcf_row` where `sent_to_rosters_on IS NULL`, the same writer, the serial written back to every line it took — and it would make `serial` a fact this application produced rather than one it was told. Worth doing when the Division Chairmen say so. |
+| V2-12 | Should "in the roster" (§12.5) compare the **value** the import wrote to the value the line asked for — the new title, the new team — rather than the field alone? | Not yet. A title change that landed as a different title is rarer than the spellings differing, and a line that reads "yes" against a different title is checked in one tap on the member card. Revisit if a false "yes" is reported. |
+
+---
+
+## 12. Track RCFs
+
+Phase 11. The first feature to come out of a real user rather than a review,
+and the one the v2 handoff said to expect: **"revisit when somebody asks the
+question the log cannot answer"** (§11 V2-1). Somebody did, within a month of
+Create Forms reaching them.
+
+### 12.1 The question
+
+An RCF travels. A Vice Chairman generates it and emails it to their Division
+Chairman; the Division Chairman numbers it — the box at `J1`, "CHANGE FORM #
+(DC USE ONLY)" — and sends their own numbered form to Rodeo Houston's
+membership office ("Rosters"); Rosters process it, and the next roster
+import shows the change. The Chairman is copied on most of it.
+
+The feedback, with names replaced by titles:
+
+> The goal would be to have an easy way to see whether an RCF was submitted
+> for a particular member, especially after that member reaches out because
+> they haven't received an email to pay dues or complete their background
+> check. Right now, when something falls through the cracks, I have to figure
+> out what happened and often end up sorting through tons of RCF emails to
+> track down the status of one member.
+
+and, on the second half of the same process:
+
+> Some DCs take forever to send in RCFs after the VCs send them in. … each RCF
+> sent by the DC has to be numbered, so simply forwarding the VC's RCF won't
+> work.
+
+So the thing to build is the pile of emails, sorted: every form this
+application produced, who made it, and **where each line of it has got to**
+— because the question is asked about a *member*, and a member is a line.
+
+### 12.2 What is kept
+
+Phase 9 built the file, sent it, unlinked it and kept one audit row. Phase 11
+keeps the form: `rcf` is one generated form and `rcf_row` one filled line of
+it, written in the same request that sends the file, after the file is built
+and before its body goes out. A row there means a form really left; a form
+that cannot be kept is not sent.
+
+**What is kept is what was PRINTED, not what was picked.** The submitter as
+`Name, Title`, the sub-committee as `Division - Team`, every cell of every
+filled row exactly as `RosterChangeForm::draw()` wrote it. So a form can be
+downloaded again, byte for byte, without the roster having to still say what
+it said then — and it will not, if the form was a removal and it worked. A
+form is a request; the roster changes because the request was granted, and
+the record of the request must not change with it. A test draws the sheet
+from the original input and from the kept rows and holds the XML equal, after
+changing the member's title in between.
+
+Blank rows are not stored: a three-person form is three rows, at the
+positions they were typed in, and regeneration prints blank between them
+exactly as the original did. `member_id` is resolved from the number the
+officer typed, once, unscoped, so the member card can list the forms about a
+person — it is a link, and the card re-checks scope like every other read.
+
+Both tables are **records** in the `CLAUDE.md` sense: no import writes them,
+nothing deletes a row, and `tests/admin_test.php`'s list of tables that must
+never lose one names both. The file itself is still built in `var/exports`,
+unlinked as soon as it is sent, and downloaded by POST (§1.4). Nothing about
+"PII leaving the building" is relaxed by keeping the request.
+
+### 12.3 Who sees what
+
+Two groups on one screen, and one new row in the matrix:
+
+| Capability | Minimum level | Scope |
+| --- | --- | --- |
+| `create_forms` (existing) | Officer | Scoped — and it now also means *may see the forms they made* |
+| `view_all_forms` | Executive Officer | **Everywhere** |
+
+`/rcfs` opens on **the caller's own forms**, for anybody who may make one.
+Below them, for a holder of `view_all_forms`, **everybody else's**, with who
+made each — the request's "show the ones I generate at the top and the ones
+I have access to in a subgroup below". `view_all_forms` is the first
+capability with an Executive Officer floor and an Everywhere scope, and both
+halves are deliberate: the question is committee-wide by nature — it is
+asked about a member who fell between a Vice Chairman, a Division Chairman
+and Rodeo Houston, and a scope would hide exactly the hand-off that failed —
+and Executive Officer is who the forms already pass through, because a
+Division Chairman numbers and forwards them. Transcribed a second time in
+`tests/access_test.php`, as every row is.
+
+**Whoever may see a form may track it.** A Vice Chairman marks their own
+form sent to the Division Chairman; the Division Chairman numbers anybody's
+and marks it sent to Rosters. A form the caller may not see is `null` from
+`RcfTracking::one()` and the route's 404 — the same answer an out-of-scope
+member gets, for the same reason.
+
+`RcfTracking::mayView()` is the whole rule, in one place, so the list, the
+form, the search and the member card cannot disagree about it.
+
+### 12.4 The screens, and why they are shaped this way
+
+The request said to spend some time on the UX. These are the decisions.
+
+**The list opens with a search box**, before either group. The question that
+brought the screen into being is about one member and is asked with a phone
+in one hand; the groups are what you scroll to when you are the Chairman
+with a Tuesday to spend. It finds a member by name or number **on any form
+the caller may see**, every word landing (§8.3), over the printed name and
+the number — the same rule as the roster's search, on the columns this table
+has. A newcomer typed in by name is found by that name.
+
+**Each form is a row of fractions.** `RCF #`, `To the DC`, `To Rosters` and
+`In the roster` each read *n of m* lines, in a chip whose colour says done,
+part done or not started — always with the numbers, never the hue alone
+(spec-v1 §8.3). A form whose lines have gone different ways is visible as
+such from the list, which is where "where did the breakdown occur" is
+answered without opening anything.
+
+**One form is a table of its lines with three controls each**: an RCF number
+box and two date boxes. Per LINE and not per form, because the request said
+so and because it is right: the Division Chairman bundles lines from several
+officers' forms into one numbered form of their own, so the number belongs
+to the line, and a form the Division Chairman split in two has two numbers.
+
+**But the ordinary case is that the whole form went at once**, so the table
+has an **Every line** row above the lines, and two **today** buttons above
+the table:
+
+* A value typed into the Every-line row is written to every line and **wins
+  over the lines below it**. Otherwise each line's own field is written as it
+  came back, and a date box emptied clears that date. Stated once on the
+  screen, once in `RcfTracking::track()`, and held by a test that types both
+  at once. The alternative — the line winning — would make the whole-form
+  row useless the moment any line carried a value, because every line's box
+  arrives filled in with what it already has.
+* **"Sent to the Division Chairman today — every line not yet dated"** and
+  its Rosters twin date only the lines that have no date on that step. Lines
+  already dated keep their day, so the button is safe to press twice and safe
+  to press after one line was dated by hand. Each button is its own form, so
+  pressing one never submits the table below half filled in. "Today" is
+  Houston's today (`app.display_timezone`), not UTC's: after seven in the
+  evening those are different days.
+
+**Enter saves.** The tracking form has one submit button, so there is nothing
+for the Enter key to reach first (§10.5's lesson).
+
+**Download again** rebuilds the file from the kept rows (§12.2), logs it as
+`regenerate_form` — its own verb, so "how many went out" and "how many were
+re-sent" are different questions — and counts it on the form's page. A POST,
+for the reason the first download is.
+
+**Every line links its member to the member card**, with `from=rcf` and the
+form's id as `back`, re-whitelisted through the card's own rule (§9.1), and
+**the member card lists every form the member is on** — newest first, each
+with its change, who made it, and the four facts — because the question is
+asked about a person and that is the person's page. Lines are shown to anyone
+who can see the member; a Captain reading that the Vice Chairman sent a form
+about one of their people is the point. Each line says whether *this* caller
+may open the form it is on, and links only then.
+
+**Create Forms says where the last form went.** §9.12's "Your last form"
+sentence now ends in **Track it**, because there is finally somewhere for a
+streamed download to lead.
+
+The tables transform at 720px like every other (spec-v1 §8.2): a stacked card
+per line on a phone with 56px controls, the paper form's row order at a desk
+with the controls at 40px, as the RCF grid already does and for the same
+reason. Both screens are asserted under spec-v1 §10's 100KB.
+
+### 12.5 The fourth step is derived, never typed
+
+Generated, to the Division Chairman, to Rosters — and then **in the
+roster**, which nobody types. `RcfTracking::landed()` reads it out of
+`import_change` (§3) at read time: a line has landed when an applied import
+*after the form was generated* says what the line asked for —
+
+| `*TYPE` | landed when `import_change` holds, for that member number |
+| --- | --- |
+| `A` | `created` or `returned` |
+| `R` | `dropped` |
+| `T` | `updated` on `title` |
+| `S` | `updated` on `team` |
+| `S & T` | `updated` on `team` or `title` |
+
+— and the day it landed is the **first** such import. A line with no member
+number cannot land, and the screen says so beside it: an addition typed in
+by name alone has nothing for the import to be filed under yet.
+
+A stored flag would be somebody's opinion of what the roster says. The roster
+says it itself, on exactly the day the import ran, and §3's record was built
+to be read this way. One query for however many lines, on every list.
+
+### 12.6 What it never does
+
+* **A form never writes the roster.** §11 V2-2 stands. Nothing reads `rcf`
+  to change a member, and the import never writes `rcf`.
+* **Nothing deletes a form or a line.** Both are on the protected list.
+* **A serial is what somebody typed.** Free text, thirty-two characters,
+  bounded rather than refused: the Division Chairmen's numbering is theirs
+  (V2-11 is the day it becomes ours).
+* **Every tracking change is audited** — `track_form`, one row per save,
+  the lines that changed with before and after — and a save that changed
+  nothing writes nothing, not even the audit row. Who last tracked a line,
+  and when, is also on the line, so the screen can say "tracked by Erin
+  Delta, 3 days ago" without a join to a log.
+
+### 12.7 The rest of the feedback
+
+The second paragraph — Division Chairmen forwarding rather than re-typing,
+and the numbering that stops them — is V2-11, and this phase is its
+prerequisite rather than its answer: the numbered form is produced *from*
+tracked lines, and there were no tracked lines. The per-line serial is the
+half of it that lands now.
