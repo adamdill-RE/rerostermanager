@@ -103,6 +103,8 @@ test('the capability matrix matches spec 4.5, transcribed independently', functi
         // AND what the forms recorded, committee-wide, and neither power
         // implies the other. Transcribed from the spec-v2 §13.3 table.
         'look_up_members'          => ['admin', Scope::Everywhere],
+        // Phase 13 (spec-v2 §14.1): Admin today, its own row so it can be widened on purpose.
+        'upload_forms'             => ['admin', Scope::Everywhere],
     ];
 
     assertSame(count($spec), count(Capability::cases()), 'spec 4.5 has exactly this many rows');

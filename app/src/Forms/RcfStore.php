@@ -53,9 +53,23 @@ final class RcfStore
      * at the positions they were typed in, and `form()` prints blank
      * between them exactly as the original did.
      *
-     * @param array<string, mixed> $form exactly what RcfPage::formFromInput() returned
+     * Since Phase 13 (spec-v2 §14) an UPLOADED form — one somebody else
+     * filled in and emailed, read by `RcfReader` — is kept through the same
+     * method, so the two are one shape in every query that follows. The
+     * `$upload` facts say so on the row: `source` 'uploaded', the file's
+     * `filename` and `sha256` (the file itself is kept nowhere), and the
+     * Division Chairman's `serial` when the form arrived numbered, written
+     * to every line and tracked by the keeper — the form came in with the
+     * number, so it is a fact about every line on it.
+     *
+     * Joins a transaction the caller already opened rather than starting a
+     * second one, because PDO has no nesting and the upload keeps several
+     * forms in one; alone, it opens and closes its own.
+     *
+     * @param array<string, mixed> $form   exactly what RcfPage::formFromInput() returned
+     * @param array<string, mixed> $upload source, filename, sha256, serial — or nothing, for a generated form
      */
-    public function store(User $actor, int $showYearId, array $form): int
+    public function store(User $actor, int $showYearId, array $form, array $upload = []): int
     {
         $entries = array_values((array) $form['entries']);
         $filled  = [];
@@ -70,18 +84,32 @@ final class RcfStore
             $filled
         ));
 
-        $this->pdo->beginTransaction();
+        $source   = ($upload['source'] ?? 'generated') === 'uploaded' ? 'uploaded' : 'generated';
+        $serial   = trim((string) ($upload['serial'] ?? ''));
+        $filename = $source === 'uploaded' ? mb_substr(basename((string) ($upload['filename'] ?? '')), 0, 255) : '';
+        $sha256   = $source === 'uploaded' && preg_match('/^[0-9a-f]{64}$/', (string) ($upload['sha256'] ?? '')) === 1
+            ? (string) $upload['sha256']
+            : null;
+
+        $owns = !$this->pdo->inTransaction();
+        if ($owns) {
+            $this->pdo->beginTransaction();
+        }
 
         try {
             $insert = $this->pdo->prepare(
-                'INSERT INTO rcf (show_year_id, generated_by, year_label, submitter, submitter_number,'
+                'INSERT INTO rcf (show_year_id, generated_by, source, upload_filename, upload_sha256,'
+                . ' year_label, submitter, submitter_number,'
                 . ' form_date, subcommittee, division_id, team_id, row_count)'
-                . ' VALUES (:year, :by, :label, :submitter, :number, :date, :subcommittee,'
+                . ' VALUES (:year, :by, :source, :filename, :sha, :label, :submitter, :number, :date, :subcommittee,'
                 . ' :division, :team, :rows)'
             );
             $insert->execute([
                 ':year'         => $showYearId,
                 ':by'           => $actor->id,
+                ':source'       => $source,
+                ':filename'     => $filename,
+                ':sha'          => $sha256,
                 ':label'        => mb_substr((string) $form['year'], 0, 32),
                 ':submitter'    => mb_substr((string) $form['submitter'], 0, 255),
                 ':number'       => mb_substr((string) ($form['submitter_number'] ?? ''), 0, 32),
@@ -124,11 +152,29 @@ final class RcfStore
                     . ' type, rookie, new_title, previous_title, wait_list, remove_reason,'
                     . ' new_subcommittee, sponsor) VALUES ' . implode(', ', $places)
                 )->execute($bind);
+
+                // An uploaded form that arrived NUMBERED: the Division
+                // Chairman's number is on every line, tracked by whoever
+                // kept it, as if they had typed it into the every-line row.
+                if ($serial !== '') {
+                    $this->pdo->prepare(
+                        'UPDATE rcf_row SET serial = :serial, tracked_by = :by, tracked_at = UTC_TIMESTAMP()'
+                        . ' WHERE rcf_id = :rcf'
+                    )->execute([
+                        ':serial' => mb_substr($serial, 0, RcfTracking::SERIAL_MAX),
+                        ':by'     => $actor->id,
+                        ':rcf'    => $rcfId,
+                    ]);
+                }
             }
 
-            $this->pdo->commit();
+            if ($owns) {
+                $this->pdo->commit();
+            }
         } catch (\Throwable $e) {
-            $this->pdo->rollBack();
+            if ($owns) {
+                $this->pdo->rollBack();
+            }
 
             throw $e;
         }

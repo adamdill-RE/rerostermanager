@@ -142,6 +142,25 @@ enum Capability: string
     case LookUpMembers  = 'look_up_members';
 
     /**
+     * Upload RCFs (Phase 13, spec-v2 §14) — Roster Change Forms that arrived
+     * by email, read into the same record as the ones made here. Admin /
+     * Everywhere today, and ITS OWN ROW on purpose: the request said "Admins,
+     * and maybe other officers later", so widening it is one line in
+     * minimumLevel() and the transcribed row in tests/access_test.php, and
+     * nothing else has to move.
+     *
+     * Everywhere rather than Scoped because an uploaded form names whoever
+     * its author put on it, from any team — the uploader did not pick them
+     * from a scoped list, and a scope check per line would refuse exactly
+     * the forms worth keeping. What this level decides is who may ADD a form
+     * to the record; who may SEE a kept form is still RcfTracking::mayView()
+     * — the account that kept it, and every holder of view_all_forms — so
+     * widening this to an officer gives them their own uploads under "Your
+     * RCFs" and nothing of anybody else's.
+     */
+    case UploadForms    = 'upload_forms';
+
+    /**
      * The floor. Levels include everything below them (spec 4.1), so the
      * check is always atLeast(), never equality.
      */
@@ -170,7 +189,8 @@ enum Capability: string
             self::DesignateAdmin,
             self::ManageTeams,
             self::ViewAuditLog,
-            self::LookUpMembers           => Level::Admin,
+            self::LookUpMembers,
+            self::UploadForms             => Level::Admin,
         };
     }
 
@@ -197,7 +217,8 @@ enum Capability: string
             self::DesignateAdmin,
             self::ManageTeams,
             self::ViewAuditLog,
-            self::LookUpMembers           => Scope::Everywhere,
+            self::LookUpMembers,
+            self::UploadForms             => Scope::Everywhere,
         };
     }
 }

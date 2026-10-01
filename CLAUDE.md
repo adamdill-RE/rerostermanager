@@ -248,7 +248,10 @@ One capability is **Executive Officer / Everywhere, and it is the only one
 with that shape**: `view_all_forms` (spec-v2 §12.3). Look Up Members
 (Phase 12, spec-v2 §13) is `look_up_members`, Admin / Everywhere and its
 own row: it reads what the imports recorded and what the forms recorded,
-committee-wide, and neither power implies the other. `create_forms` also
+committee-wide, and neither power implies the other. Upload RCFs (Phase 13,
+spec-v2 §14) is `upload_forms`, Admin / Everywhere and its own row **because
+it is expected to be widened**: who may add a form to the record is this
+row; who may see a kept form is still `RcfTracking::mayView()`. `create_forms` also
 means "may see the forms they made"; this is the second half of `/rcfs`,
 everybody else's, with who made each. Everywhere because the question is
 committee-wide by nature — a member who fell between a Vice Chairman, a
@@ -633,6 +636,32 @@ its lines, Download again). Five rules:
   every tracking change is one `track_form` audit row with before and after.
   A form still never writes the roster.
 
+### Forms that arrived by email are uploaded into the same record
+
+Phase 13 (spec-v2 §14): most RCFs in circulation were not made here, and
+for those "did Rodeo Houston process it" was still an email search. An
+Admin — `upload_forms`, Admin / Everywhere, **its own row so it can be
+widened on purpose** — uploads several `.xls` or `.xlsx` forms at once at
+`/rcf-upload`. `Rerm\Forms\RcfReader` reads each one **by its labels, not
+by cell positions** (a hand-filled copy has had columns moved and rows
+deleted), reads what people type the way they meant it (`s&t`, `Yes`, `4)
+Member Resigned`, Excel's `1234567.0`, a real date cell) and **reports every
+reshaping**; what it cannot read it keeps as typed and flags, and a file that
+is not a form is refused by name. `Rerm\Forms\RcfUpload` stages the batch
+(`rcf_upload_batch` / `rcf_upload_file`, disposable like the other two
+stagings), resolves members, the team and the show year, notices duplicates
+(the same bytes as a kept form are refused; a form with the same date and
+members as one already kept starts unticked), and **Keep** writes the ticked
+files through the same `RcfStore::store()` with `source = 'uploaded'`, the
+file name and sha256 (the file itself is kept nowhere), and the Division
+Chairman's number from the `CHANGE FORM #` box on every line. One
+`upload_form` audit row per form. **"In the roster" is measured from an
+uploaded form's own date**, not the day it was kept — a form dated in
+February and uploaded in October was fulfilled by March's import. Track
+RCFs then lists **every change, line by line** — RCF date, member, was,
+becomes, RCF #, and the import in which HLSR fulfilled it — opening on the
+lines not yet fulfilled. An uploaded form never writes the roster either.
+
 ---
 
 ## Build phases
@@ -663,6 +692,7 @@ Each phase ends shippable. `docs/spec-v1.md` carries the detail through 8.7,
 | **10.5 · The rest of the review** | `SinceImport`: what the last import did for the people on a screen, in the banner, under every card and as a Newly met column on the roll-up; the import forms tidied; Manage Teams grouped by area with a find box; Import History paged; the Audit Log asked about one member; the RCF's Enter key downloads and its codes are a fold; the Status page's words | An officer sees whether the chasing worked, on exactly the people they chase |
 | **11 · Track RCFs** | Every Roster Change Form produced is kept and can be downloaded again; `/rcfs` and `/rcf`: the caller's own forms, everyone else's for an Executive Officer, a member search across every form; per line, the Division Chairman's RCF number and the day it went to the Division Chairman and to Rosters, with an every-line row and two today buttons; "in the roster" derived from `import_change`; the member card lists the forms about a person; `view_all_forms` | "Was an RCF ever submitted for this member, and where did it stop" is answered on one screen instead of in a pile of emails |
 | **12 · Look Up Members** | `/lookup`, Admin, `look_up_members`: paste a list of member numbers, read the way a person meant it (spreadsheet columns, Excel's `1234567.0`, thousands separators, dropped leading zeros, stray words — every one reported, none dropped), answered in the order given with placement, on the roster or not, first seen, what the last import changed, and every RCF that named them as a fold | Forty member numbers from an email are forty rows on one screen, and nothing typed was silently lost |
+| **13 · Upload RCFs** | `/rcf-upload`, Admin, `upload_forms` (its own row, so it can be widened): several `.xls` / `.xlsx` forms that came in by email read by their labels, shown back with every reshaping and doubt, kept into `rcf` / `rcf_row` with `source = 'uploaded'` and the DC's number on every line; Track RCFs gains **every change, line by line** — RCF date, member, was, becomes, RCF #, and the import that fulfilled it — opening on the lines not yet fulfilled | A Division Chairman's numbered form from an email is tracked line for line beside the ones made here, and "which requests has HLSR not fulfilled yet" is one table |
 | **10.x · v2** | Recruiting and retention automation; multi-year contact history (OI-12) | see `docs/spec-v2.md` |
 
 Phases 4 and 5 are the product. Everything before them is plumbing and

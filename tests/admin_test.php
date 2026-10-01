@@ -203,6 +203,11 @@ test('nothing in the admin screens can delete a member, a contact or a record', 
         // ever delete one, or touch anything the roster owns.
         'Forms/RcfStore.php',
         'Forms/RcfTracking.php',
+        // Phase 13 (spec-v2 §14). The reader of an uploaded form, and the
+        // stager that keeps it: the only DELETEs in the second are of its
+        // own staging rows, and neither may touch the roster or a kept form.
+        'Forms/RcfReader.php',
+        'Forms/RcfUpload.php',
     ] as $file) {
         $source = (string) file_get_contents(__DIR__ . '/../app/src/' . $file);
         assertTrue($source !== '', $file . ' is readable');
@@ -308,6 +313,10 @@ test('the audit vocabulary is a type, and every writer uses it', function (): vo
         // number, a line marked sent — is the record of who said it went
         // where, with before and after.
         'regenerate_form', 'track_form',
+        // spec-v2 §14. A form that arrived by email was uploaded and KEPT —
+        // not create_form, which means this application produced one and
+        // sent it out: one row per form kept, with the file it came from.
+        'upload_form',
     ];
 
     $actual = array_map(static fn (Action $a): string => $a->value, Action::cases());

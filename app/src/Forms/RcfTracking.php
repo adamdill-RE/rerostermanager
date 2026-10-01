@@ -437,18 +437,10 @@ final class RcfTracking
         }
 
         $read = $this->pdo->prepare(
-            'SELECT r.id AS row_id, c.occurred_at, c.import_batch_id'
+            'SELECT r.id AS row_id, c.occurred_at, c.import_batch_id, c.kind, c.field, c.before_value, c.after_value'
             . ' FROM rcf_row r'
             . ' INNER JOIN rcf f ON f.id = r.rcf_id'
-            . ' INNER JOIN import_change c ON c.member_number = r.member_number'
-            . '   AND c.occurred_at >= f.generated_at'
-            . '   AND ('
-            . "        (r.type = 'A' AND c.kind IN ('created', 'returned'))"
-            . "     OR (r.type = 'R' AND c.kind = 'dropped')"
-            . "     OR (r.type = 'T' AND c.kind = 'updated' AND c.field = 'title')"
-            . "     OR (r.type = 'S' AND c.kind = 'updated' AND c.field = 'team')"
-            . "     OR (r.type = 'S & T' AND c.kind = 'updated' AND c.field IN ('team', 'title'))"
-            . '   )'
+            . ' INNER JOIN import_change c ON c.member_number = r.member_number ' . self::LANDED_WHEN
             . ' WHERE r.id IN (' . implode(', ', $places) . ") AND r.member_number <> ''"
             . ' ORDER BY r.id, c.occurred_at, c.id'
         );
@@ -459,10 +451,175 @@ final class RcfTracking
             $id = (int) $row['row_id'];
             // The FIRST match per line is the day it landed; later ones are
             // the roster continuing to change, which is not this line's news.
-            $landed[$id] ??= ['at' => (string) $row['occurred_at'], 'batch' => (int) $row['import_batch_id']];
+            $landed[$id] ??= [
+                'at'     => (string) $row['occurred_at'],
+                'batch'  => (int) $row['import_batch_id'],
+                // What the import actually recorded (Phase 13), so the
+                // screen can say "Title: Committee Member → Captain" beside
+                // the day rather than only that something matched.
+                'kind'   => (string) $row['kind'],
+                'field'  => (string) $row['field'],
+                'before' => $row['before_value'] === null ? null : (string) $row['before_value'],
+                'after'  => $row['after_value'] === null ? null : (string) $row['after_value'],
+            ];
         }
 
         return $landed;
+    }
+
+    /**
+     * When an `import_change` row C says what a line R of form F asked for
+     * — the conditions after `c.member_number = r.member_number`, written
+     * ONCE so that landed() and the Open / Fulfilled filter on the line
+     * table (changes()) cannot disagree about what "fulfilled" means.
+     *
+     * The import has to come AFTER the form (§12.5). For a form made here
+     * that is the moment it was generated; for an UPLOADED form (Phase 13,
+     * §14.4) it is the day written on the form — a form dated in February
+     * and uploaded in October was fulfilled by March's import, which is
+     * before it was kept here — falling back to the keeping moment when the
+     * date could not be read.
+     */
+    private const LANDED_WHEN =
+        "AND c.occurred_at >= CASE WHEN f.source = 'uploaded' AND f.form_date IS NOT NULL"
+        . ' THEN f.form_date ELSE f.generated_at END'
+        . ' AND ('
+        . "        (r.type = 'A' AND c.kind IN ('created', 'returned'))"
+        . "     OR (r.type = 'R' AND c.kind = 'dropped')"
+        . "     OR (r.type = 'T' AND c.kind = 'updated' AND c.field = 'title')"
+        . "     OR (r.type = 'S' AND c.kind = 'updated' AND c.field = 'team')"
+        . "     OR (r.type = 'S & T' AND c.kind = 'updated' AND c.field IN ('team', 'title'))"
+        . '   )';
+
+    /** The same question as a predicate on one line, for a WHERE clause. */
+    private const LANDED_EXISTS =
+        "EXISTS (SELECT 1 FROM import_change c WHERE r.member_number <> ''"
+        . ' AND c.member_number = r.member_number ' . self::LANDED_WHEN . ')';
+
+    // -----------------------------------------------------------------------
+    // Every change, line by line (Phase 13, spec-v2 §14.5)
+    // -----------------------------------------------------------------------
+
+    /** The three views of the line table, as the toggle names them. */
+    public const SHOW = ['open' => 'Not yet fulfilled', 'done' => 'Fulfilled', 'all' => 'All'];
+
+    /**
+     * Every line of every form the caller may see — generated here or
+     * uploaded — newest form first, with what the member was, what the line
+     * asks them to become, and the import that fulfilled it. The table the
+     * request asked for, and the answer to "what is still sitting with
+     * somebody": it opens on the lines not yet fulfilled.
+     *
+     * @return array{show: string, lines: array<int, array<string, mixed>>, total: int,
+     *     page: int, pages: int, counts: array{open: int, done: int, all: int}}
+     */
+    public function changes(User $user, string $show = 'open', int $page = 1): array
+    {
+        $show = isset(self::SHOW[$show]) ? $show : 'open';
+        $bind = [
+            ':me'  => $user->id,
+            ':all' => Access::mayUse($user, Capability::ViewAllForms) ? 1 : 0,
+        ];
+        $visible = ' WHERE (f.generated_by = :me OR :all = 1)';
+
+        $count = $this->pdo->prepare(
+            'SELECT COUNT(*) AS total, SUM(CASE WHEN ' . self::LANDED_EXISTS . ' THEN 1 ELSE 0 END) AS done'
+            . ' FROM rcf_row r INNER JOIN rcf f ON f.id = r.rcf_id' . $visible
+        );
+        $count->execute($bind);
+        $totals = $count->fetch();
+        $all    = (int) ($totals['total'] ?? 0);
+        $done   = (int) ($totals['done'] ?? 0);
+        $counts = ['open' => $all - $done, 'done' => $done, 'all' => $all];
+
+        $filter = match ($show) {
+            'open'  => ' AND NOT ' . self::LANDED_EXISTS,
+            'done'  => ' AND ' . self::LANDED_EXISTS,
+            default => '',
+        };
+
+        $total = $counts[$show];
+        $pages = max(1, (int) ceil($total / $this->pageSize));
+        $page  = min(max(1, $page), $pages);
+
+        $read = $this->pdo->prepare(
+            $this->rowSelect() . $visible . $filter
+            . ' ORDER BY f.id DESC, r.position'
+            . ' LIMIT ' . $this->pageSize . ' OFFSET ' . (($page - 1) * $this->pageSize)
+        );
+        $read->execute($bind);
+
+        return [
+            'show'   => $show,
+            'lines'  => $this->lines($read->fetchAll(), $user),
+            'total'  => $total,
+            'page'   => $page,
+            'pages'  => $pages,
+            'counts' => $counts,
+        ];
+    }
+
+    /**
+     * What the member WAS and what the line asks them to BECOME, in the
+     * form's own vocabulary, for the line table — read off the line's own
+     * cells and nothing else, so the two columns can never claim more than
+     * the form said. PLAIN text; the view escapes.
+     *
+     *   A       not on the roster      →  added, as the new title, to the form's team
+     *   R       on the roster, as the previous title  →  removed, with the reason
+     *   T       the previous title     →  the new title
+     *   S       the form's team        →  the new sub-committee
+     *   S & T   both                   →  both
+     *
+     * @param array<string, mixed> $line a lines() row, or anything carrying its cells
+     * @return array{0: string, 1: string} was, becomes
+     */
+    public static function wasBecomes(array $line): array
+    {
+        $type   = (string) ($line['type'] ?? '');
+        $team   = self::teamOf((string) ($line['subcommittee'] ?? ''));
+        $prev   = trim((string) ($line['previous_title'] ?? ''));
+        $new    = trim((string) ($line['new_title'] ?? ''));
+        $dest   = trim((string) ($line['new_subcommittee'] ?? ''));
+        $code   = trim((string) ($line['remove_reason'] ?? ''));
+        $reason = RosterChangeForm::REMOVE_REASONS[$code] ?? $code;
+
+        return match ($type) {
+            'A' => [
+                'Not on the roster',
+                'Added' . ($new !== '' ? ' as ' . $new : '') . ($team !== '' ? ' to ' . $team : ''),
+            ],
+            'R' => [
+                'On the roster' . ($prev !== '' ? ' as ' . $prev : '') . ($team !== '' ? ', ' . $team : ''),
+                'Removed' . ($reason !== '' ? ' — ' . $reason : ''),
+            ],
+            'T' => [
+                $prev !== '' ? $prev : 'Title not given',
+                $new !== '' ? $new : 'New title not given',
+            ],
+            'S' => [
+                $team !== '' ? $team : 'Team not given',
+                $dest !== '' ? $dest : 'New team not given',
+            ],
+            'S & T' => [
+                ($team !== '' ? $team : 'Team not given') . ', ' . ($prev !== '' ? $prev : 'title not given'),
+                ($dest !== '' ? $dest : 'New team not given') . ', ' . ($new !== '' ? $new : 'title not given'),
+            ],
+            default => ['—', $type === '' ? 'No type' : $type],
+        };
+    }
+
+    /**
+     * The team half of a `Division - Team` sub-committee label, as the
+     * generator prints it (§2.6) — or the whole label when it has no dash,
+     * which is a team's name alone on a hand-filled form.
+     */
+    public static function teamOf(string $subcommittee): string
+    {
+        $label = trim((string) preg_replace('/\s+/u', ' ', $subcommittee));
+        $parts = preg_split('/\s+[-–—]\s+/u', $label) ?: [];
+
+        return trim((string) (count($parts) >= 2 ? end($parts) : $label));
     }
 
     // -----------------------------------------------------------------------
@@ -472,7 +629,8 @@ final class RcfTracking
     /** The form columns every list reads, with who generated it. */
     private function formSelect(): string
     {
-        return 'SELECT f.id, f.show_year_id, f.generated_by, f.generated_at, f.year_label, f.submitter,'
+        return 'SELECT f.id, f.show_year_id, f.generated_by, f.generated_at, f.source, f.upload_filename,'
+            . ' f.year_label, f.submitter,'
             . ' f.submitter_number, f.form_date, f.subcommittee, f.division_id, f.team_id, f.row_count,'
             . ' f.regenerated_count, f.last_regenerated_at,'
             . ' gm.preferred_name AS g_preferred, gm.first_name AS g_first, gm.last_name AS g_last,'
@@ -489,7 +647,8 @@ final class RcfTracking
             . ' r.rookie, r.new_title, r.previous_title, r.wait_list, r.remove_reason,'
             . ' r.new_subcommittee, r.sponsor, r.serial, r.sent_to_dc_on, r.sent_to_rosters_on,'
             . ' r.tracked_at,'
-            . ' f.generated_by, f.generated_at, f.subcommittee, f.year_label, f.submitter,'
+            . ' f.generated_by, f.generated_at, f.source, f.upload_filename, f.form_date,'
+            . ' f.subcommittee, f.year_label, f.submitter,'
             . ' gm.preferred_name AS g_preferred, gm.first_name AS g_first, gm.last_name AS g_last,'
             . ' gm.member_number AS g_number,'
             . ' tm.preferred_name AS t_preferred, tm.first_name AS t_first, tm.last_name AS t_last,'
@@ -566,6 +725,9 @@ final class RcfTracking
                 'show_year_id'        => (int) $form['show_year_id'],
                 'generated_by'        => (int) $form['generated_by'],
                 'generated_at'        => (string) $form['generated_at'],
+                // Made here, or uploaded from a file (Phase 13, §14).
+                'source'              => (string) ($form['source'] ?? 'generated'),
+                'upload_filename'     => (string) ($form['upload_filename'] ?? ''),
                 'generator_name'      => RosterPage::displayName(
                     (string) $form['g_preferred'],
                     (string) $form['g_first'],
@@ -647,6 +809,9 @@ final class RcfTracking
                 // The form the line is on, for the search and the member card.
                 'generated_by'       => (int) $row['generated_by'],
                 'generated_at'       => (string) $row['generated_at'],
+                'source'             => (string) ($row['source'] ?? 'generated'),
+                'upload_filename'    => (string) ($row['upload_filename'] ?? ''),
+                'form_date'          => $row['form_date'] === null ? '' : (string) $row['form_date'],
                 'generator_name'     => RosterPage::displayName(
                     (string) $row['g_preferred'],
                     (string) $row['g_first'],
@@ -657,6 +822,13 @@ final class RcfTracking
                 'year_label'         => (string) $row['year_label'],
                 'viewable'           => self::mayView($user, (int) $row['generated_by']),
             ];
+
+            // What they were and what the line asks for (Phase 13, §14.5),
+            // from the cells just mapped, so the two columns and the change
+            // summary are read off the same words.
+            [$was, $becomes]        = self::wasBecomes($out[count($out) - 1]);
+            $out[count($out) - 1]['was']     = $was;
+            $out[count($out) - 1]['becomes'] = $becomes;
         }
 
         return $out;

@@ -199,6 +199,16 @@ final class Routes
         'rcfs'     => Capability::CreateForms->value,
         'rcf'      => Capability::CreateForms->value,
 
+        // Upload RCFs (spec-v2 §14), Phase 13 — forms that arrived by email,
+        // read into the same record. Its own capability (Admin today, its
+        // own row so it can be widened on purpose) and its own route rather
+        // than a POST arm on /rcfs: the upload is two steps with a preview
+        // between them, and the preview needs an address of its own to be
+        // reloaded, linked and come back to. Both verbs on one route, like
+        // /import-contacts: read, keep and discard all post back to the
+        // screen that drew them and 303 to it.
+        'rcf-upload' => Capability::UploadForms->value,
+
         // Show Year (spec 5.1) — Admin. Create, set active, open/close, and
         // the rollover that carries eligible assignments into a new year.
         // 'show-year', hyphenated like 'log-contact'.

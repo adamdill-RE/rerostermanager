@@ -139,6 +139,17 @@ enum Action: string
      */
     case TrackForm               = 'track_form';
 
+    /**
+     * A form that arrived by email was uploaded and kept (Phase 13, spec-v2
+     * §14). Its own verb rather than a second create_form: that one means
+     * this application PRODUCED a form and sent it out; this one means a
+     * form somebody else produced was read in and added to the record. One
+     * row per form kept — the file it came from, the sub-committee, how many
+     * lines, the upload batch — so "what did Tuesday's upload add" is one
+     * filter, and "how many forms went out" still is.
+     */
+    case UploadForm              = 'upload_form';
+
     /** What the filter and the log's own rows call it. */
     public function label(): string
     {
@@ -178,6 +189,7 @@ enum Action: string
             self::CreateForm             => 'Form created',
             self::RegenerateForm         => 'Form downloaded again',
             self::TrackForm              => 'Form tracking changed',
+            self::UploadForm             => 'Form uploaded',
         };
     }
 
