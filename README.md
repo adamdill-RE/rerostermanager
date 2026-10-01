@@ -20,17 +20,20 @@ file copy.
 
 ### For the next session
 
-This branch is **1.12.0**: Phase 12, Look Up Members — the second feature
-to come from a real user, and the first for the Admin's desk
-(`docs/spec-v2.md` §13). Before it, `main` was 1.11.0: Phase 11, Track RCFs,
-merged as [#27](https://github.com/adamdill-RE/rerostermanager/pull/27).
-The server carries whatever was last deployed with cPanel's **Deploy HEAD
-Commit**; the footer of every screen and `/status` say which build that is.
-**Phase 12 needs no migration** — it reads tables 010 and 011 created and
-adds nothing — but it does need both of those applied, and says so with a
-sentence rather than a blank page if they are not. Phase 11's
-`011_rcf_tracking.sql` is still the one to check with
-`php bin/migrate.php --status` after a deploy.
+This branch is **1.13.0**: Phase 13, Upload RCFs — the third feature to
+come from a real user: Roster Change Forms that arrived by email, uploaded
+into the same record as the ones made here, and every change requested
+listed line by line with the import that fulfilled it (`docs/spec-v2.md`
+§14). Before it, `main` was 1.12.0: Phase 12, Look Up Members, merged as
+[#28](https://github.com/adamdill-RE/rerostermanager/pull/28). The server
+carries whatever was last deployed with cPanel's **Deploy HEAD Commit**; the
+footer of every screen and `/status` say which build that is. **Phase 13
+needs a migration**: `012_rcf_upload.sql` adds three columns to `rcf` and
+the two staging tables, and Track RCFs, the form's page and the upload
+screen all say so with a sentence rather than a blank page until it is
+applied — check with `php bin/migrate.php --status`, or `/setup`, after the
+deploy. It was run twice against MySQL 8.0's shape and MariaDB 10.11 locally
+and is a no-op the second time.
 
 **How each phase was worked, and what to keep doing:** one branch per phase
 restarted from `origin/main`; `php tests/run.php --strict` against a
@@ -68,6 +71,39 @@ Whichever it is, the constraints that shaped the last three phases still
 hold: no script, no framework, no build step, one template with two layouts
 at 720px, every figure landing on exactly the people it counted, and nothing
 that ever deletes a member or a contact.
+
+**Phase 13 — Upload RCFs.** Track RCFs kept every form *this application*
+made, and most of the forms in circulation were not made here: a Vice
+Chairman fills in the Excel template by hand and emails it, the Division
+Chairman numbers it and forwards it, the Admin is copied. For those forms
+"did Rodeo Houston process it" was still an email search. **Upload RCFs**
+at `/rcf-upload` (Admin, its own `upload_forms` capability so it can be
+widened to other officers on purpose; the card is on Track RCFs too) takes
+several `.xls` or `.xlsx` files at once and reads each one **by its
+labels** (`Rerm\Forms\RcfReader`, pure): the row holding `MEMBER NAME` and
+`HLS&R NO` is the header on whichever sheet carries it, the ten columns are
+wherever their words sit, the lines are the numbered ones, and the header
+cells are the ones after *Date:*, *Sub-Committee:*, *Name & Title…* and
+*CHANGE FORM #*. What people type is read as they meant it — `s&t`, `Yes`,
+`4) Member Resigned`, Excel's `1234567.0`, a real date cell — and **every
+reshaping is reported**; a code that is none of the five is kept as typed
+and flagged; a file that is not a form, or an empty one, is refused by
+name. The upload is **two steps** like every other load (a kept form is a
+record and nothing deletes one): the batch is staged (`Rerm\Forms\RcfUpload`,
+migration 012's `rcf_upload_batch` / `rcf_upload_file`, swept after a day),
+the preview shows each file with its header, its lines, every doubt and a
+tick box — a file byte-identical to a kept form is refused, a form with the
+same date and members as one already kept starts unticked — and **Keep**
+writes the ticked ones through the same `RcfStore::store()` with `source =
+'uploaded'`, the file name and sha256 (the file is kept nowhere), and the
+Division Chairman's number on every line, one `upload_form` audit row per
+form. Track RCFs gains the table the request asked for, **every change
+requested, line by line** — RCF date, member, was, becomes, RCF #, and the
+import in which HLSR fulfilled it, with what that import recorded — opening
+on the lines not yet fulfilled; and "in the roster" is measured from an
+**uploaded form's own date**, so a February form uploaded in October reads
+as fulfilled by March's import. Design, with the assumptions stated:
+`docs/spec-v2.md` §14.
 
 **Phase 12 — Look Up Members.** An Admin gets lists of member numbers from
 outside — Rodeo Houston writing back about a dozen people, a Division

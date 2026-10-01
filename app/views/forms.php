@@ -53,10 +53,11 @@ declare(strict_types=1);
 <div class="card">
     <h2><a href="<?= e($app->url('rcfs')) ?>">Track RCFs</a></h2>
     <p>
-        Every Roster Change Form made here is kept. See where each line has got
-        to &mdash; sent to the Division Chairman, numbered, sent to Rosters, and
-        whether the roster now shows it &mdash; find any member on any form, and
-        download a form again.
+        Every Roster Change Form made here is kept, and the ones that came in by
+        email can be uploaded beside them. See where each line has got to &mdash;
+        sent to the Division Chairman, numbered, sent to Rosters, and the import
+        in which Rodeo Houston fulfilled it &mdash; find any member on any form,
+        and download a form again.
     </p>
 </div>
 

@@ -919,6 +919,22 @@ select:focus-visible { outline: 3px solid var(--rodeo-orange); outline-offset: 1
     .card form.today button { width: 100%; }
 }
 
+/* Upload RCFs and the change table (Phase 13, spec-v2 §14): one card per
+   uploaded file on the preview, each with its own small line table and a
+   56px tick box; the change table on Track RCFs carries a quiet second
+   line under the date, the number and the fulfilment, at either width. */
+.card.upload input[type="file"] { margin: .35rem 0 .25rem; }
+.card.file h2 { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.card.file h2 .chip { font-size: .8rem; }
+.card.file .lines td .why { display: block; }
+.card.file label.choice { border-top: 1px solid var(--border); margin-top: .75rem; }
+.changes td .why { display: block; }
+nav.toggle .n { font-weight: 400; color: var(--muted); margin-left: .35rem; }
+nav.toggle a.current .n { color: #FFFFFF; }
+@media (min-width: 720px) {
+    .changes th, .changes td { vertical-align: top; }
+}
+
 /* Look Up Members (Phase 12, spec-v2 §13): a cell holding a date, a link
    and a list is ONE block, so the phone card's label/value flex has one
    child to place and a chip is never stretched to the row's height; the

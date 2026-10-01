@@ -1080,6 +1080,9 @@ function member_from(): array
         // A row of a looked-up list (Phase 12): back is the numbers, so the
         // list is drawn again by the GET the route also answers.
         'lookup'    => ['lookup', 'Look Up Members'],
+        // A line of the change table on Track RCFs (Phase 13): back is the
+        // search, the Open / Fulfilled / All choice and the page.
+        'rcfs'      => ['rcfs', 'Track RCFs'],
     ];
 }
 
@@ -1125,6 +1128,12 @@ function member_back(string $from, string $back): array
         'roster'    => roster_return_query($state),
         'rcf'       => return_query($state, ['id' => ['int' => 0]]),
         'lookup'    => return_query($state, ['numbers' => ['text' => 400]]),
+        'rcfs'      => return_query($state, [
+            'member' => ['text' => 120],
+            'lines'  => array_keys(Rerm\Forms\RcfTracking::SHOW),
+            'lpage'  => ['int' => 1],
+            'page'   => ['int' => 1],
+        ]),
         default     => '',
     };
 
@@ -1981,6 +1990,26 @@ function rcf_send(Rerm\Forms\RosterChangeForm $rcf, array $built): never
 /** The list: a search box, the caller's own forms, and everyone else's. */
 function rcfs_screen(Rerm\App $app, Rerm\Auth\User $user): void
 {
+    // Since Phase 13 this reads rcf.source (012), so the same guard the
+    // import screens carry: a server running newer code against an older
+    // database says which migration is missing rather than going blank.
+    $blocker = import_schema_blocker($app);
+    if ($blocker !== null) {
+        render($app, 'import', 'Track RCFs', [
+            'wide'    => false,
+            'user'    => $user,
+            'blocked' => $blocker,
+            'notices' => [],
+            'preview' => null,
+            'staged'  => [],
+            'applied' => [],
+            'failedBatches' => [],
+            'teams'   => [],
+        ]);
+
+        return;
+    }
+
     $tracking = Rerm\Forms\RcfTracking::fromApp($app);
 
     render($app, 'rcfs', 'Track RCFs', [
@@ -1989,9 +2018,22 @@ function rcfs_screen(Rerm\App $app, Rerm\Auth\User $user): void
         'user'     => $user,
         'notices'  => flash_take(),
         'tracking' => [
-            'mine'   => $tracking->mine($user),
-            'others' => $tracking->others($user, max(1, (int) ($_GET['page'] ?? 1))),
-            'search' => $tracking->search($user, is_string($_GET['member'] ?? null) ? $_GET['member'] : ''),
+            'mine'    => $tracking->mine($user),
+            'others'  => $tracking->others($user, max(1, (int) ($_GET['page'] ?? 1))),
+            'search'  => $tracking->search($user, is_string($_GET['member'] ?? null) ? $_GET['member'] : ''),
+            // Every change requested, line by line (Phase 13, spec-v2 §14.5):
+            // generated here or uploaded, opening on the lines not yet
+            // fulfilled.
+            'changes' => $tracking->changes(
+                $user,
+                is_string($_GET['lines'] ?? null) ? $_GET['lines'] : 'open',
+                max(1, (int) ($_GET['lpage'] ?? 1))
+            ),
+            // The upload card, for whoever may add a form to the record.
+            // mayUse is the level question; the route it posts to re-checks.
+            'upload'  => Rerm\Auth\Access::mayUse($user, Rerm\Auth\Capability::UploadForms)
+                ? rcf_upload_limits()
+                : null,
         ],
     ]);
 }
@@ -2074,6 +2116,220 @@ function rcf_one_act(Rerm\App $app, Rerm\Auth\User $user): never
         flash_set('warn', 'Nothing changed — every line already said that.');
     } else {
         flash_set('ok', 'Saved. ' . $changed . ($changed === 1 ? ' line' : ' lines') . ' updated, and logged with your name.');
+    }
+
+    redirect($app, $back);
+}
+
+// ---------------------------------------------------------------------------
+// Upload RCFs (spec-v2 §14), Phase 13 — Roster Change Forms that arrived by
+// email, read into the same record as the ones made here. Admin, through
+// Capability::UploadForms (its own row, so it can be widened on purpose).
+// Two steps with a preview between them, like every other load: a kept form
+// is a record and nothing deletes one, so the only chance to notice a misread
+// file is before it is written.
+// ---------------------------------------------------------------------------
+
+/**
+ * The host's ceilings, for the screen: how many files one request may carry
+ * — PHP's max_file_uploads, and it drops the rest in SILENCE, which is why
+ * the number is printed beside the control — and the size of each.
+ *
+ * @return array{max_files: int, file_size: string, post_size: string}
+ */
+function rcf_upload_limits(): array
+{
+    $max = (int) ini_get('max_file_uploads');
+
+    return [
+        'max_files' => min($max > 0 ? $max : 20, Rerm\Forms\RcfUpload::MAX_FILES),
+        'file_size' => (string) ini_get('upload_max_filesize'),
+        'post_size' => (string) ini_get('post_max_size'),
+    ];
+}
+
+/** The refusal for a request body past post_max_size, in this screen's words. */
+function rcf_upload_oversize_message(): string
+{
+    $sent = (int) ($_SERVER['CONTENT_LENGTH'] ?? 0);
+
+    return sprintf(
+        'The upload was larger than this server accepts in one request (post_max_size is %s; you sent %s). '
+        . 'PHP discards the whole request when that happens, including the form itself, so nothing was read. '
+        . 'A Roster Change Form is a few dozen kilobytes — upload fewer files at a time.',
+        (string) ini_get('post_max_size'),
+        $sent > 0 ? number_format($sent / 1048576, 1) . 'M' : 'more'
+    );
+}
+
+/**
+ * The uploaded forms, in the order the browser sent them, as
+ * RcfUpload::stage() takes them. A file PHP could not receive is handed over
+ * WITH its refusal rather than dropped: it gets a row on the preview saying
+ * so, because a form that silently never arrived is a form nobody chases.
+ *
+ * @return array<int, array{path: ?string, name: string, size: int, error?: string}>
+ */
+function rcf_upload_files(): array
+{
+    $sent = $_FILES['forms'] ?? null;
+    if (!is_array($sent) || !array_key_exists('name', $sent)) {
+        return [];
+    }
+
+    // One file arrives as scalars, several as parallel arrays.
+    $names = is_array($sent['name']) ? $sent['name'] : [$sent['name']];
+    $limit = (string) ini_get('upload_max_filesize');
+    $files = [];
+
+    foreach ($names as $i => $name) {
+        $field = static fn (string $key, mixed $default): mixed => is_array($sent[$key] ?? null)
+            ? ($sent[$key][$i] ?? $default)
+            : ($sent[$key] ?? $default);
+
+        $error = (int) $field('error', UPLOAD_ERR_NO_FILE);
+        if ($error === UPLOAD_ERR_NO_FILE) {
+            continue;   // an empty file input, not a file
+        }
+
+        $entry = [
+            'name' => basename((string) $name),
+            'size' => (int) $field('size', 0),
+            'path' => null,
+        ];
+
+        if ($error !== UPLOAD_ERR_OK) {
+            $entry['error'] = match ($error) {
+                UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE => sprintf(
+                    'This file is larger than %s, this server\'s per-file ceiling. A Roster Change Form '
+                    . 'is a few dozen kilobytes, so a file this big is probably something else.',
+                    $limit
+                ),
+                UPLOAD_ERR_PARTIAL   => 'The upload of this file was cut off part way. Try again.',
+                UPLOAD_ERR_NO_TMP_DIR, UPLOAD_ERR_CANT_WRITE => 'The server could not write this file to disk.',
+                default              => 'The upload of this file failed (error ' . $error . ').',
+            };
+        } else {
+            $path = (string) $field('tmp_name', '');
+            if ($path === '' || !is_uploaded_file($path)) {
+                $entry['error'] = 'That was not an uploaded file.';
+            } else {
+                $entry['path'] = $path;
+            }
+        }
+
+        $files[] = $entry;
+    }
+
+    return $files;
+}
+
+/** The upload form, a batch's preview, or what a kept batch became. */
+function rcf_upload_screen(Rerm\App $app, Rerm\Auth\User $user): void
+{
+    // This reads the two tables 012 adds, so the import screens' guard.
+    $blocker = import_schema_blocker($app);
+    if ($blocker !== null) {
+        render($app, 'import', 'Upload RCFs', [
+            'wide'    => false,
+            'user'    => $user,
+            'blocked' => $blocker,
+            'notices' => [],
+            'preview' => null,
+            'staged'  => [],
+            'applied' => [],
+            'failedBatches' => [],
+            'teams'   => [],
+        ]);
+
+        return;
+    }
+
+    $upload = Rerm\Forms\RcfUpload::fromApp($app);
+    // A preview read last week was read against a roster and a record that
+    // have both moved since.
+    $upload->discardExpired();
+
+    $preview = null;
+    $batchId = (int) ($_GET['batch'] ?? 0);
+    if ($batchId > 0) {
+        $preview = $upload->preview($user, $batchId);
+        if ($preview === null) {
+            render($app, 'not-found', 'Not found', [], 404);
+
+            return;
+        }
+    }
+
+    render($app, 'rcf-upload', 'Upload RCFs', [
+        // A data screen (spec 8.2): the wide container above 720px.
+        'wide'    => true,
+        'user'    => $user,
+        'notices' => flash_take(),
+        'preview' => $preview,
+        'recent'  => $upload->recent($user, 10),
+        'limits'  => rcf_upload_limits(),
+    ]);
+}
+
+/**
+ * The three writes: read (stage), keep, discard. Each 303s with a flash
+ * (spec-v2 §9.11) — to the preview it made, the preview it kept, or the
+ * list it threw away.
+ */
+function rcf_upload_act(Rerm\App $app, Rerm\Auth\User $user): never
+{
+    // FIRST, before anything reads $_POST — see import_act(): past
+    // post_max_size, PHP discards the body and the request arrives looking
+    // like a form that was never submitted, and then like a CSRF failure.
+    if ($_POST === [] && $_FILES === [] && (int) ($_SERVER['CONTENT_LENGTH'] ?? 0) > 0) {
+        flash_set('danger', rcf_upload_oversize_message());
+        redirect($app, 'rcf-upload');
+    }
+
+    $batchId = (int) ($_POST['batch_id'] ?? 0);
+    $back    = $batchId > 0 ? 'rcf-upload?batch=' . $batchId : 'rcf-upload';
+
+    if (!Rerm\Csrf::check()) {
+        flash_set(...stale_form_notice());
+        redirect($app, $back);
+    }
+
+    $upload = Rerm\Forms\RcfUpload::fromApp($app);
+    $action = (string) ($_POST['action'] ?? '');
+
+    try {
+        if ($action === 'stage') {
+            $id = $upload->stage($user, rcf_upload_files());
+            flash_set('ok', 'Read. NOTHING has been kept yet — this is what was read out of each file, '
+                . 'and the button at the bottom is what keeps it.');
+            redirect($app, 'rcf-upload?batch=' . $id);
+        }
+
+        if ($action === 'keep') {
+            $ticked = is_array($_POST['keep'] ?? null) ? array_keys($_POST['keep']) : [];
+            $result = $upload->keep($user, $batchId, $ticked);
+            flash_set($result['kept'] === 0 ? 'warn' : 'ok', sprintf(
+                'Kept %s %s with %s %s%s. Each is logged with your name, and is now on Track RCFs.',
+                number_format($result['kept']),
+                $result['kept'] === 1 ? 'form' : 'forms',
+                number_format($result['lines']),
+                $result['lines'] === 1 ? 'line' : 'lines',
+                $result['left_out'] > 0 ? ', and left ' . number_format($result['left_out']) . ' out' : ''
+            ));
+            redirect($app, 'rcf-upload?batch=' . $batchId);
+        }
+
+        if ($action === 'discard') {
+            $upload->discard($user, $batchId);
+            flash_set('warn', 'Upload ' . $batchId . ' was discarded. Nothing was kept.');
+            redirect($app, 'rcfs');
+        }
+    } catch (Rerm\Forms\RcfUploadException $e) {
+        flash_set('danger', $e->getMessage());
+    } catch (Throwable $e) {
+        // Never a blank 500: app.debug is off in production.
+        flash_set('danger', 'The upload failed: ' . $e->getMessage());
     }
 
     redirect($app, $back);
@@ -3128,6 +3384,17 @@ switch ($path) {
         }
 
         rcf_one_screen($app, $user);
+        break;
+
+    case 'rcf-upload':
+        // Both verbs on one route, like /import-contacts. A POST never falls
+        // through: rcf_upload_act() 303s to the preview it made, the batch
+        // it kept, or the list.
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            rcf_upload_act($app, $user);
+        }
+
+        rcf_upload_screen($app, $user);
         break;
 
     case 'show-year':

@@ -1165,6 +1165,8 @@ raises.
 | V2-10 | Should a **Senior Officer** — a Division Vice Chairman — see the forms made by the Officers on their teams, between "mine" and "everyone's" (§12.3)? | Not yet. The request named Admins and Executive Officers, and a Vice Chairman marking their own form sent is the ordinary case. It is one more group on `/rcfs` and one scope predicate when somebody asks. |
 | V2-11 | Should the **Division Chairman's numbered form** be generated here, from the tracked lines — pick lines from several officers' forms, number them, download one RCF? The feedback that produced §12 asked exactly this: a forwarded form will not do because theirs must be numbered. | Not yet; the tracking has to exist first, and it now does. The shape is clear — a picker over `rcf_row` where `sent_to_rosters_on IS NULL`, the same writer, the serial written back to every line it took — and it would make `serial` a fact this application produced rather than one it was told. Worth doing when the Division Chairmen say so. |
 | V2-12 | Should "in the roster" (§12.5) compare the **value** the import wrote to the value the line asked for — the new title, the new team — rather than the field alone? | Not yet. A title change that landed as a different title is rarer than the spellings differing, and a line that reads "yes" against a different title is checked in one tap on the member card. Revisit if a false "yes" is reported. |
+| V2-13 | Should `upload_forms` (§14.1) be **widened** below Admin — to the Executive Officers, or to every officer for their own forms? | Admin, as the request said, and its own row so the widening is one line. A Division Chairman uploading the numbered forms they send would be the natural next holder; an officer uploading would see their own under *Your RCFs* and nothing else, since `mayView()` is unchanged. |
+| V2-14 | Should the **uploaded file itself** be kept, so Download again on an uploaded form returns the original bytes rather than this application's rendering of what was read? | No. A filled-in form is personal data and nothing here keeps one on disk (§1.4); the record holds what was read, the sha256 recognises the file, and the rendering is the template cell for cell. Revisit if a Division Chairman needs the exact original back. |
 
 ---
 
@@ -1523,3 +1525,196 @@ page is asserted under spec-v1 §10's 100KB with the fixture's rows.
   member is on the screen with why.
 * **Nothing is guessed.** A digit run is not split; a number matching two
   members by leading zeros is matched to neither; a word is a word.
+
+---
+
+## 14. Upload RCFs
+
+Phase 13. The third feature to come from a real user, and the other half of
+§12: Track RCFs keeps every Roster Change Form **this application** made,
+and most of the forms in circulation were not made here. A Vice Chairman
+fills in the Excel template by hand and emails it; the Division Chairman
+numbers it and forwards it; the Admin is copied on all of it. For those
+forms the question of §12.1 — "was an RCF ever submitted for this member,
+and did Rodeo Houston process it" — is still an email search. So: **upload
+the forms that came in by email, read them into the same record, and show
+every change requested, however it got here, with the import that fulfilled
+it.**
+
+### 14.1 Who may upload
+
+| Capability | Minimum level | Scope |
+| --- | --- | --- |
+| `upload_forms` | Admin | Everywhere |
+
+Its own row, because the request said "Admins, and we might include other
+officers later": widening it is one line in `Capability::minimumLevel()`
+and the transcribed row in `tests/access_test.php`, and nothing else moves.
+Everywhere rather than Scoped because an uploaded form names whoever its
+author put on it, from any team — the uploader did not pick them from a
+scoped list, and a scope check per line would refuse exactly the forms
+worth keeping. What the level decides is **who may add a form to the
+record**; who may *see* a kept form is still §12.3's rule
+(`RcfTracking::mayView()`: the account that kept it, and every holder of
+`view_all_forms`), so widening this capability to an officer gives them
+their own uploads under *Your RCFs* and nothing of anybody else's.
+
+### 14.2 Two steps, because a kept form is permanent
+
+`rcf` and `rcf_row` are records (§12.6): nothing deletes a row. A form read
+wrongly and kept is therefore kept for good, and the only chance to notice
+a wrong column, a misread date or a file that is not an RCF at all is
+**before** it is written. The upload is the same two steps as every other
+load in this application (spec-v1 §6.3, §6.7):
+
+1. **Read.** `/rcf-upload` takes several `.xlsx` or `.xls` files at once —
+   the form on Track RCFs posts straight to it — and stages what it read in
+   `rcf_upload_batch` and `rcf_upload_file` (migration 012). Nothing is
+   written to `rcf`. The files themselves are read from PHP's own temporary
+   upload and **not kept**: a filled-in RCF is personal data (§1.4), and the
+   sha256 recorded on the staged file answers "have we kept this one
+   already" without keeping a byte of it.
+2. **Keep.** The preview shows each file's header and lines exactly as they
+   were read, every doubt the reader had, and a tick box per readable file.
+   *Keep these forms* writes the ticked ones to `rcf` and `rcf_row` through
+   the same `RcfStore` the generator uses, in one transaction, and logs one
+   `upload_form` audit row per form. *Discard* throws the batch away. A
+   batch nobody keeps is swept after `import.stage_ttl_hours`, like the
+   other two.
+
+The staging tables are **not records** — they are the preview, and `tests/
+admin_test.php`'s protected list does not name them, for the reason it does
+not name `app_user_team`: what they hold has never been in the record, and
+a stale preview that could not be deleted would offer a Keep button for a
+file somebody decided against.
+
+### 14.3 Reading a form that a person filled in
+
+`Rerm\Forms\RcfReader` is pure — no database — and every case below is
+transcribed in `tests/rcf_upload_test.php` over generated fixtures. It
+reads the Rodeo Houston template as people actually fill it in:
+
+* **The file is read by its bytes, not its name** (`Spreadsheet::open()`,
+  spec-v1 §6.1): `.xls`, `.xlsx`, and the same grid saved as CSV all read.
+* **The columns are found by their labels, not assumed.** Every sheet is
+  scanned for the row holding `MEMBER NAME` and `HLS&R NO`; the ten entry
+  columns are taken from where `*TYPE`, `ROOKIE`, `CHANGE/ADD TITLE`,
+  `PREVIOUS TITLE`, `WAIT LIST`, `REMOVE REASON`, `NEW SUB-COMMITTEE` and
+  `INTERVIEW REQUIRED or SPONSORED BY` sit in that row or the two under it
+  (the template splits them across three). A form with a column inserted,
+  a row deleted or the header moved still reads; a label missing is said.
+* **The entry rows are the numbered ones**: the rows under the header whose
+  first column reads `1)` to `25)`, at the position printed. Without a
+  numbering column, the twenty-five rows after the header block. A line is
+  blank by `RosterChangeForm::entryIsBlank()`'s rule — the two tick boxes
+  do not count.
+* **The header cells are the ones after their labels**: the submitter after
+  *Name & Title of whom is submitting this form:*, the date after *Date:*,
+  the sub-committee after *Sub-Committee:*, the Division Chairman's number
+  after *CHANGE FORM #* (in that cell, or the next non-empty one to its
+  right), and the show year from `RODEO <year>` in the title.
+* **What a person types is read as they meant it, and every reshaping is
+  reported** beside the line, under *read as*: `s&t`, `S+T`, `T & S`,
+  `ST` → `S & T`; `Add`, `Addition` → `A`; `Remove` → `R`; `Title` → `T`;
+  `Team`, `Sub` → `S`. `4)`, `4.`, `4) Member Resigned` and `Member
+  Resigned` → `4`. `Yes`, `Y`, `X`, `1`, `TRUE`, `√` tick a box; `No`,
+  `N`, `0`, `FALSE` and blank leave it clear. A member number arriving as
+  Excel's `1234567.0`, `1,234,567` or `1.234567E+6` is the digits it meant,
+  and leading zeros survive (§13.2's rules, through the same code). A date
+  typed as `3/1/2027`, `3-1-27`, `March 1, 2027` or `1 Mar 2027`, or stored
+  as a real date cell, is the day it says. A name cell holding `Jane Sample
+  - 1234567` with the number column blank is read the way the generator's
+  own picker reads it (`RcfPage::parseMember()`).
+* **What it cannot read it keeps and says, never guesses.** A type that is
+  none of the five codes, or a remove reason that is none of the six, is
+  kept **as typed** and the line is flagged — the form is a record of what
+  was asked, and a line silently corrected to a code the author did not
+  write would be a different request. An unreadable date leaves the form
+  undated and says so. A file with no header labels, no sheet, or no filled
+  line is **refused** by name, not staged, and never kept.
+
+### 14.4 What the stage resolves, and what Keep writes
+
+At stage time, once, exactly as the generator does at generation time:
+
+* `member_id` from each line's number, unscoped (§12.2: it is a link, and
+  the card re-checks scope). A line with a number and no name takes the
+  name from the roster, and says so.
+* `team_id` / `division_id` from the sub-committee label — `Division -
+  Team`, or the team's name alone, or the division's — matched by name,
+  case insensitively. Unmatched is `NULL` with the label kept as printed,
+  as a generated form keeps a destination typed into a datalist (§2.6).
+* `show_year_id` from the year in the title when a show year carries that
+  label, else the active year, reported as assumed.
+* **Duplicates.** A file byte for byte the same as one already kept is
+  refused and names the form it is. The same file twice in one upload is
+  refused the second time. A file whose date and member numbers match a
+  form already kept — the Division Chairman forwarding the numbered copy
+  of a form the Vice Chairman generated here — is flagged *looks like form
+  #N* and its box is **unticked**; the Admin ticks it if it really is a
+  second form.
+
+Keep writes, per ticked file, one `rcf` with `source = 'uploaded'`, the
+file's name and sha256, the uploader as `generated_by` and the moment of
+keeping as `generated_at`; its lines as `rcf_row` through
+`RcfStore::store()`, so an uploaded form and a generated one are the same
+shape in every query that follows; and, when the form carried the Division
+Chairman's number, that number as every line's `serial`, tracked by the
+uploader — the form arrived numbered, so the number is a fact about every
+line on it. The two sent-dates stay empty: the file does not say when it
+went where, and a date nobody knows is not written.
+
+**"In the roster" reads from the form's own date for an uploaded form.**
+§12.5 counts an import *after the form was generated*; a form dated in
+February and uploaded in October was fulfilled by March's import, which is
+before it was kept here. So `RcfTracking::landed()` measures an uploaded
+form from `form_date` (falling back to the keeping moment when the date
+could not be read) and a generated form from `generated_at`, as before.
+
+**Download again** on an uploaded form rebuilds the form from the kept
+lines — the application's own rendering of what was read, cell for cell the
+template, not the file that was uploaded, which was not kept. The page says
+so. A generated form still regenerates byte for byte.
+
+### 14.5 Every change, line by line
+
+The request was for a table of **the tracked RCFs, generated here or
+uploaded, by line**: the RCF date, the member, what they were, what the form
+asks them to become, and — most importantly — **the import in which Rodeo
+Houston fulfilled it**. Track RCFs gains that table between the search and
+the per-form groups, over every line of every form the caller may see
+(§12.3's rule, the same clause the search uses), newest form first:
+
+| Column | Holds |
+| --- | --- |
+| **RCF date** | the day written on the form, as a link to it; under it, *made here by* or *uploaded by* whom, and the file it came from |
+| **Member** | the printed name (to the member card, when the number resolved) and number; *rookie* and *wait list* when ticked |
+| **Was** | what the roster held when the form was written: the previous title for a title change, the form's own sub-committee for a team change, both for `S & T`, *on the roster* for a removal, *not on the roster* for an addition |
+| **Becomes** | what the line asks for: the new title, the new sub-committee, both, *Removed* with the reason, *Added* with the title and the sponsor |
+| **RCF #** | the Division Chairman's number, with the two tracked dates under it |
+| **Fulfilled by HLSR** | the day of the first applied import since the form that says what the line asked for (§12.5), as a link to that import on Import History, with what the import recorded — `Title: Committee Member → Captain`; else *not yet*, and *no member number to watch for* where there is nothing to match |
+
+It opens on the lines **not yet fulfilled**, because that is the list of
+requests still sitting with somebody; *Fulfilled* and *All* are one tap
+away, and the search box above it still finds one member across every
+form. It pages at `roster.page_size_desktop` and transforms at 720px like
+every other table (spec-v1 §8.2).
+
+### 14.6 What it never does
+
+* **An uploaded form never writes the roster.** §11 V2-2 stands for a form
+  that arrived by email exactly as for one made here: it is a request, and
+  the next import is the answer. Nothing in `RcfReader` or `RcfUpload`
+  touches `member`, and a test reads both for it.
+* **Nothing deletes a kept form or a line.** `RcfUpload` deletes only its
+  own staging rows, and only for a batch that was never kept; a kept batch
+  stays as the record of what was uploaded, with each file's form beside
+  it.
+* **The uploaded file is not kept.** Parsed from PHP's temporary upload,
+  never copied under `var/`, identified afterwards only by its sha256.
+* **Nothing is guessed.** An unknown code is kept as typed and flagged; an
+  unreadable date is blank and flagged; a likely duplicate is unticked and
+  named; a file that is not a form is refused by name.
+* **Nothing is silently dropped.** PHP accepts at most `max_file_uploads`
+  files in one request and says nothing about the rest, so the screen
+  states the number and the Admin uploads in batches of that many.

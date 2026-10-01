@@ -48,6 +48,7 @@ Every one of these is load-bearing on this host — see `docs/hosting.md`.
 | `009_contact_history_import.sql` | The staging tables for a contact history load (§6.7), and `contact_log.contact_import_batch_id`. |
 | `010_import_history.sql` | `import_change` — what each import changed, field by field, member by member (spec-v2 §3). |
 | `011_rcf_tracking.sql` | `rcf` and `rcf_row` — every Roster Change Form produced, as printed, and where each line of it has got to (spec-v2 §12). |
+| `012_rcf_upload.sql` | `rcf.source`, `rcf.upload_filename` and `rcf.upload_sha256`, and the staging tables `rcf_upload_batch` / `rcf_upload_file` for forms that arrived by email and were uploaded (spec-v2 §14). |
 
 `schema_migration` is created by the migrator itself rather than by a
 migration: something has to exist before the first migration can be recorded,

@@ -251,6 +251,42 @@ final class View
     }
 
     /**
+     * The upload card for Roster Change Forms that arrived by email (Phase
+     * 13, spec-v2 §14) — rendered on Track RCFs and on the upload screen
+     * itself, by one function, so the two post the same field to the same
+     * route. Several files at once; the host's ceilings printed beside the
+     * control, because PHP drops files past max_file_uploads in silence and
+     * the number is the only warning anybody gets.
+     *
+     * Returns escaped HTML, safe to echo.
+     *
+     * @param array{max_files: int, file_size: string, post_size: string} $limits
+     */
+    public static function rcfUploadForm(App $app, array $limits): string
+    {
+        $max = (int) $limits['max_files'];
+
+        return '<div class="card upload">'
+            . '<h2>Upload RCFs that came in by email</h2>'
+            . '<p>Roster Change Forms other people filled in and sent &mdash; a Vice Chairman&rsquo;s own, '
+            . 'or the Division Chairman&rsquo;s numbered copy &mdash; read into the same record as the forms '
+            . 'made here, so every line on them is tracked and watched for in the roster too.</p>'
+            . '<form method="post" action="' . e($app->url('rcf-upload')) . '" enctype="multipart/form-data">'
+            . Csrf::field()
+            . '<input type="hidden" name="action" value="stage">'
+            . '<p><label for="forms">The forms, as they were sent</label><br>'
+            . '<input type="file" id="forms" name="forms[]" accept=".xls,.xlsx" multiple required>'
+            . '<span class="hint why">Up to ' . e((string) $max) . ' file' . ($max === 1 ? '' : 's')
+            . ' at a time, ' . e($limits['file_size']) . ' each. <code>.xls</code> and <code>.xlsx</code> are both read, '
+            . 'by their contents rather than their names. The file itself is not kept.</span></p>'
+            . '<button type="submit">Read the files</button>'
+            . '</form>'
+            . '<p class="hint"><span class="chip chip-ok">Nothing is kept yet</span> '
+            . 'Reading writes nothing. You see what was read out of each file first, and keep the ones that read right.</p>'
+            . '</div>';
+    }
+
+    /**
      * A notice — the one component every screen's "Done" / "Note" / "Stopped"
      * comes through (Phase 10.3). Before this, fourteen views each spelled
      * their own six lines, and the same danger level read "Refused" on the
