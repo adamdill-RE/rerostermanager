@@ -20,20 +20,50 @@ file copy.
 
 ### For the next session
 
-This branch is **1.13.0**: Phase 13, Upload RCFs — the third feature to
-come from a real user: Roster Change Forms that arrived by email, uploaded
-into the same record as the ones made here, and every change requested
-listed line by line with the import that fulfilled it (`docs/spec-v2.md`
-§14). Before it, `main` was 1.12.0: Phase 12, Look Up Members, merged as
-[#28](https://github.com/adamdill-RE/rerostermanager/pull/28). The server
-carries whatever was last deployed with cPanel's **Deploy HEAD Commit**; the
-footer of every screen and `/status` say which build that is. **Phase 13
-needs a migration**: `012_rcf_upload.sql` adds three columns to `rcf` and
-the two staging tables, and Track RCFs, the form's page and the upload
-screen all say so with a sentence rather than a blank page until it is
-applied — check with `php bin/migrate.php --status`, or `/setup`, after the
-deploy. It was run twice against MySQL 8.0's shape and MariaDB 10.11 locally
-and is a no-op the second time.
+This branch is **1.14.0**: Phase 14, RCF Entries and the Approval Flow —
+the fourth feature to come from a real user and the first that is a
+**workflow** rather than a screen: a Vice Chairman asks for one roster
+change at a time, it goes up a chain of approvers an Admin has drawn, and
+the account at the top of the chain cuts everything it approved into one or
+more consolidated Roster Change Forms kept and tracked like every other
+(`docs/spec-v2.md` §15). Before it, `main` was 1.13.0: Phase 13, Upload
+RCFs, merged as [#29](https://github.com/adamdill-RE/rerostermanager/pull/29).
+The server carries whatever was last deployed with cPanel's **Deploy HEAD
+Commit**; the footer of every screen and `/status` say which build that is.
+**Phase 14 needs a migration**: `013_rcf_entries.sql` adds `rcf_approver`,
+`rcf_entry` and `rcf_entry_step` and widens `rcf.source`; the four new
+screens and Track RCFs say so with a sentence rather than a blank page
+until it is applied — check with `php bin/migrate.php --status`, or
+`/setup`, after the deploy. It was run twice against MariaDB 10.11 locally
+and is a no-op the second time. **And it needs one Admin act before anybody
+can use it**: on *Create Approval Flow*, draw who approves whom — until an
+account has an approver or is marked top of the chain, its entries are
+refused with a sentence, deliberately.
+
+**What Phase 14 left for Phase 14.1**, in the order the owner is likely to
+feel them (the reasoning is `docs/spec-v2.md` §15.7):
+
+- **V2-16, re-routing.** An entry waiting on an account that is later
+  deactivated by an import, or removed from the flow, waits forever. The
+  natural next write on *Create Approval Flow* is "move everything waiting
+  on X to Y", audited; a list of stuck entries beside it.
+- **V2-15, Captains.** The request said Vice Chairmen and above; widening
+  `create_rcf_entries` to Officer is one line in `minimumLevel()` and the
+  transcribed row, and the flow screen then lists Captains too (its floor
+  is `ApprovalFlow::FLOOR`).
+- **V2-18 and V2-20, amend and resubmit.** An approver cannot fix a typo
+  in a line before approving it, and a returned entry is retyped rather
+  than copied back into the grid. Both are small: a GET with the row
+  prefilled covers the second; the first needs a decision about keeping
+  both versions.
+- **V2-17, telling an approver something is waiting.** Mail is off by
+  design; the count on the menu tile is what exists. If the owner wants
+  mail, it is designed through spec-v1 §3.3a's interlocks.
+- **A search over entries on Track RCFs**, so the member box there finds
+  a request before it is a form; and the entries' "in the roster" once
+  they are on one is already the form's (§12.5).
+- **A CSS tick counter** on the approvals and consolidate screens (the
+  Assign pattern), so "Approve 11 ticked" reads the live count.
 
 **How each phase was worked, and what to keep doing:** one branch per phase
 restarted from `origin/main`; `php tests/run.php --strict` against a
@@ -71,6 +101,38 @@ Whichever it is, the constraints that shaped the last three phases still
 hold: no script, no framework, no build step, one template with two layouts
 at 720px, every figure landing on exactly the people it counted, and nothing
 that ever deletes a member or a contact.
+
+**Phase 14 — RCF Entries and the Approval Flow.** Create Forms is one
+officer producing one form and emailing it on; what a Division Chairman
+actually does is receive several Vice Chairmen's forms and send Rodeo
+Houston **one numbered form of their own**, retyping the lines. So the unit
+is now the **entry** — one line of a future form — and the form is produced
+at the end from whatever reached the top of the chain. Four screens, four
+capabilities (`docs/spec-v2.md` §15.2). **Create RCF Entries** (`/rcf-entries`,
+Senior Officer and above, scoped) is the RCF's own grid — one partial,
+`app/views/rcf-grid.php`, drawn by both screens from one `RcfPage::page()`
+— with Submit in place of Download: every filled row becomes one entry
+(`rcf_entry`, migration 013) carrying the ten cells and the sub-committee,
+routed where the flow says this account's entries go, which the screen says
+in a sentence first. **Create Approval Flow** (`/approval-flow`, Admin) is
+who approves whom (`rcf_approver`, `Rerm\Forms\ApprovalFlow`): *approved by
+X*, *top of the chain*, or *not set* — whose entries are refused with a
+sentence rather than routed to a default; a loop is refused by name with
+nothing written, and the chain reads beside each row in names. **Approve
+RCF Entries** (`/rcf-approvals`) is what is waiting on the caller, oldest
+first, every row ticked, with where each goes next: approve and it moves to
+the approver's own approver or becomes approved with the caller as final
+approver; return and it needs a note the requester reads. **Consolidate
+RCFs** (`/rcf-consolidate`) is everything that ended with the caller's
+approval, cut by division (the Division Chairman's bundle) or by team into
+forms of twenty-five lines, shown before it is made; Generate keeps each
+form through the same `RcfStore::store()` with `source = 'consolidated'`
+and lists them, and nothing is downloaded there — the form's own page is
+where every kept form is downloaded from. Every hand an entry passes
+through is a `rcf_entry_step` row and its own audit verb; a withdrawal is
+the requester's while it is pending; Track RCFs lists the entries not yet
+on a form, and a form's page says which entries it was cut from. An entry
+never writes the roster. Design, with the open items: `docs/spec-v2.md` §15.
 
 **Phase 13 — Upload RCFs.** Track RCFs kept every form *this application*
 made, and most of the forms in circulation were not made here: a Vice

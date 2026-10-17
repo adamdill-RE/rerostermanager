@@ -209,6 +209,26 @@ final class Routes
         // screen that drew them and 303 to it.
         'rcf-upload' => Capability::UploadForms->value,
 
+        // RCF entries and the approval flow (spec-v2 §15), Phase 14. Four
+        // routes, each both verbs on one route like /rcf-upload: the screen
+        // and its writes post back to it and 303 to it.
+        //
+        //   rcf-entries      a Vice Chairman submits entries and reads their
+        //                    own; withdraws one still pending
+        //   rcf-approvals    what is waiting on the caller; approve, return
+        //   rcf-consolidate  what ended with the caller's approval; generate
+        //                    the forms
+        //   approval-flow    the Admin draws who approves whom
+        //
+        // The guards are the LEVEL question. Which entries each screen shows
+        // is the flow's question, answered inside by Rerm\Forms\RcfEntries,
+        // and an entry the caller may not see is the same 404 an out-of-scope
+        // member is.
+        'rcf-entries'     => Capability::CreateRcfEntries->value,
+        'rcf-approvals'   => Capability::ApproveRcfEntries->value,
+        'rcf-consolidate' => Capability::GenerateConsolidatedRcf->value,
+        'approval-flow'   => Capability::ManageApprovalFlow->value,
+
         // Show Year (spec 5.1) — Admin. Create, set active, open/close, and
         // the rollover that carries eligible assignments into a new year.
         // 'show-year', hyphenated like 'log-contact'.

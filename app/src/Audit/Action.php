@@ -150,6 +150,18 @@ enum Action: string
      */
     case UploadForm              = 'upload_form';
 
+    // RCF entries and the approval flow (spec-v2 §15). One verb per hand an
+    // entry passes through, so "what did Bob approve in October" and "what
+    // was returned, and why" are each one filter; and one for the flow
+    // itself, because who approves whom decides whose signature a request
+    // goes out under and is worth being able to find later.
+    case SubmitRcfEntry          = 'submit_rcf_entry';
+    case ApproveRcfEntry         = 'approve_rcf_entry';
+    case ReturnRcfEntry          = 'return_rcf_entry';
+    case WithdrawRcfEntry        = 'withdraw_rcf_entry';
+    case GenerateConsolidatedRcf = 'generate_consolidated_rcf';
+    case SetApprover             = 'set_approver';
+
     /** What the filter and the log's own rows call it. */
     public function label(): string
     {
@@ -190,6 +202,13 @@ enum Action: string
             self::RegenerateForm         => 'Form downloaded again',
             self::TrackForm              => 'Form tracking changed',
             self::UploadForm             => 'Form uploaded',
+
+            self::SubmitRcfEntry          => 'RCF entry submitted',
+            self::ApproveRcfEntry         => 'RCF entry approved',
+            self::ReturnRcfEntry          => 'RCF entry returned',
+            self::WithdrawRcfEntry        => 'RCF entry withdrawn',
+            self::GenerateConsolidatedRcf => 'Consolidated RCF generated',
+            self::SetApprover             => 'Approver set',
         };
     }
 

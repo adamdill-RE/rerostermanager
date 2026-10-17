@@ -1718,3 +1718,242 @@ every other table (spec-v1 §8.2).
 * **Nothing is silently dropped.** PHP accepts at most `max_file_uploads`
   files in one request and says nothing about the rest, so the screen
   states the number and the Admin uploads in batches of that many.
+
+---
+
+## 15. RCF Entries and the Approval Flow
+
+Phase 14. The fourth feature to come from a real user, and the first that is
+a **workflow** rather than a screen: a Vice Chairman asks for a change, the
+request goes up a chain of approvers the Admin has drawn, and the person at
+the top of the chain turns everything they have approved into one or more
+Roster Change Forms that are kept and tracked exactly like the ones Create
+Forms makes. The request, in the owner's words: *"individual RCF entries that
+go up the chain for approval before finally being consolidated in to a single
+giant RCF that will be treated the same as the ones we generate."*
+
+### 15.1 Why it is a second workflow and not a change to the first
+
+Create Forms (§2) is one officer producing one form for one sub-committee and
+sending it on themselves. That is what a Captain does, and it stays exactly as
+it is. What a Division Chairman actually does is different: they receive
+several Vice Chairmen's requests, decide which to forward, and send Rodeo
+Houston **one numbered form of their own** (§12.1, §11 V2-11). Today that
+means re-typing lines out of several emailed forms into a new one. So the unit
+here is the **line** — an *entry* — and the form is produced at the end, from
+whatever reached the top of the chain, by the person whose signature it goes
+out under.
+
+Three words, used exactly:
+
+* An **entry** is one requested change — one line of a future RCF, in the
+  form's own vocabulary (§2.1): the ten cells, plus the sub-committee the
+  line is about.
+* An **approver** is the account that signs off another account's entries.
+  The **flow** is the table of who approves whom, drawn by an Admin on
+  *Create Approval Flow*. The **chain** for an entry is requester → their
+  approver → that approver's approver → … → an account whose approver is
+  *nobody — the top of the chain*. The **final approver** is that last
+  account.
+* An entry is **approved** when the final approver has approved it, and
+  **generated** when the final approver has put it on a consolidated form.
+  The form is then an ordinary kept form (§12.2), with `source =
+  'consolidated'`.
+
+### 15.2 The capabilities
+
+| Capability | Minimum level | Scope |
+| --- | --- | --- |
+| `create_rcf_entries` | Senior Officer | Scoped |
+| `approve_rcf_entries` | Senior Officer | Everywhere |
+| `generate_consolidated_rcf` | Senior Officer | Everywhere |
+| `manage_approval_flow` | Admin | Everywhere |
+
+**Senior Officer is the floor on the first three** because the request said
+"Vice Chairmen and above": a Vice Chairman is a Senior Officer (`CLAUDE.md`,
+the title map), and a Captain is not. A Captain still fills in a Roster
+Change Form on Create Forms and sends it to their Vice Chairman by hand;
+whether they should be able to submit entries instead is §11 V2-15.
+
+**`create_rcf_entries` is Scoped** for `create_forms`' reason (§1.3): the
+member picker reads through `ScopedQuery::forUser()`, so a Vice Chairman
+picks from the team they are scoped to and nobody else. The free-text half
+of the same control still takes a member who is not on the list, exactly as
+on the form (§2.3).
+
+**`approve_rcf_entries` and `generate_consolidated_rcf` are Everywhere**
+because what they cover is decided by the **flow**, not by the roster: an
+entry routed to an approver is theirs to approve wherever the member sits,
+and the flow is an Admin's deliberate act (the shape `upload_forms` has, for
+the same reason — "whoever its author put on it"). The level says who may
+hold the power; the flow says which entries it reaches. An account outside
+every chain holds both capabilities and has nothing to approve and nothing
+to generate, which is the honest answer.
+
+**`manage_approval_flow` is Admin**, its own row, because the flow decides
+whose signature a request goes out under. It is not `designate_admin` reused:
+drawing the chain and granting levels are different powers, and the owner
+may want a Chairman to hold one without the other.
+
+Transcribed a second time in `tests/access_test.php`, as every row is.
+
+### 15.3 The flow
+
+`rcf_approver` (migration 013): one row per account, `approver_user_id` and
+`is_top`. Three states, and all three are shown on the screen in words:
+
+| State | Means | An entry submitted by this account… |
+| --- | --- | --- |
+| not set | no row, or neither value | **is refused**, with a sentence naming the screen that fixes it. A Vice Chairman whose approver was never drawn must not have their requests silently approved, and must not have them silently lost either. |
+| approver = X | X signs off their entries | waits on X |
+| top of the chain | nobody is above them | is **approved the moment it is submitted**, with themselves as final approver, and goes straight to *Consolidate RCFs* |
+
+An **Admin with no row is treated as top of the chain**: an Admin who files
+an entry is the person who would otherwise draw their own approver.
+
+**A cycle is refused**, at save time, naming the accounts in it. The whole
+save is one transaction and a refused save writes nothing: a chain that
+loops is a request that never reaches anybody. The walk is a pure function
+(`ApprovalFlow::walk()`) over the proposed table, so the test can hand it a
+loop without a database. The chain is also walked again at approval time
+with the accounts the entry has already passed through, and an account seen
+twice ends the chain there rather than looping — the flow can be redrawn
+while an entry is in flight. One asymmetry is deliberate: an **approver**
+with nothing drawn above them ends the chain for the entries they approve
+(`ApprovalFlow::nextAfter()`), where a **requester** with nothing drawn is
+refused. A half-drawn table is the Admin's to finish, and an approver who
+cannot act on what is in front of them helps nobody; the approvals screen
+says "then ready for you to generate" beside the row, so nothing happens
+unannounced.
+
+**The flow is current state, not a record**, like `app_user_team` (the
+reasoning in `tests/admin_test.php`): a redrawn approver replaces the old
+one, and the history is in `audit_log` as `set_approver`, before and after.
+Nothing deletes a row; "not set" is written as both values empty.
+
+Only accounts at Senior Officer and above, and active, are listed on either
+side of the table. An account deactivated by an import after being named
+somebody's approver leaves their entries waiting on nobody who can act;
+re-routing is §11 V2-16.
+
+### 15.4 An entry's life
+
+`rcf_entry` carries the ten cells as `rcf_row` does, the sub-committee the
+line is about (`division_id` / `team_id` and the printed label), who
+requested it and when, and one of five states. `rcf_entry_step` is the
+record of every hand it passed through — submitted, approved, returned,
+withdrawn, generated — with the actor, the moment and the note, so a screen
+can say *approved by Bob 2 Oct, waiting on Carl* without parsing the audit
+log.
+
+```
+submitted ──► pending (with the first approver)
+                 │  approve: next approver, or…
+                 ├──────────────────────────► approved (final approver named)
+                 │  return, with a note                  │  generate
+                 ├──────────────► returned               └──► generated (rcf_id, rcf_row_id)
+                 │  the requester withdraws
+                 └──────────────► withdrawn
+```
+
+* **Submitting** is the Roster Change Form's own grid — the same five rows,
+  the same ten controls, the same member picker, drawn by the same partial
+  (`app/views/rcf-grid.php`) from the same `RcfPage::page()`, so the two
+  screens cannot drift. Every filled row becomes one entry, resolved by
+  `RcfPage::formFromInput()` exactly as a line of a form is (§2.6): nothing
+  typed reaches the record unresolved. The sub-committee chosen for the grid
+  is written on every entry it produces, because an RCF is about one
+  sub-committee and a removal or a title change does not say which team the
+  member is on — the heading does.
+* **Approving** advances the entry to the approver's own approver, or marks
+  it approved when there is none. One tick box per entry and one button, so
+  a Division Chairman with eleven waiting approves them in one tap; a
+  returned entry takes a **note**, because "no" without a reason is a
+  request the Vice Chairman has to ring about.
+* **Returning** ends the entry. The requester reads the note on their own
+  list and submits a corrected one; the returned one stays, as the record
+  of what was asked and what was said.
+* **Withdrawing** is the requester's, while an entry is still pending — a
+  resignation that was withdrawn, a name typed wrong. It ends the entry the
+  same way.
+* **Generating** is §15.5. An entry on a form is `generated` and names the
+  form and the line, so the entry's own list links to the form, and the
+  form's page says which entries it was made from.
+
+Every state change is one `rcf_entry_step` row and one audit row
+(`submit_rcf_entry`, `approve_rcf_entry`, `return_rcf_entry`,
+`withdraw_rcf_entry`, `generate_consolidated_rcf`), and nothing deletes an
+entry or a step: the two tables join `tests/admin_test.php`'s protected list.
+
+**Who sees an entry**: its requester; the account it is waiting on; every
+account that has acted on it; its final approver; and every holder of
+`view_all_forms` — `RcfEntries::mayView()`, one rule. Track RCFs (§12)
+gains a section, **RCF entries not yet on a form**, listing every pending or
+approved entry the caller may see with where it is sitting, because the
+question §12.1 asks — "where did it stop" — is now asked about a request
+before it is a form.
+
+### 15.5 Consolidating
+
+*Consolidate RCFs* shows the final approver every entry that ended with
+their approval and is not yet on a form (an Admin sees every such entry),
+grouped the way the forms will be cut, with a tick box each — all ticked,
+because the request is to take **all** of them — and one choice:
+
+| Group by | Heading at `G5` | When |
+| --- | --- | --- |
+| **Division** (default) | the division's name | the Division Chairman's bundle: one numbered form for the division, however many teams the lines came from — §12.1's second paragraph, and the reason this phase exists |
+| **Team** | `Division - Team` | the Vice Chairman at the top of a short chain, whose form is about one team |
+
+Within a group, lines are ordered by team then by name, and **a group of
+more than twenty-five is cut into as many forms as it needs** — the paper
+form has twenty-five rows and so does the file (§2.4). The cut is a pure
+function (`RcfEntries::cut()`) and the test hands it fifty-one entries. An
+entry under the placeholder division groups under its team, unprefixed:
+`(No Division)` is still never printed (§2.2).
+
+*Generate* writes each form through the same `RcfStore::store()` as Create
+Forms, with `source = 'consolidated'`, the generator as submitter (`Name,
+Title`, read from their member row), today in Houston as the date, and the
+active show year; marks every entry it took as `generated` with the form's
+id and its line's id; writes one `generate_consolidated_rcf` audit row per
+form naming the entries; and lands back on the screen with the forms listed
+under *Forms you have generated*. **It does not download anything.** One
+POST cannot send three files, and a form that is kept before it is sent is
+the record §12.2 wanted; the download is the form's own page, where every
+other kept form is downloaded from, so the generator reads the form over
+before it goes. A consolidated form's download is logged like a
+regeneration (`regenerate_form`), because that is what it is: the file
+rebuilt from the kept lines.
+
+A consolidated form is then an ordinary kept form in every query that
+follows — numbered, dated, searched, listed line by line, watched for in
+the roster (§12.5, §14.5) — and `Track RCFs` and the form's page say
+*Consolidated* beside it with how many entries it was made from.
+
+### 15.6 What it never does
+
+* **An entry never writes the roster**, approved or not, generated or not.
+  §11 V2-2 stands for the third time: a form is a request, and the next
+  import is the answer. Nothing in `ApprovalFlow` or `RcfEntries` touches
+  `member`, and a test reads both for it.
+* **Nothing deletes an entry, a step, an approver row, a form or a line.**
+* **Nothing is sent.** Approvers are not emailed: `mail.enabled` is false by
+  design (`CLAUDE.md`) and the menu tile says how many are waiting. A
+  notification is §11 V2-17, and it has to be designed through the
+  interlocks.
+* **Nothing is guessed about who approves whom.** An account whose approver
+  is not drawn is told so and refused; it is never routed to a default.
+* **A refused save of the flow writes nothing.** A cycle is named, not
+  partially applied.
+
+### 15.7 Open items raised
+
+| # | Question | Assumption today |
+| --- | --- | --- |
+| V2-15 | Should **Captains** submit entries too, so a Vice Chairman approves them instead of receiving a form by email? | Not yet; the request said Vice Chairmen and above. Widening `create_rcf_entries` to Officer is one line in `minimumLevel()` and the transcribed row — the flow and the screens need no change. |
+| V2-16 | What happens to entries **waiting on an account that is deactivated** or removed from the flow? | They wait. An Admin can see them on Track RCFs; re-routing them (to the account's own approver, or to a named one) is the natural next write on *Create Approval Flow*. |
+| V2-17 | Should an approver be **told** something is waiting? | No. Mail cannot send (`CLAUDE.md`), and a count on the menu tile and the approvals screen is what a signed-in person sees. If the owner wants mail, it is designed through the four interlocks of spec-v1 §3.3a. |
+| V2-18 | Should an approver be able to **edit** a line before approving it — fix a title, tick rookie? | No. What was asked is the record; an approver returns it with a note and the requester resubmits. An "amend and approve" that keeps both versions is the shape, if it is wanted. |
+| V2-19 | Should the **grouping** offer a third cut — one form for the whole committee, for a Chairman at the top of every chain? | Not yet. A form's heading names one sub-committee; a committee-wide heading would be `Rodeo Express`, which is not a sub-committee Rodeo Houston recognises. Group by division and send several. |
+| V2-20 | Should a **returned** entry be editable and resubmitted in place rather than typed again? | Typed again, through the grid. One tap less would be "copy this into the grid", which is a GET with the row prefilled — cheap when asked for. |

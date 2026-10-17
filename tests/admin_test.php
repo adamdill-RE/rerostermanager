@@ -170,6 +170,12 @@ test('nothing in the admin screens can delete a member, a contact or a record', 
         // has got to. A kept form is the answer to "was one ever submitted
         // for this member", and a deletable answer is no answer.
         'rcf', 'rcf_row',
+        // Phase 14 (spec-v2 §15). A requested change, every hand it passed
+        // through, and who approves whom. A returned entry is the record of
+        // what was asked and what was said; the flow is current state like
+        // app_user_team, and "not set" is written as empty values rather
+        // than by deleting the row.
+        'rcf_entry', 'rcf_entry_step', 'rcf_approver',
     ];
 
     foreach ([
@@ -208,6 +214,11 @@ test('nothing in the admin screens can delete a member, a contact or a record', 
         // own staging rows, and neither may touch the roster or a kept form.
         'Forms/RcfReader.php',
         'Forms/RcfUpload.php',
+        // Phase 14 (spec-v2 §15). The flow and the entries: both write only
+        // their own tables, and neither may delete from any of them or touch
+        // the roster.
+        'Forms/ApprovalFlow.php',
+        'Forms/RcfEntries.php',
     ] as $file) {
         $source = (string) file_get_contents(__DIR__ . '/../app/src/' . $file);
         assertTrue($source !== '', $file . ' is readable');
@@ -317,6 +328,12 @@ test('the audit vocabulary is a type, and every writer uses it', function (): vo
         // not create_form, which means this application produced one and
         // sent it out: one row per form kept, with the file it came from.
         'upload_form',
+        // spec-v2 §15. One verb per hand an entry passes through — submitted,
+        // approved, returned, withdrawn, generated — so each is one filter;
+        // and set_approver, because who approves whom decides whose
+        // signature a request goes out under.
+        'submit_rcf_entry', 'approve_rcf_entry', 'return_rcf_entry',
+        'withdraw_rcf_entry', 'generate_consolidated_rcf', 'set_approver',
     ];
 
     $actual = array_map(static fn (Action $a): string => $a->value, Action::cases());

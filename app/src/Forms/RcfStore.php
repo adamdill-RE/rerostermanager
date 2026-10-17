@@ -84,7 +84,11 @@ final class RcfStore
             $filled
         ));
 
-        $source   = ($upload['source'] ?? 'generated') === 'uploaded' ? 'uploaded' : 'generated';
+        // Three sources since Phase 14 (spec-v2 §15.5): made on Create Forms,
+        // uploaded from a file, or consolidated from approved entries.
+        $source   = in_array($upload['source'] ?? 'generated', ['uploaded', 'consolidated'], true)
+            ? (string) $upload['source']
+            : 'generated';
         $serial   = trim((string) ($upload['serial'] ?? ''));
         $filename = $source === 'uploaded' ? mb_substr(basename((string) ($upload['filename'] ?? '')), 0, 255) : '';
         $sha256   = $source === 'uploaded' && preg_match('/^[0-9a-f]{64}$/', (string) ($upload['sha256'] ?? '')) === 1

@@ -6,6 +6,8 @@ namespace Rerm;
 
 use DateTimeImmutable;
 use DateTimeZone;
+use Rerm\Auth\Access;
+use Rerm\Auth\Capability;
 use Rerm\Auth\User;
 use Rerm\Roster\ContactOutcome;
 use Rerm\Roster\LogContact;
@@ -284,6 +286,37 @@ final class View
             . '<p class="hint"><span class="chip chip-ok">Nothing is kept yet</span> '
             . 'Reading writes nothing. You see what was read out of each file first, and keep the ones that read right.</p>'
             . '</div>';
+    }
+
+    /**
+     * The three screens of the RCF entry workflow (Phase 14, spec-v2 §15)
+     * as one strip — Your entries · Waiting for you · Ready to generate —
+     * with the live count on each, filtered by capability exactly as the
+     * menu filters its tiles (presentation only; every route re-checks).
+     * Drawn by one function on all three screens so they read as one
+     * place. Returns escaped HTML, safe to echo.
+     *
+     * @param array{mine: int, waiting: int, ready: int} $counts
+     */
+    public static function rcfEntriesNav(App $app, User $user, string $current, array $counts): string
+    {
+        $items = [
+            ['rcf-entries',     'Your entries',      Capability::CreateRcfEntries,        $counts['mine']],
+            ['rcf-approvals',   'Waiting for you',   Capability::ApproveRcfEntries,       $counts['waiting']],
+            ['rcf-consolidate', 'Ready to generate', Capability::GenerateConsolidatedRcf, $counts['ready']],
+        ];
+
+        $html = '<nav class="toggle" aria-label="RCF entries">';
+        foreach ($items as [$route, $word, $capability, $count]) {
+            if (!Access::mayUse($user, $capability)) {
+                continue;
+            }
+            $html .= '<a href="' . e($app->url($route)) . '"'
+                . ($current === $route ? ' class="current" aria-current="page"' : '')
+                . '>' . e($word) . ' <span class="n">' . e((string) $count) . '</span></a>';
+        }
+
+        return $html . '</nav>';
     }
 
     /**

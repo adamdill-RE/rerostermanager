@@ -258,6 +258,13 @@ committee-wide by nature — a member who fell between a Vice Chairman, a
 Division Chairman and Rodeo Houston — and Executive Officer because that is
 who the forms already pass through.
 
+Four more rows arrived with Phase 14 (spec-v2 §15.2): `create_rcf_entries`
+(Senior Officer / Scoped), `approve_rcf_entries` and
+`generate_consolidated_rcf` (Senior Officer / Everywhere — what they reach
+is decided by the approval flow, not the roster) and `manage_approval_flow`
+(Admin / Everywhere, its own row because drawing who approves whom and
+granting levels are different powers).
+
 | Level | Sees | Titles that map here |
 | --- | --- | --- |
 | **Admin** | Everything, plus import/export/show-year | none — designated only |
@@ -664,6 +671,46 @@ lines not yet fulfilled. An uploaded form never writes the roster either.
 
 ---
 
+## RCF entries go up a chain and come out as one form
+
+Phase 14 (spec-v2 §15) is the first **workflow** rather than a screen, and
+it is a second way of producing a Roster Change Form that leaves the first
+exactly as it is. Create Forms is one officer, one form, sent on by hand —
+a Captain's job, and it stays. **Create RCF Entries** is for Vice Chairmen
+and above: one requested change at a time, through the RCF's own grid
+(`app/views/rcf-grid.php`, one partial drawn by both screens from one
+`RcfPage::page()`), routed up a chain of approvers and cut by the account at
+the top into one or more **consolidated** forms kept through the same
+`RcfStore::store()` with `source = 'consolidated'`. Five rules:
+
+- **The flow is drawn, never inferred.** `rcf_approver` says who approves
+  whom (`Rerm\Forms\ApprovalFlow`), in three states that are all spelled on
+  the screen: *approved by X*, *top of the chain*, and *not set* — whose
+  entries are **refused** with a sentence naming Create Approval Flow,
+  never routed to a default. An Admin with no row is the top. A save that
+  would make a loop is refused by name and writes nothing. The table is
+  current state like `app_user_team`; its history is `set_approver`.
+- **An entry is a record.** `rcf_entry` carries the ten cells as `rcf_row`
+  does plus the sub-committee it is about; `rcf_entry_step` is every hand
+  it passed through. Both are on `tests/admin_test.php`'s protected list,
+  with `rcf_approver`. A returned entry stays, with the approver's note,
+  as what was asked and what was said.
+- **The level says who may hold the power; the flow says which entries it
+  reaches.** `approve_rcf_entries` and `generate_consolidated_rcf` are
+  Senior Officer / Everywhere for `upload_forms`' reason; `create_rcf_entries`
+  is Scoped for `create_forms`' reason. `RcfEntries::mayView()` is the one
+  visibility rule: requester, the account it waits on, anyone who acted on
+  it, the final approver, and `view_all_forms`.
+- **Generating keeps, it does not download.** One POST cannot send three
+  files, and a form kept before it is sent is the record §12.2 wanted. The
+  cut (`RcfEntries::cut()`, pure) is one form per division by default or
+  per team, twenty-five lines each; each form opens on its own page where
+  every kept form is downloaded from, numbered and tracked.
+- **An entry never writes the roster**, approved or not. A form is a
+  request; the next import is the answer. A test reads both classes for it.
+
+---
+
 ## Build phases
 
 Each phase ends shippable. `docs/spec-v1.md` carries the detail through 8.7,
@@ -693,6 +740,7 @@ Each phase ends shippable. `docs/spec-v1.md` carries the detail through 8.7,
 | **11 · Track RCFs** | Every Roster Change Form produced is kept and can be downloaded again; `/rcfs` and `/rcf`: the caller's own forms, everyone else's for an Executive Officer, a member search across every form; per line, the Division Chairman's RCF number and the day it went to the Division Chairman and to Rosters, with an every-line row and two today buttons; "in the roster" derived from `import_change`; the member card lists the forms about a person; `view_all_forms` | "Was an RCF ever submitted for this member, and where did it stop" is answered on one screen instead of in a pile of emails |
 | **12 · Look Up Members** | `/lookup`, Admin, `look_up_members`: paste a list of member numbers, read the way a person meant it (spreadsheet columns, Excel's `1234567.0`, thousands separators, dropped leading zeros, stray words — every one reported, none dropped), answered in the order given with placement, on the roster or not, first seen, what the last import changed, and every RCF that named them as a fold | Forty member numbers from an email are forty rows on one screen, and nothing typed was silently lost |
 | **13 · Upload RCFs** | `/rcf-upload`, Admin, `upload_forms` (its own row, so it can be widened): several `.xls` / `.xlsx` forms that came in by email read by their labels, shown back with every reshaping and doubt, kept into `rcf` / `rcf_row` with `source = 'uploaded'` and the DC's number on every line; Track RCFs gains **every change, line by line** — RCF date, member, was, becomes, RCF #, and the import that fulfilled it — opening on the lines not yet fulfilled | A Division Chairman's numbered form from an email is tracked line for line beside the ones made here, and "which requests has HLSR not fulfilled yet" is one table |
+| **14 · RCF Entries and the Approval Flow** | `/rcf-entries`, `/rcf-approvals`, `/rcf-consolidate` (Senior Officer and above: `create_rcf_entries`, `approve_rcf_entries`, `generate_consolidated_rcf`) and `/approval-flow` (Admin, `manage_approval_flow`): one requested change at a time through the RCF's own grid, up a chain of approvers an Admin draws, approved or returned with a note, and cut by the final approver into one or more consolidated Roster Change Forms kept with `source = 'consolidated'` and tracked like every other; Track RCFs lists the entries not yet on a form | A Vice Chairman's request reaches Rodeo Houston on the Division Chairman's one form without anybody retyping it, and "where did it stop" is answered before it is a form |
 | **10.x · v2** | Recruiting and retention automation; multi-year contact history (OI-12) | see `docs/spec-v2.md` |
 
 Phases 4 and 5 are the product. Everything before them is plumbing and
