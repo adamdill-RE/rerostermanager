@@ -61,7 +61,8 @@ test('the dropped route is guarded, scoped, and shares view_roster', function ()
     assertSame(Level::Officer, Capability::ViewRoster->minimumLevel());
     // Phase 14 (spec-v2 §15.2) added four rows: the three entry capabilities
     // and the flow. Twenty-four, transcribed here so a fifth is noticed.
-    assertSame(24, count(Capability::cases()), 'the matrix is still 24 rows');
+    // Twenty-five since Phase 14.1: sign_in_as (spec-v2 §16).
+    assertSame(25, count(Capability::cases()), 'the matrix is still 25 rows');
 });
 
 test('the dropped screen has no write path at all', function (): void {
@@ -190,9 +191,11 @@ test('render() sources the signed-in user itself, so no route can lose the nav',
     $to   = strpos($front, "\nfunction ", (int) $from + 1);
     $body = substr($front, (int) $from, (int) $to - (int) $from);
 
-    assertTrue(str_contains($body, 'global $user;'), 'render() reaches for the request user');
+    // `global $user, $actor;` since Phase 14.1: the Admin behind a sign-in-as
+    // travels with the user, for the same reason.
+    assertTrue(str_contains($body, 'global $user, $actor;'), 'render() reaches for the request user');
     assertTrue(
-        str_contains($body, '$data += [\'user\' => $user];'),
+        str_contains($body, '$data += [\'user\' => $user, \'actor\' => $actor];'),
         'and fills it in as a default'
     );
 

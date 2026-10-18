@@ -97,8 +97,13 @@ function render(Rerm\App $app, string $view, string $title, array $data = [], in
     // Null on the public routes and on the 404 that fires before the session
     // starts, which is exactly what the layout tests for. A route that passes
     // its own 'user' still wins: += fills the gap, it does not overwrite.
-    global $user;
-    $data += ['user' => $user];
+    //
+    // $actor since Phase 14.1 (spec-v2 §16): the Admin whose session this
+    // really is while they are signed in as somebody else, or null. The
+    // layout draws the way back from it, on every screen for the same
+    // reason the nav strip is on every screen.
+    global $user, $actor;
+    $data += ['user' => $user, 'actor' => $actor];
 
     extract($data, EXTR_SKIP);
 
@@ -2660,6 +2665,72 @@ function approval_flow_act(Rerm\App $app, Rerm\Auth\User $user): void
 }
 
 // ---------------------------------------------------------------------------
+// Sign In As (Phase 14.1, spec-v2 §16) — Admin, through Capability::SignInAs.
+// The screen lists every account the Admin may run their session as; the
+// start is a POST on the same route; the way back is /sign-out-as, which is
+// SIGNED_IN because it is pressed while the request runs as somebody the
+// capability guard would refuse. Rerm\Auth\Auth owns the mechanism and
+// re-asks every refusal on every request; this is the two screens' worth of
+// plumbing around it.
+// ---------------------------------------------------------------------------
+
+/** Renders Sign In As: the accounts, with where each one's entries go. */
+function sign_in_as_screen(Rerm\App $app, Rerm\Auth\User $user): void
+{
+    render($app, 'sign-in-as', 'Sign In As', [
+        // A data screen (spec 8.2): the wide container above 720px.
+        'wide'     => true,
+        'user'     => $user,
+        'notices'  => flash_take(),
+        'signInAs' => Rerm\Admin\SignInAsPage::fromApp($app)->page($user, $_GET),
+    ]);
+}
+
+/**
+ * The start: CSRF, then Auth::signInAs(), then a 303 to the menu AS the
+ * account — the first screen the person themselves would land on — or back
+ * here with the refusal. The capability guard proved the Admin's level;
+ * signInAs() asks it again, with the target's, before it writes the key.
+ */
+function sign_in_as_act(Rerm\App $app, Rerm\Auth\Auth $auth): never
+{
+    if (!Rerm\Csrf::check()) {
+        flash_set(...stale_form_notice());
+        redirect($app, 'sign-in-as');
+    }
+
+    $userId  = (int) ($_POST['user_id'] ?? 0);
+    $refusal = $userId > 0 ? $auth->signInAs($userId) : 'Pick an account to sign in as.';
+
+    if ($refusal !== null) {
+        flash_set('danger', $refusal . ' Nothing was changed.');
+        redirect($app, 'sign-in-as');
+    }
+
+    $acting = $auth->currentUser();
+    flash_set('ok', 'You are now signed in as ' . ($acting?->displayName ?? 'that account')
+        . '. Everything you see and do is theirs until you press the button in the bar to come back; '
+        . 'the record keeps your name beside it.');
+    redirect($app, 'menu');
+}
+
+/** The way back: Auth::signOutAs() — a no-op when nobody is acting. */
+function sign_out_as_act(Rerm\App $app, Rerm\Auth\Auth $auth): void
+{
+    if (!$auth->acting()) {
+        return;
+    }
+
+    $acted = $auth->currentUser();
+    $auth->signOutAs();
+
+    $holder = $auth->currentUser();
+    flash_set('ok', 'Back in your own account'
+        . ($holder !== null ? ', ' . $holder->displayName : '')
+        . ($acted !== null ? '. You are no longer signed in as ' . $acted->displayName . '.' : '.'));
+}
+
+// ---------------------------------------------------------------------------
 // Show Year (spec 5.1, Phase 8 decided 1 and 5) — Admin, through
 // Capability::ManageShowYear. Create, set active, open/close, and the
 // rollover. Everything that changes state is a POST with a token; the
@@ -3454,8 +3525,9 @@ if ($guard === null) {
 // live in it, and the guarded ones hold the auth_token id in it (spec 3.4).
 Rerm\Session::start($app);
 
-$auth = Rerm\Auth\Auth::fromApp($app);
-$user = null;
+$auth  = Rerm\Auth\Auth::fromApp($app);
+$user  = null;
+$actor = null;
 
 if ($guard !== Rerm\Routes::PUBLIC
     && $guard !== Rerm\Routes::STATUS_KEY
@@ -3467,10 +3539,27 @@ if ($guard !== Rerm\Routes::PUBLIC
         redirect($app, 'login');
     }
 
+    // Sign In As (Phase 14.1, spec-v2 §16): $user is the account the request
+    // runs as — every guard below, every Access check and every ScopedQuery
+    // reads it, which is the point — and $actor is the Admin it really is,
+    // or null. Auth has already re-checked that the Admin is still one.
+    // Every audit row written from here on carries the Admin's id beside
+    // the account's, so the record never says the account did it alone.
+    if ($auth->acting()) {
+        $actor = $auth->accountHolder();
+        Rerm\Audit\AuditLog::setActingAdmin($actor?->id);
+    }
+
     // The forced first change blocks EVERY other screen, direct URLs
     // included (spec 3.2). /password is where it is satisfied and /logout is
     // the one other thing a person half signed-in may do.
-    if ($user->mustChangePassword && $path !== 'password' && $path !== 'logout') {
+    //
+    // Not while acting: the password that must change is the ACCOUNT's,
+    // and the Admin in its shoes is not the person who should choose it —
+    // Designate Users resets one, and /password itself is refused below
+    // while acting. A granted account nobody has signed in to yet is
+    // exactly the one an Admin walks an approval flow with.
+    if ($user->mustChangePassword && $actor === null && $path !== 'password' && $path !== 'logout') {
         redirect($app, 'password');
     }
 
@@ -3500,7 +3589,7 @@ switch ($path) {
         if (Rerm\Auth\Access::mayUse($user, Rerm\Auth\Capability::ViewStatusDashboard)) {
             dashboard_screen($app, $user);
         } else {
-            render($app, 'menu', 'Menu', ['user' => $user]);
+            render($app, 'menu', 'Menu', ['user' => $user, 'notices' => flash_take()]);
         }
         break;
 
@@ -3509,7 +3598,10 @@ switch ($path) {
         break;
 
     case 'menu':
-        render($app, 'menu', 'Menu', ['user' => $user]);
+        // Reads the flash since Phase 14.1: Sign In As and the way back
+        // both land here, and a 303 whose word is lost reads as a button
+        // that did nothing.
+        render($app, 'menu', 'Menu', ['user' => $user, 'notices' => flash_take()]);
         break;
 
     case 'log-contact':
@@ -3541,6 +3633,15 @@ switch ($path) {
         redirect($app, 'login');
 
     case 'password':
+        // Not somebody else's (Phase 14.1): an Admin signed in as an account
+        // does not get to choose that account's password through its own
+        // screen. Designate Users resets one, on the record, as the Admin.
+        if ($actor !== null) {
+            flash_set('warn', 'Not while signed in as ' . $user->displayName
+                . '. Their password is reset from Designate Users; yours, once you are back in your own account.');
+            redirect($app, 'menu');
+        }
+
         $notices = password_act($app, $auth, $user);
         render($app, 'password', 'Change password', [
             'notices'   => $notices,
@@ -3757,6 +3858,26 @@ switch ($path) {
 
         approval_flow_screen($app, $user);
         break;
+
+    case 'sign-in-as':
+        // Both verbs on one route (Phase 14.1, spec-v2 §16). A POST never
+        // falls through: sign_in_as_act() 303s to the menu as the account,
+        // or back to this screen with the refusal.
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            sign_in_as_act($app, $auth);
+        }
+
+        sign_in_as_screen($app, $user);
+        break;
+
+    case 'sign-out-as':
+        // POST only, with a token, like logout — and a no-op when nobody is
+        // acting, so the header's button can never do harm. A GET lands on
+        // the menu, whoever is asking.
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && Rerm\Csrf::check()) {
+            sign_out_as_act($app, $auth);
+        }
+        redirect($app, 'menu');
 
     case 'show-year':
         // Both verbs on one route. A POST never falls through:

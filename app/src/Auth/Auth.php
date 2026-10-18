@@ -28,14 +28,36 @@ use Rerm\Session;
  *
  * The browser cookie is never cleared on a refusal, for the same reason — a
  * Set-Cookie from the losing request would race the winner's.
+ *
+ * SIGN IN AS (Phase 14.1, spec-v2 §16): an Admin may run a request AS another
+ * account, to see the application exactly as that account sees it. The PHP
+ * session then holds a second thing, the app_user id being acted as, and
+ * currentUser() returns THAT account, built by the same loadUser() the real
+ * login is built by — so its level, its division, its team set and every
+ * screen's scope resolve exactly as they would for the person themselves.
+ * The real login is unchanged underneath: the token row, the cookie and the
+ * session pointer all still belong to the Admin, accountHolder() still says
+ * so, and the acting-as key is re-checked on EVERY request against the
+ * account holder's level, so a revoked Admin does not stay in anybody's
+ * shoes. It lives in the PHP session only, never in auth_token: it cannot
+ * outlive the browser session, and it ends with a Sign out either way.
  */
 final class Auth
 {
     public const SESSION_KEY = 'auth_token_id';
 
+    /** The app_user id an Admin is signed in as, when they are (spec-v2 §16). */
+    public const ACTING_KEY = 'acting_as_user_id';
+
     private User|false|null $resolved = false;
 
     private ?int $tokenId = null;
+
+    /**
+     * The account that actually signed in, when currentUser() is somebody
+     * else; null whenever nobody is acting. Set by resolve() alone.
+     */
+    private ?User $holder = null;
 
     public function __construct(
         private readonly App $app,
@@ -54,6 +76,11 @@ final class Auth
         return (string) $this->app->config()->get('auth.cookie_name', 'RERMAUTH');
     }
 
+    /**
+     * The user this request RUNS AS. While an Admin is signed in as another
+     * account this is that account; every route guard, every Access check
+     * and every ScopedQuery reads it, which is the whole point.
+     */
     public function currentUser(): ?User
     {
         if ($this->resolved !== false) {
@@ -61,6 +88,25 @@ final class Auth
         }
 
         return $this->resolved = $this->resolve();
+    }
+
+    /**
+     * The account that actually signed in — the Admin, while they are signed
+     * in as somebody else; otherwise the same person currentUser() returns.
+     */
+    public function accountHolder(): ?User
+    {
+        $current = $this->currentUser();
+
+        return $this->holder ?? $current;
+    }
+
+    /** Is this request being run as an account other than the one that signed in? */
+    public function acting(): bool
+    {
+        $this->currentUser();
+
+        return $this->holder !== null;
     }
 
     /** The auth_token id behind the current user, for "every session but this one". */
@@ -101,6 +147,7 @@ final class Auth
 
         $this->resolved = false;
         $this->tokenId  = $issued['id'];
+        $this->holder   = null;
     }
 
     /**
@@ -122,6 +169,10 @@ final class Auth
         }
 
         Session::forget(self::SESSION_KEY);
+        // Signing out ends the acting-as as well: the real login is what is
+        // being ended, and there is nothing to be somebody else's shoes in
+        // once it is gone.
+        Session::forget(self::ACTING_KEY);
         $this->sendCookie('', time() - 86400);
 
         if (PHP_SAPI !== 'cli' && session_status() === PHP_SESSION_ACTIVE) {
@@ -130,6 +181,135 @@ final class Auth
 
         $this->resolved = null;
         $this->tokenId  = null;
+        $this->holder   = null;
+    }
+
+    // -----------------------------------------------------------------------
+    // Sign in as (Phase 14.1, spec-v2 §16)
+    // -----------------------------------------------------------------------
+
+    /**
+     * Starts running this session as another account.
+     *
+     * Four refusals, each a sentence the screen shows, and every one of them
+     * is re-asked by resolve() on the next request rather than trusted from
+     * the session: the account holder must be an Admin, the target must be
+     * an active account, the target must not be an Admin (nothing is seen
+     * that way that the Admin cannot already see, and one Admin acting under
+     * another's name is a false record), and the target must not be the
+     * holder themselves. Audited as the Admin, naming the account.
+     *
+     * @return string|null the refusal, or null when the session now runs as
+     *         the account
+     */
+    public function signInAs(int $userId): ?string
+    {
+        $holder = $this->accountHolder();
+        if ($holder === null || $holder->level !== Level::Admin) {
+            return 'Only an Admin may sign in as another account.';
+        }
+        if ($userId === $holder->id) {
+            return 'That is your own account.';
+        }
+
+        $target = $this->loadUser($userId);
+        if ($target === null) {
+            return 'That account does not exist or is deactivated.';
+        }
+        if ($target->level === Level::Admin) {
+            return 'An Admin cannot sign in as another Admin: there is nothing they would see that you cannot, and anything done would be recorded under the wrong name.';
+        }
+
+        // Switching straight from one account to another closes the first
+        // on the record, so every sign_in_as row has its sign_out_as.
+        $this->signOutAs();
+
+        Session::set(self::ACTING_KEY, $target->id);
+
+        (new AuditLog($this->app->db()))->record(
+            $holder,
+            Action::SignInAs,
+            'app_user',
+            (string) $target->id,
+            null,
+            ['member_number' => $target->memberNumber, 'level' => $target->level->value]
+        );
+
+        $this->resolved = false;
+        $this->holder   = null;
+
+        // From here to the end of this request every audit row is the
+        // Admin's hand under the account's name (AuditLog's marker); the
+        // front controller sets the same thing at the head of every later
+        // request from acting().
+        AuditLog::setActingAdmin($holder->id);
+
+        return null;
+    }
+
+    /**
+     * Back to the account that signed in. A no-op when nobody is acting, so
+     * the header's button can never do harm when pressed twice.
+     */
+    public function signOutAs(): void
+    {
+        if (!$this->acting()) {
+            return;
+        }
+
+        $acted  = $this->currentUser();
+        $holder = $this->holder;
+
+        Session::forget(self::ACTING_KEY);
+        $this->resolved = false;
+        $this->holder   = null;
+
+        // The request runs as the Admin again, so the sign_out_as row below
+        // and anything after it is theirs plainly, with no marker.
+        AuditLog::setActingAdmin(null);
+
+        if ($acted !== null && $holder !== null) {
+            (new AuditLog($this->app->db()))->record(
+                $holder,
+                Action::SignOutAs,
+                'app_user',
+                (string) $acted->id,
+                null,
+                ['member_number' => $acted->memberNumber]
+            );
+        }
+    }
+
+    /**
+     * The account the session is acting as, if the real login may still act
+     * as it; otherwise the real login, with the stale key forgotten.
+     *
+     * Re-checked every request, on purpose. A session that held the key
+     * when its holder was an Admin is not evidence the holder still is one:
+     * a grant can be revoked underneath it, the target can be deactivated
+     * by an import, or promoted to Admin by a designation. Each of those
+     * ends the acting-as on the next request rather than being honoured.
+     */
+    private function actingUser(User $holder): User
+    {
+        $actingId = Session::get(self::ACTING_KEY);
+        if (!is_int($actingId)) {
+            return $holder;
+        }
+
+        $target = $holder->level === Level::Admin && $actingId !== $holder->id
+            ? $this->loadUser($actingId)
+            : null;
+
+        if ($target === null || $target->level === Level::Admin) {
+            Session::forget(self::ACTING_KEY);
+
+            return $holder;
+        }
+
+        $this->holder = $holder;
+
+        return $target;
     }
 
     private function resolve(): ?User
@@ -144,7 +324,7 @@ final class Auth
                 if ($user !== null) {
                     $this->tokenId = $tokenId;
 
-                    return $user;
+                    return $this->actingUser($user);
                 }
             }
 
@@ -196,7 +376,11 @@ final class Auth
         );
         $this->tokenId = (int) $result['id'];
 
-        return $user;
+        // The cookie path starts a fresh PHP session, so there is no
+        // acting-as key to honour here — actingUser() finds none and hands
+        // the real login back. Routed through it anyway so there is one
+        // answer to "who is this request", not two.
+        return $this->actingUser($user);
     }
 
     /**

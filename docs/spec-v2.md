@@ -1957,3 +1957,110 @@ the roster (§12.5, §14.5) — and `Track RCFs` and the form's page say
 | V2-18 | Should an approver be able to **edit** a line before approving it — fix a title, tick rookie? | No. What was asked is the record; an approver returns it with a note and the requester resubmits. An "amend and approve" that keeps both versions is the shape, if it is wanted. |
 | V2-19 | Should the **grouping** offer a third cut — one form for the whole committee, for a Chairman at the top of every chain? | Not yet. A form's heading names one sub-committee; a committee-wide heading would be `Rodeo Express`, which is not a sub-committee Rodeo Houston recognises. Group by division and send several. |
 | V2-20 | Should a **returned** entry be editable and resubmitted in place rather than typed again? | Typed again, through the grid. One tap less would be "copy this into the grid", which is a GET with the row prefilled — cheap when asked for. |
+
+---
+
+## 16. Sign In As
+
+Phase 14.1. The first thing the owner asked for after Phase 14 landed was
+not a change to the approval flow but a way to **test** it: a flow of three
+accounts cannot be walked by one person without three logins, and asking a
+Vice Chairman, a Division Vice Chairman and a Division Chairman to each
+sign in and press a button is how a feature goes untested. So an Admin may
+run their session **as another account** — seeing exactly what that account
+sees, doing what it may do — and come back.
+
+### 16.1 What it is, and what it is not
+
+It is the Admin's own login, unchanged underneath, with the application
+told to answer every question for a different `app_user` row. The PHP
+session holds one more thing beside the auth token id — the id of the
+account being acted as — and `Rerm\Auth\Auth::currentUser()` returns that
+account, built by the same `loadUser()` the real login is built by. Its
+level is its own effective level, its scope resolves through
+`User::fromRow` exactly as it would for the person, every route guard and
+every `Access` check and every `ScopedQuery` reads it, and the menu draws
+that account's tiles. The Admin is `Auth::accountHolder()`, and the bar on
+every screen says *Signed in as*, names the account, and carries **Back to
+\<Admin\> (Admin)**.
+
+It is not a second login: no token row is issued, no cookie changes, and
+the acting-as cannot outlive the PHP session (1,440 seconds idle on this
+host, `docs/hosting.md`) or a Sign out, which ends both. It is not
+read-only: the whole point is to submit an entry, approve it and generate
+the form, and a tool that could only look would not have answered the
+request. And it is not a way to become another Admin.
+
+### 16.2 The capability
+
+| Capability | Minimum level | Scope | Why |
+| --- | --- | --- | --- |
+| `sign_in_as` | Admin | Everywhere | No member is the subject; the whole committee's data is seen under somebody else's name, and Admin is who the record already trusts with all of it. Its own row so it can be reasoned about and taken away on its own. |
+
+Transcribed a second time in `tests/access_test.php`, like every row. Two
+routes carry it: `/sign-in-as` (the screen and the start, guarded by the
+capability) and `/sign-out-as` (the way back, **signed-in only**, POST with
+a token, a no-op unless the session is acting). The second cannot be behind
+the capability because it is pressed while the request runs as an Officer,
+whom the capability guard would refuse — and all it can do is give an Admin
+their own account back.
+
+### 16.3 Five rules
+
+1. **The holder's level is re-read on every request, never trusted from the
+   session.** Before the acting-as key is honoured, `Auth` loads the real
+   login and asks whether it is still an Admin and whether the target is
+   still an active, non-Admin account. A grant revoked underneath, a target
+   deactivated by an import, a target promoted to Admin by a designation —
+   each ends the acting-as on the next request, with the key forgotten
+   rather than ignored. A test plants the key under an Officer's session
+   and reads the Officer back.
+2. **Never another Admin, never a deactivated account, never yourself.**
+   Each refusal is a sentence on the screen, each is asked again by
+   `signInAs()` whatever the screen offered, and none of them writes the
+   key. There is nothing an Admin would see as another Admin that they
+   cannot already see, and anything done would be recorded under the wrong
+   name.
+3. **Every row written in between carries the Admin's id.** The pair
+   `sign_in_as` / `sign_out_as` is written as the Admin, naming the account,
+   and brackets the window; and every `audit_log` row written through
+   `Rerm\Audit\AuditLog` while acting carries `acting_admin_user_id` in its
+   payload beside the account's id in `actor_user_id`. The actor column
+   keeps the account, because that is who the application ran as and what
+   every screen, filter and `rcf_entry_step` records; the marker says whose
+   hand it was. Switching straight from one account to another signs out of
+   the first on the record first, so every in has its out.
+4. **The account's password is not the Admin's to choose.** The forced
+   first change (spec-v1 §3.2) pins the person themselves to `/password`;
+   while acting it does not apply — a granted account nobody has signed in
+   to yet is exactly the one an Admin walks a flow with — and `/password`
+   itself is refused with a sentence pointing at Designate Users, where a
+   reset is an Admin's act under the Admin's name.
+5. **Nothing else changes.** No screen asks whether it is being acted
+   through. A Senior Officer's roster is their division whoever is looking;
+   an entry submitted as a Vice Chairman routes where the flow says a Vice
+   Chairman's entries go. That is what makes what the Admin sees the truth
+   about what the account would see.
+
+### 16.4 The screen
+
+`/sign-in-as` is on the menu under *Administer*. It lists every active,
+non-Admin account other than the caller — broadest level first, then by
+name, searched by `RosterPage::searchClause()` with the three-character
+floor, capped at three hundred with a sentence — and beside each one the
+title, the level in force and whether it was granted, the team and
+division, and **where that account's RCF entries go**, read from the same
+`rcf_approver` table *Create Approval Flow* draws: *Abe Second*, *Top of the
+chain* or *Not set*. That last column is the reason the screen exists: it
+says which three accounts to step through to walk a chain. One form, one
+token, a button per row (the Assign pattern, spec §10's budget). Starting
+lands on the menu **as the account**, with a notice saying so and that the
+record keeps the Admin's name beside it.
+
+### 16.5 Open items raised
+
+| # | Question | Assumption today |
+| --- | --- | --- |
+| V2-21 | Should `sign_in_as` be **widened** to Executive Officers, so a Chairman can see a Captain's phone screen while on the phone with them? | Not yet. Admin, as the request said, and its own row so the widening is one line in `minimumLevel()` and the transcribed row. Everything else — the re-check, the marker, the refusal of Admin targets — holds at any floor. |
+| V2-22 | Should there be a **read-only** mode, for looking without being able to write under the account's name? | No. The request was to walk a flow, which is writes, and the marker on every row is the protection. A second mode would be a second thing for every write path to ask. |
+| V2-23 | Should the Audit Log screen **show** the marker as a word — "by Ada Admin, signed in as" — rather than as a key in the payload fold? | Not yet. The payload is behind a details on that screen and the key is plain; a column is worth adding when somebody reads the log for it. |

@@ -311,6 +311,23 @@ Presidents` (plural), `Lifetime Committeemen` (plural). An unrecognised title
 imports as **Member with no login** and raises an import warning naming it. It
 never silently becomes an officer.
 
+### Sign In As
+
+Phase 14.1 (spec-v2 §16). An Admin may run their session **as another
+account** — `sign_in_as`, Admin / Everywhere, its own row — to see exactly
+what that account sees and to walk an approval flow as each person in it.
+It is the Admin's own login underneath: the PHP session holds the acted-as
+`app_user` id beside the token id, `Rerm\Auth\Auth::currentUser()` returns
+that account built by the same loader as a real login, and
+`accountHolder()` is the Admin. Four things hold it: the holder's level is
+**re-read on every request** before the key is honoured; never another
+Admin, never a deactivated account, never yourself; the `sign_in_as` /
+`sign_out_as` pair is audited as the Admin and every `AuditLog` row in
+between carries `acting_admin_user_id`; and `/password` is refused while
+acting. `/sign-out-as` is signed-in only, because it is pressed as somebody
+the capability guard would refuse. No screen asks whether it is being acted
+through — that is what makes what the Admin sees the truth.
+
 ### Allowed Users
 
 An Admin, Executive Officer or Senior Officer may grant any imported member a
@@ -741,6 +758,7 @@ Each phase ends shippable. `docs/spec-v1.md` carries the detail through 8.7,
 | **12 · Look Up Members** | `/lookup`, Admin, `look_up_members`: paste a list of member numbers, read the way a person meant it (spreadsheet columns, Excel's `1234567.0`, thousands separators, dropped leading zeros, stray words — every one reported, none dropped), answered in the order given with placement, on the roster or not, first seen, what the last import changed, and every RCF that named them as a fold | Forty member numbers from an email are forty rows on one screen, and nothing typed was silently lost |
 | **13 · Upload RCFs** | `/rcf-upload`, Admin, `upload_forms` (its own row, so it can be widened): several `.xls` / `.xlsx` forms that came in by email read by their labels, shown back with every reshaping and doubt, kept into `rcf` / `rcf_row` with `source = 'uploaded'` and the DC's number on every line; Track RCFs gains **every change, line by line** — RCF date, member, was, becomes, RCF #, and the import that fulfilled it — opening on the lines not yet fulfilled | A Division Chairman's numbered form from an email is tracked line for line beside the ones made here, and "which requests has HLSR not fulfilled yet" is one table |
 | **14 · RCF Entries and the Approval Flow** | `/rcf-entries`, `/rcf-approvals`, `/rcf-consolidate` (Senior Officer and above: `create_rcf_entries`, `approve_rcf_entries`, `generate_consolidated_rcf`) and `/approval-flow` (Admin, `manage_approval_flow`): one requested change at a time through the RCF's own grid, up a chain of approvers an Admin draws, approved or returned with a note, and cut by the final approver into one or more consolidated Roster Change Forms kept with `source = 'consolidated'` and tracked like every other; Track RCFs lists the entries not yet on a form | A Vice Chairman's request reaches Rodeo Houston on the Division Chairman's one form without anybody retyping it, and "where did it stop" is answered before it is a form |
+| **14.1 · Sign In As** | `/sign-in-as` (Admin, `sign_in_as`, under Administer): every active non-Admin account with where its RCF entries go, one button per row; the session runs as that account through the same loader a real login uses; *Signed in as* and **Back to** in the bar on every screen (`/sign-out-as`); the holder re-checked every request; the audit pair and the marker on every row between | An Admin walks a three-account approval chain alone, and the record still says whose hand every step was |
 | **10.x · v2** | Recruiting and retention automation; multi-year contact history (OI-12) | see `docs/spec-v2.md` |
 
 Phases 4 and 5 are the product. Everything before them is plumbing and

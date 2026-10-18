@@ -229,6 +229,18 @@ final class Routes
         'rcf-consolidate' => Capability::GenerateConsolidatedRcf->value,
         'approval-flow'   => Capability::ManageApprovalFlow->value,
 
+        // Sign In As (Phase 14.1, spec-v2 §16) — Admin, its own capability.
+        // Two routes, because the two ends are reached by two different
+        // people: the SCREEN and its start are the Admin's, guarded by the
+        // capability like every Admin screen; the way BACK is pressed while
+        // the request runs as somebody else — an Officer, say — whom the
+        // capability guard would refuse. So sign-out-as is SIGNED_IN: it
+        // does nothing unless the session is acting (Auth::signOutAs is a
+        // no-op otherwise), it is POST-only with a token, and all it can do
+        // is give an Admin their own account back.
+        'sign-in-as'  => Capability::SignInAs->value,
+        'sign-out-as' => self::SIGNED_IN,
+
         // Show Year (spec 5.1) — Admin. Create, set active, open/close, and
         // the rollover that carries eligible assignments into a new year.
         // 'show-year', hyphenated like 'log-contact'.

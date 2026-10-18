@@ -33,11 +33,38 @@ use Rerm\Auth\User;
  *
  * Batched, because the database is on another machine (docs/hosting.md): a
  * purge of fifty members is one round trip, not fifty.
+ *
+ * WHILE AN ADMIN IS SIGNED IN AS ANOTHER ACCOUNT (Phase 14.1, spec-v2 §16),
+ * every row written through here carries `acting_admin_user_id` in its
+ * payload. The actor column keeps the ACCOUNT's id — that is who the
+ * application ran as, and what every screen, filter and approval step
+ * records — and the marker says whose hand it really was. The front
+ * controller sets it once per request from Rerm\Auth\Auth; nothing else
+ * may, and a CLI or a test that never sets it writes rows exactly as before.
  */
 final class AuditLog
 {
     /** Rows per INSERT. Fifty x seven placeholders is comfortable. */
     private const CHUNK = 50;
+
+    /** The payload key the marker travels under. */
+    public const ACTING_KEY = 'acting_admin_user_id';
+
+    private static ?int $actingAdminId = null;
+
+    /**
+     * Names the Admin whose hand every row written for the rest of this
+     * request really is, or clears it with null.
+     */
+    public static function setActingAdmin(?int $adminUserId): void
+    {
+        self::$actingAdminId = $adminUserId !== null && $adminUserId > 0 ? $adminUserId : null;
+    }
+
+    public static function actingAdmin(): ?int
+    {
+        return self::$actingAdminId;
+    }
 
     public function __construct(private readonly PDO $pdo)
     {
@@ -104,7 +131,7 @@ final class AuditLog
                 $bind[":entity_{$i}"]    = substr($row['entity'], 0, 64);
                 $bind[":entity_id_{$i}"] = substr($row['entity_id'], 0, 64);
                 $bind[":before_{$i}"]    = self::json($row['before'] ?? null);
-                $bind[":after_{$i}"]     = self::json($row['after'] ?? null);
+                $bind[":after_{$i}"]     = self::json(self::marked($row['after'] ?? null));
                 $bind[":ip_{$i}"]        = $ip;
             }
 
@@ -138,6 +165,25 @@ final class AuditLog
         } catch (JsonException) {
             return null;
         }
+    }
+
+    /**
+     * The after-payload with the acting Admin's id added, while one is set.
+     *
+     * In `after` rather than `before`: the marker describes the write, not
+     * the state it replaced, and a row with no payload at all still gets
+     * one so the fact is never lost to a null.
+     *
+     * @param array<string, mixed>|null $after
+     * @return array<string, mixed>|null
+     */
+    private static function marked(?array $after): ?array
+    {
+        if (self::$actingAdminId === null) {
+            return $after;
+        }
+
+        return ($after ?? []) + [self::ACTING_KEY => self::$actingAdminId];
     }
 
     /** The requesting address, as every throttle, token and audit row records it. */

@@ -162,6 +162,18 @@ enum Action: string
     case GenerateConsolidatedRcf = 'generate_consolidated_rcf';
     case SetApprover             = 'set_approver';
 
+    /**
+     * An Admin signed in as another account, and came back (Phase 14.1,
+     * spec-v2 §16). Two verbs rather than one, because the pair brackets a
+     * window: every row the ACCOUNT's id wrote between them was the Admin's
+     * hand, and each such row also carries `acting_admin_user_id` in its
+     * payload (Rerm\Audit\AuditLog). "What did the Admin do under other
+     * names in October" is one filter; "was anybody ever signed in as this
+     * account" is the other.
+     */
+    case SignInAs                = 'sign_in_as';
+    case SignOutAs               = 'sign_out_as';
+
     /** What the filter and the log's own rows call it. */
     public function label(): string
     {
@@ -209,6 +221,9 @@ enum Action: string
             self::WithdrawRcfEntry        => 'RCF entry withdrawn',
             self::GenerateConsolidatedRcf => 'Consolidated RCF generated',
             self::SetApprover             => 'Approver set',
+
+            self::SignInAs                => 'Signed in as another account',
+            self::SignOutAs               => 'Returned to own account',
         };
     }
 

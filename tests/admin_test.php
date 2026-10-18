@@ -334,6 +334,10 @@ test('the audit vocabulary is a type, and every writer uses it', function (): vo
         // signature a request goes out under.
         'submit_rcf_entry', 'approve_rcf_entry', 'return_rcf_entry',
         'withdraw_rcf_entry', 'generate_consolidated_rcf', 'set_approver',
+        // spec-v2 §16. An Admin stepping into another account and back out
+        // — two verbs, because the pair brackets the window in which every
+        // row under the account's id was the Admin's hand.
+        'sign_in_as', 'sign_out_as',
     ];
 
     $actual = array_map(static fn (Action $a): string => $a->value, Action::cases());
