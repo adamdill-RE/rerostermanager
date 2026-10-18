@@ -46,6 +46,22 @@ use Rerm\Roster\RosterPage;
  * step or a form — a returned entry is the record of what was asked and
  * what was said; or route an entry anywhere the flow did not say.
  *
+ * AFTER THE FORM (Phase 14.2, spec-v2 §17). A generated entry is not done
+ * when it is on a form; it is done when Rodeo Houston's next roster shows
+ * the change. So shape() asks `RcfTracking::landed()` about the line each
+ * generated entry became — the same derivation the form's own page and
+ * Track RCFs use, read out of `import_change` and never typed — and every
+ * list says "in the roster" or "not yet in the roster" beside "on form #".
+ *
+ * And a consolidated form can be VOIDED by the account that generated it,
+ * or an Admin: the form and every entry it was cut from are stamped
+ * `voided_at` in one transaction, with a note, and every read here and in
+ * RcfTracking filters the stamp, so a test run of the flow disappears from
+ * view for everybody in the chain. Nothing is deleted: the rows stay, each
+ * entry gains a `voided` step, and one audit row names the form, the
+ * entries and the note. That row is the only place a voided form is still
+ * visible.
+ *
  * Every state change is one `rcf_entry_step` row and one audit row, in the
  * same transaction as the change.
  */
@@ -143,7 +159,7 @@ final class RcfEntries
             "SELECT SUM(CASE WHEN requested_by = :me1 AND status IN ('pending', 'approved') THEN 1 ELSE 0 END) AS mine,"
             . " SUM(CASE WHEN current_approver_id = :me2 AND status = 'pending' THEN 1 ELSE 0 END) AS waiting,"
             . " SUM(CASE WHEN status = 'approved' AND (:admin = 1 OR final_approver_id = :me3) THEN 1 ELSE 0 END) AS ready"
-            . ' FROM rcf_entry'
+            . ' FROM rcf_entry WHERE voided_at IS NULL'
         );
         $read->execute([':me1' => $user->id, ':me2' => $user->id, ':me3' => $user->id, ':admin' => self::generatesAll($user) ? 1 : 0]);
         $row = $read->fetch();
@@ -330,7 +346,7 @@ final class RcfEntries
      */
     public function mine(User $user): array
     {
-        $read = $this->pdo->prepare($this->select() . ' WHERE e.requested_by = :me ORDER BY e.id DESC LIMIT 500');
+        $read = $this->pdo->prepare($this->select() . ' WHERE e.requested_by = :me AND e.voided_at IS NULL ORDER BY e.id DESC LIMIT 500');
         $read->execute([':me' => $user->id]);
 
         return $this->shape($read->fetchAll(), $user);
@@ -345,7 +361,7 @@ final class RcfEntries
     public function waitingFor(User $user): array
     {
         $read = $this->pdo->prepare(
-            $this->select() . " WHERE e.current_approver_id = :me AND e.status = 'pending' ORDER BY e.id ASC"
+            $this->select() . " WHERE e.current_approver_id = :me AND e.status = 'pending' AND e.voided_at IS NULL ORDER BY e.id ASC"
         );
         $read->execute([':me' => $user->id]);
 
@@ -369,7 +385,7 @@ final class RcfEntries
     {
         $read = $this->pdo->prepare(
             $this->select()
-            . " WHERE e.requested_by <> :me1 AND EXISTS (SELECT 1 FROM rcf_entry_step ds WHERE ds.entry_id = e.id"
+            . " WHERE e.requested_by <> :me1 AND e.voided_at IS NULL AND EXISTS (SELECT 1 FROM rcf_entry_step ds WHERE ds.entry_id = e.id"
             . " AND ds.actor_user_id = :me2 AND ds.action IN ('approved', 'returned'))"
             . ' ORDER BY e.id DESC LIMIT 50'
         );
@@ -389,7 +405,7 @@ final class RcfEntries
     {
         $read = $this->pdo->prepare(
             $this->select()
-            . " WHERE e.status = 'approved' AND (:admin = 1 OR e.final_approver_id = :me)"
+            . " WHERE e.status = 'approved' AND e.voided_at IS NULL AND (:admin = 1 OR e.final_approver_id = :me)"
             . ' ORDER BY COALESCE(d.name, e.subcommittee), e.subcommittee, e.member_name, e.id'
         );
         $read->execute([':admin' => self::generatesAll($user) ? 1 : 0, ':me' => $user->id]);
@@ -408,7 +424,7 @@ final class RcfEntries
     {
         [$visible, $bind] = self::visibleClause($user, 'p');
         $read = $this->pdo->prepare(
-            $this->select() . " WHERE e.status IN ('pending', 'approved') AND {$visible} ORDER BY e.id DESC LIMIT 300"
+            $this->select() . " WHERE e.status IN ('pending', 'approved') AND e.voided_at IS NULL AND {$visible} ORDER BY e.id DESC LIMIT 300"
         );
         $read->execute($bind);
 
@@ -423,7 +439,7 @@ final class RcfEntries
      */
     public function onForm(User $user, int $rcfId): array
     {
-        $read = $this->pdo->prepare($this->select() . ' WHERE e.rcf_id = :rcf ORDER BY e.rcf_row_id');
+        $read = $this->pdo->prepare($this->select() . ' WHERE e.rcf_id = :rcf AND e.voided_at IS NULL ORDER BY e.rcf_row_id');
         $read->execute([':rcf' => $rcfId]);
 
         return $this->shape($read->fetchAll(), $user);
@@ -441,7 +457,8 @@ final class RcfEntries
         $read = $this->pdo->prepare(
             'SELECT f.id, f.generated_at, f.subcommittee, f.row_count, f.regenerated_count,'
             . ' (SELECT COUNT(*) FROM rcf_entry e WHERE e.rcf_id = f.id) AS entries'
-            . " FROM rcf f WHERE f.source = 'consolidated' AND f.generated_by = :me ORDER BY f.id DESC LIMIT 100"
+            . " FROM rcf f WHERE f.source = 'consolidated' AND f.voided_at IS NULL AND f.generated_by = :me"
+            . ' ORDER BY f.id DESC LIMIT 100'
         );
         $read->execute([':me' => $user->id]);
 
@@ -818,12 +835,136 @@ final class RcfEntries
     }
 
     // -----------------------------------------------------------------------
+    // Voiding a consolidated form (Phase 14.2, spec-v2 §17)
+    // -----------------------------------------------------------------------
+
+    /**
+     * May this user void this form? Only a CONSOLIDATED form, not yet
+     * voided, and only by the account that generated it — the one whose
+     * signature it would have gone out under — or an Admin; and only while
+     * holding the capability that generated it. A form made on Create Forms
+     * or uploaded from a file is never voidable here: it was sent, or it
+     * arrived, and the record of that stands.
+     *
+     * The whole rule, in one place, so the screen and the write agree.
+     *
+     * @param array<string, mixed> $form a row carrying source, generated_by and voided_at
+     */
+    public static function mayVoid(User $user, array $form): bool
+    {
+        if ((string) ($form['source'] ?? '') !== 'consolidated' || ($form['voided_at'] ?? null) !== null) {
+            return false;
+        }
+        if (!Access::mayUse($user, Capability::GenerateConsolidatedRcf)) {
+            return false;
+        }
+
+        return $user->level === Level::Admin || (int) ($form['generated_by'] ?? 0) === $user->id;
+    }
+
+    /**
+     * Voids a consolidated form: the form and every entry it was cut from
+     * are stamped voided, with the note, in one transaction; each entry
+     * gains a `voided` step; one audit row names the form, the entries and
+     * the note. From then on nothing lists the form or the entries — not
+     * Track RCFs, not the requester's list, not any approver's, not the
+     * member card — for anybody.
+     *
+     * A note is required, exactly as a return's is: a form taken out of the
+     * record without a reason is a hole in it. Returns how many entries
+     * were voided with the form; null when the caller may not void it, or
+     * there is no such form, which is the same answer on purpose; and -1
+     * when the note is missing, so the screen can say which.
+     *
+     * Nothing is deleted. The entries keep status 'generated' and their
+     * line; the stamp is what hides them. If the same change is still
+     * wanted, it is asked for again through the grid.
+     */
+    public function void(User $user, int $rcfId, string $note): ?int
+    {
+        if ($rcfId <= 0) {
+            return null;
+        }
+
+        $read = $this->pdo->prepare('SELECT id, source, generated_by, voided_at, subcommittee, row_count FROM rcf WHERE id = :id');
+        $read->execute([':id' => $rcfId]);
+        $form = $read->fetch();
+        if (!is_array($form) || !self::mayVoid($user, $form)) {
+            return null;
+        }
+
+        $note = self::note($note);
+        if ($note === '') {
+            return -1;
+        }
+
+        $entries = $this->pdo->prepare(
+            'SELECT e.id, (SELECT COUNT(*) FROM rcf_entry_step c WHERE c.entry_id = e.id) AS steps'
+            . ' FROM rcf_entry e WHERE e.rcf_id = :rcf AND e.voided_at IS NULL ORDER BY e.id'
+        );
+        $entries->execute([':rcf' => $rcfId]);
+        $rows = $entries->fetchAll();
+
+        $this->pdo->beginTransaction();
+
+        try {
+            $this->pdo->prepare(
+                'UPDATE rcf SET voided_at = UTC_TIMESTAMP(), voided_by = :by, void_note = :note'
+                . ' WHERE id = :id AND voided_at IS NULL'
+            )->execute([':by' => $user->id, ':note' => $note, ':id' => $rcfId]);
+
+            $stamp = $this->pdo->prepare(
+                'UPDATE rcf_entry SET voided_at = UTC_TIMESTAMP() WHERE id = :id AND rcf_id = :rcf AND voided_at IS NULL'
+            );
+            $ids = [];
+            foreach ($rows as $row) {
+                $id = (int) $row['id'];
+                $stamp->execute([':id' => $id, ':rcf' => $rcfId]);
+                $this->step($id, (int) $row['steps'] + 1, $user->id, 'voided', $note);
+                $ids[] = $id;
+            }
+
+            (new AuditLog($this->pdo))->record(
+                $user,
+                Action::VoidConsolidatedRcf,
+                'rcf',
+                (string) $rcfId,
+                [
+                    'source'        => 'consolidated',
+                    'sub_committee' => (string) $form['subcommittee'],
+                    'rows'          => (int) $form['row_count'],
+                    'generated_by'  => (int) $form['generated_by'],
+                    'entries'       => $ids,
+                ],
+                [
+                    'voided'  => true,
+                    'note'    => $note,
+                    'entries' => $ids,
+                ]
+            );
+
+            $this->pdo->commit();
+        } catch (\Throwable $e) {
+            $this->pdo->rollBack();
+
+            throw $e;
+        }
+
+        return count($ids);
+    }
+
+    // -----------------------------------------------------------------------
     // Shapes
     // -----------------------------------------------------------------------
 
     /**
      * Where an entry is, in one sentence the lists print. PLAIN text; the
      * view escapes.
+     *
+     * A generated entry says whether the roster shows it yet (Phase 14.2):
+     * `landed` is what shape() read out of the imports for the line the
+     * entry became, and "on a form" without it is a request still sitting
+     * with Rodeo Houston.
      *
      * @param array<string, mixed> $entry a shape() row
      */
@@ -832,7 +973,8 @@ final class RcfEntries
         return match ((string) $entry['status']) {
             'pending'   => 'Waiting on ' . ((string) $entry['current_approver_name'] !== '' ? $entry['current_approver_name'] : 'nobody'),
             'approved'  => 'Approved by ' . $entry['final_approver_name'] . ' — awaiting a form',
-            'generated' => 'On form #' . (int) $entry['rcf_id'],
+            'generated' => 'On form #' . (int) $entry['rcf_id']
+                . (($entry['landed'] ?? null) !== null ? ' — in the roster' : ' — not yet in the roster'),
             'returned'  => 'Returned by ' . $entry['returned_by_name']
                 . ((string) $entry['return_note'] !== '' ? ': ' . $entry['return_note'] : ''),
             'withdrawn' => 'Withdrawn',
@@ -876,6 +1018,12 @@ final class RcfEntries
         }
 
         $steps = $this->stepsFor(array_map(static fn (array $r): int => (int) $r['id'], $rows));
+
+        // What the roster has since shown, for the entries that are on a
+        // form: the same question, asked of the same table, as the form's
+        // own page asks of its lines (RcfTracking::landed()).
+        $landed = $this->landedFor($rows);
+
         $name  = static fn (array $r, string $p): string => $r[$p . '_number'] === null ? '' : RosterPage::displayName(
             (string) $r[$p . '_preferred'],
             (string) $r[$p . '_first'],
@@ -927,6 +1075,11 @@ final class RcfEntries
                 'rcf_id'                => $row['rcf_id'] === null ? null : (int) $row['rcf_id'],
                 'rcf_row_id'            => $row['rcf_row_id'] === null ? null : (int) $row['rcf_row_id'],
                 'generated_at'          => $row['generated_at'] === null ? null : (string) $row['generated_at'],
+                'voided_at'             => ($row['voided_at'] ?? null) === null ? null : (string) $row['voided_at'],
+                // The import that fulfilled the line this entry became, or
+                // null: not on a form yet, or on one Rodeo Houston has not
+                // processed. Never typed (spec-v2 §12.5).
+                'landed'                => $row['rcf_row_id'] === null ? null : ($landed[(int) $row['rcf_row_id']] ?? null),
                 'steps'                 => $own,
                 'actors'                => array_values(array_unique(array_map(static fn (array $s): int => (int) $s['actor_id'], $own))),
             ];
@@ -935,12 +1088,68 @@ final class RcfEntries
             $entry['was']      = $was;
             $entry['becomes']  = $becomes;
             $entry['where']    = self::whereabouts($entry);
+            $entry['trail']    = self::trail($entry);
             $entry['viewable'] = self::mayView($user, $entry);
 
             $out[] = $entry;
         }
 
         return $out;
+    }
+
+    /**
+     * Every hand the entry passed through, as one short clause each, ending
+     * with what the roster has said — the line a list prints under the chip
+     * so the whole chain reads in one place (Phase 14.2). PLAIN text; the
+     * view escapes. The steps carry their moments; the view adds the
+     * import's when it wants it.
+     *
+     * @param array<string, mixed> $entry a shape() row
+     * @return array<int, string>
+     */
+    public static function trail(array $entry): array
+    {
+        $trail = [];
+        foreach ((array) ($entry['steps'] ?? []) as $step) {
+            $who     = (string) ($step['actor_name'] ?? '');
+            $trail[] = match ((string) ($step['action'] ?? '')) {
+                'submitted' => 'Asked by ' . $who,
+                'approved'  => 'Approved by ' . $who,
+                'returned'  => 'Returned by ' . $who,
+                'withdrawn' => 'Withdrawn by ' . $who,
+                'generated' => 'On form #' . (int) ($entry['rcf_id'] ?? 0) . ' by ' . $who,
+                'voided'    => 'Voided by ' . $who,
+                default     => (string) ($step['action'] ?? ''),
+            };
+        }
+
+        if ((string) ($entry['status'] ?? '') === 'generated') {
+            $trail[] = ($entry['landed'] ?? null) !== null
+                ? 'In the roster — HLSR processed it'
+                : 'Not yet in the roster';
+        }
+
+        return $trail;
+    }
+
+    /**
+     * RcfTracking::landed() for the lines these entries became: row id =>
+     * the import that fulfilled it. One query, only when something is on a
+     * form.
+     *
+     * @param array<int, array<string, mixed>> $rows raw select() rows
+     * @return array<int, array<string, mixed>>
+     */
+    private function landedFor(array $rows): array
+    {
+        $rowIds = [];
+        foreach ($rows as $row) {
+            if ($row['rcf_row_id'] !== null) {
+                $rowIds[] = (int) $row['rcf_row_id'];
+            }
+        }
+
+        return $rowIds === [] ? [] : (new RcfTracking($this->pdo, $this->zone))->landed($rowIds);
     }
 
     /**
@@ -1021,7 +1230,7 @@ final class RcfEntries
         $read = $this->pdo->prepare(
             'SELECT e.id, e.requested_by, e.current_approver_id,'
             . ' (SELECT COUNT(*) FROM rcf_entry_step c WHERE c.entry_id = e.id) AS steps'
-            . " FROM rcf_entry e WHERE {$predicate} AND e.id IN (" . implode(', ', $places) . ') ORDER BY e.id'
+            . " FROM rcf_entry e WHERE e.voided_at IS NULL AND {$predicate} AND e.id IN (" . implode(', ', $places) . ') ORDER BY e.id'
         );
         $read->execute($bind);
         $rows = $read->fetchAll();

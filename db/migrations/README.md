@@ -50,6 +50,7 @@ Every one of these is load-bearing on this host — see `docs/hosting.md`.
 | `011_rcf_tracking.sql` | `rcf` and `rcf_row` — every Roster Change Form produced, as printed, and where each line of it has got to (spec-v2 §12). |
 | `012_rcf_upload.sql` | `rcf.source`, `rcf.upload_filename` and `rcf.upload_sha256`, and the staging tables `rcf_upload_batch` / `rcf_upload_file` for forms that arrived by email and were uploaded (spec-v2 §14). |
 | `013_rcf_entries.sql` | `rcf_approver` (who approves whom), `rcf_entry` (one requested change, up the chain) and `rcf_entry_step` (every hand it passed through); `rcf.source` gains `consolidated` (spec-v2 §15). |
+| `014_rcf_void.sql` | `rcf.voided_at` / `voided_by` / `void_note` and `rcf_entry.voided_at` — a consolidated form taken out of view with the entries it was cut from, stamped rather than deleted; `rcf_entry_step.action` gains `voided` (spec-v2 §17). |
 
 `schema_migration` is created by the migrator itself rather than by a
 migration: something has to exist before the first migration can be recorded,

@@ -2070,6 +2070,9 @@ function rcf_one_screen(Rerm\App $app, Rerm\Auth\User $user): void
         'entries' => ($rcf['form']['source'] ?? 'generated') === 'consolidated'
             ? Rerm\Forms\RcfEntries::fromApp($app)->onForm($user, (int) $rcf['form']['id'])
             : [],
+        // And may be VOIDED by its generator or an Admin (Phase 14.2,
+        // spec-v2 §17). The screen's question; the POST asks it again.
+        'mayVoid' => Rerm\Forms\RcfEntries::mayVoid($user, $rcf['form']),
     ]);
 }
 
@@ -2114,6 +2117,35 @@ function rcf_one_act(Rerm\App $app, Rerm\Auth\User $user): never
         $store->regenerated($id);
 
         rcf_send($rcf, $built);
+    }
+
+    if ($action === 'void') {
+        // Phase 14.2 (spec-v2 §17): a consolidated form that was a test run
+        // of the flow is taken out of view, with the entries it was cut
+        // from, for everybody. RcfEntries::void() re-asks who may; a form
+        // the caller may not void, or that is not consolidated, is the
+        // same 404 as one they may not see. The form is gone from view the
+        // moment this returns, so the way back is the generator's list.
+        $voided = Rerm\Forms\RcfEntries::fromApp($app)->void($user, $id, (string) ($_POST['note'] ?? ''));
+        if ($voided === null) {
+            render($app, 'not-found', 'Not found', [], 404);
+            exit;
+        }
+        if ($voided === -1) {
+            flash_set('warn', 'Voiding needs a note saying why — the record keeps it. Nothing changed.');
+            redirect($app, $back);
+        }
+
+        flash_set('ok', sprintf(
+            'Form #%d voided, with %d %s it was made from. Nobody in the chain sees it or them any more; '
+            . 'nothing was deleted, and the void is logged with your name and your note.',
+            $id,
+            $voided,
+            $voided === 1 ? 'entry' : 'entries'
+        ));
+        redirect($app, Rerm\Auth\Access::mayUse($user, Rerm\Auth\Capability::GenerateConsolidatedRcf)
+            ? 'rcf-consolidate#generated'
+            : 'rcfs');
     }
 
     if ($action === 'track') {

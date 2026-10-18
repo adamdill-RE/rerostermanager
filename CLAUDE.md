@@ -726,6 +726,30 @@ the top into one or more **consolidated** forms kept through the same
 - **An entry never writes the roster**, approved or not. A form is a
   request; the next import is the answer. A test reads both classes for it.
 
+### After the form: HLSR's answer, and the void
+
+Phase 14.2 (spec-v2 §17). **A generated entry is not done when it is on a
+form; it is done when the roster shows the change.** `RcfEntries::shape()`
+asks `RcfTracking::landed()` about the line each generated entry became —
+the same `import_change` derivation the form's page uses, never typed — so
+every list in the chain says *On form #44 — not yet in the roster* or **In
+the roster**, and the only green a generated entry gets is HLSR's. Under
+the chip, `trail()` spells the whole chain: asked by, approved by, on form
+by, and what the roster said.
+
+**A consolidated form can be voided**, by the account that generated it or
+an Admin, holding `generate_consolidated_rcf` — `RcfEntries::mayVoid()` is
+the one rule, and only `source = 'consolidated'` qualifies; a Create Forms
+or uploaded form went out and the record stands. `void()` stamps
+`rcf.voided_at` and `rcf_entry.voided_at` on every entry it was cut from in
+one transaction, with a required note, a `voided` step per entry and one
+`void_consolidated_rcf` audit row. **Every read in `RcfTracking` and
+`RcfEntries` filters the stamp** — the lists, the search, the member card,
+Look Up Members, the change table, the counts and both write paths — so a
+test run of the flow is gone from view for everybody in the chain, and the
+Audit Log is the only place it is still named. Nothing is deleted; the
+protected-table test is unchanged.
+
 ---
 
 ## Build phases
@@ -759,6 +783,7 @@ Each phase ends shippable. `docs/spec-v1.md` carries the detail through 8.7,
 | **13 · Upload RCFs** | `/rcf-upload`, Admin, `upload_forms` (its own row, so it can be widened): several `.xls` / `.xlsx` forms that came in by email read by their labels, shown back with every reshaping and doubt, kept into `rcf` / `rcf_row` with `source = 'uploaded'` and the DC's number on every line; Track RCFs gains **every change, line by line** — RCF date, member, was, becomes, RCF #, and the import that fulfilled it — opening on the lines not yet fulfilled | A Division Chairman's numbered form from an email is tracked line for line beside the ones made here, and "which requests has HLSR not fulfilled yet" is one table |
 | **14 · RCF Entries and the Approval Flow** | `/rcf-entries`, `/rcf-approvals`, `/rcf-consolidate` (Senior Officer and above: `create_rcf_entries`, `approve_rcf_entries`, `generate_consolidated_rcf`) and `/approval-flow` (Admin, `manage_approval_flow`): one requested change at a time through the RCF's own grid, up a chain of approvers an Admin draws, approved or returned with a note, and cut by the final approver into one or more consolidated Roster Change Forms kept with `source = 'consolidated'` and tracked like every other; Track RCFs lists the entries not yet on a form | A Vice Chairman's request reaches Rodeo Houston on the Division Chairman's one form without anybody retyping it, and "where did it stop" is answered before it is a form |
 | **14.1 · Sign In As** | `/sign-in-as` (Admin, `sign_in_as`, under Administer): every active non-Admin account with where its RCF entries go, one button per row; the session runs as that account through the same loader a real login uses; *Signed in as* and **Back to** in the bar on every screen (`/sign-out-as`); the holder re-checked every request; the audit pair and the marker on every row between | An Admin walks a three-account approval chain alone, and the record still says whose hand every step was |
+| **14.2 · After the form** | A generated entry carries HLSR's answer on every list in the chain — *not yet in the roster* or **In the roster**, with the import — and one trail line spelling every hand it passed through; a consolidated form can be **voided** by its generator or an Admin, with a note, taking it and its entries out of view for everybody and deleting nothing (`014_rcf_void.sql`) | A Vice Chairman reads on their own list that Rodeo Houston processed their request, and a test run of the flow leaves no trace on anybody's screen but the Audit Log's |
 | **10.x · v2** | Recruiting and retention automation; multi-year contact history (OI-12) | see `docs/spec-v2.md` |
 
 Phases 4 and 5 are the product. Everything before them is plumbing and

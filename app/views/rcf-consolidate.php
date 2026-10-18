@@ -129,7 +129,7 @@ use Rerm\View;
     <div class="card"><p>No consolidated form yet. The first one appears here, ready to download from its page.</p></div>
 <?php } else { ?>
     <table class="track">
-        <caption>Newest first. Open a form to download it, add the RCF number and mark it sent.</caption>
+        <caption>Newest first. Open a form to download it, add the RCF number and mark it sent &mdash; or, if it was a test run, to void it, which takes it and its entries out of view for everybody.</caption>
         <thead><tr>
             <th scope="col">Generated</th>
             <th scope="col">Sub-committee</th>

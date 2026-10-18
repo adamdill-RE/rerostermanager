@@ -20,11 +20,25 @@ file copy.
 
 ### For the next session
 
-This branch is **1.14.1**: Phase 14.1, Sign In As — the tool the owner
-asked for to **test** Phase 14: an Admin runs their session as another
-account, sees exactly what that account sees, walks the approval flow as
-each person in it, and comes back from the bar on any screen
-(`docs/spec-v2.md` §16). It needs no migration. Before it, `main` was
+This branch is **1.14.2**: Phase 14.2, After the form — the two
+housekeeping requests that followed testing Phase 14 (`docs/spec-v2.md`
+§17). Every list of RCF entries now carries **Rodeo Houston's answer**: a
+generated entry reads *not yet in the roster* until an import records the
+change it asked for, then **In the roster** with the import, derived from
+`import_change` exactly as the form's page derives it; and one trail line
+under the chip spells every hand the entry passed through. And a
+**consolidated form can be voided** by the account that generated it or an
+Admin, with a required note: the form and the entries it was cut from are
+stamped, never deleted, and filtered out of every read — Track RCFs, every
+entry list, the member card, Look Up Members — so a test run of the flow
+disappears for everybody in the chain and is named only in the Audit Log.
+**It needs a migration**: `014_rcf_void.sql`, guarded and run twice
+against MariaDB 10.11 locally; until it is applied the entry screens say
+so rather than failing. Before it, `main` was 1.14.1: Phase 14.1, Sign In
+As — the tool the owner asked for to **test** Phase 14: an Admin runs their
+session as another account, sees exactly what that account sees, walks the
+approval flow as each person in it, and comes back from the bar on any
+screen (`docs/spec-v2.md` §16). It needs no migration. Before that,
 1.14.0: Phase 14, RCF Entries and the Approval Flow, merged as
 [#30](https://github.com/adamdill-RE/rerostermanager/pull/30) —
 the fourth feature to come from a real user and the first that is a
@@ -65,8 +79,8 @@ feel them (the reasoning is `docs/spec-v2.md` §15.7):
   design; the count on the menu tile is what exists. If the owner wants
   mail, it is designed through spec-v1 §3.3a's interlocks.
 - **A search over entries on Track RCFs**, so the member box there finds
-  a request before it is a form; and the entries' "in the roster" once
-  they are on one is already the form's (§12.5).
+  a request before it is a form. (The entries' "in the roster" once they
+  are on one is Phase 14.2's, §17.1.)
 - **A CSS tick counter** on the approvals and consolidate screens (the
   Assign pattern), so "Approve 11 ticked" reads the live count.
 
@@ -106,6 +120,26 @@ Whichever it is, the constraints that shaped the last three phases still
 hold: no script, no framework, no build step, one template with two layouts
 at 720px, every figure landing on exactly the people it counted, and nothing
 that ever deletes a member or a contact.
+
+**Phase 14.2 — After the form.** Testing Phase 14 raised two things at
+once. The status an entry showed to everyone in the chain stopped at *On a
+form*, though the form's own page already knew whether Rodeo Houston had
+processed each line (§12.5); so `RcfEntries::shape()` now asks
+`RcfTracking::landed()` about the line each generated entry became, every
+list says *not yet in the roster* or **In the roster** with the import, the
+green chip moved from "generated" to "HLSR processed it", and
+`RcfEntries::trail()` spells the whole chain under it. And walking the
+flow produces consolidated forms nobody meant to send, which a record that
+never deletes kept for ever on every screen; so a consolidated form can be
+**voided** — `RcfEntries::mayVoid()` (its generator or an Admin, holding
+`generate_consolidated_rcf`, consolidated only) and `RcfEntries::void()`
+(one transaction: `rcf.voided_at`, `rcf_entry.voided_at` on every entry
+it was cut from, a `voided` step each, a required note, one
+`void_consolidated_rcf` audit row). Every read in `RcfTracking` and
+`RcfEntries` filters the stamp, both write paths included, so the form is
+the same 404 as one the caller may not see. Migration `014_rcf_void.sql`.
+Four open items in §17.4; the nearest to wanted is V2-26, re-cutting a
+form generated with the wrong grouping without retyping it.
 
 **Phase 14.1 — Sign In As.** Phase 14 could not be tested by one person:
 a chain is three accounts, and "does the Division Chairman see the entry"

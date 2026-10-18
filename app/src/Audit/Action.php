@@ -163,6 +163,17 @@ enum Action: string
     case SetApprover             = 'set_approver';
 
     /**
+     * A consolidated form was VOIDED (Phase 14.2, spec-v2 §17): taken out
+     * of view, with the entries it was cut from, because it was a test run
+     * of the flow and not a request. Its own verb rather than a second
+     * generate_consolidated_rcf with a flag, because "which forms went out"
+     * and "which forms were taken back, by whom and why" are different
+     * questions. The row names the form, the entries and the note; nothing
+     * is deleted, and this row is the only place the form is still visible.
+     */
+    case VoidConsolidatedRcf     = 'void_consolidated_rcf';
+
+    /**
      * An Admin signed in as another account, and came back (Phase 14.1,
      * spec-v2 §16). Two verbs rather than one, because the pair brackets a
      * window: every row the ACCOUNT's id wrote between them was the Admin's
@@ -221,6 +232,7 @@ enum Action: string
             self::WithdrawRcfEntry        => 'RCF entry withdrawn',
             self::GenerateConsolidatedRcf => 'Consolidated RCF generated',
             self::SetApprover             => 'Approver set',
+            self::VoidConsolidatedRcf     => 'Consolidated RCF voided',
 
             self::SignInAs                => 'Signed in as another account',
             self::SignOutAs               => 'Returned to own account',
