@@ -105,6 +105,16 @@ test('the capability matrix matches spec 4.5, transcribed independently', functi
         'look_up_members'          => ['admin', Scope::Everywhere],
         // Phase 13 (spec-v2 §14.1): Admin today, its own row so it can be widened on purpose.
         'upload_forms'             => ['admin', Scope::Everywhere],
+        // Phase 14 (spec-v2 §15.2), transcribed from its table. Senior
+        // Officer because the request said "Vice Chairmen and above" and a
+        // Vice Chairman is a Senior Officer; create is Scoped for
+        // create_forms' reason (the picker reads ScopedQuery::forUser());
+        // approve and generate are Everywhere because the FLOW decides which
+        // entries they reach, not the roster; the flow itself is the Admin's.
+        'create_rcf_entries'        => ['senior_officer', Scope::Scoped],
+        'approve_rcf_entries'       => ['senior_officer', Scope::Everywhere],
+        'generate_consolidated_rcf' => ['senior_officer', Scope::Everywhere],
+        'manage_approval_flow'      => ['admin', Scope::Everywhere],
     ];
 
     assertSame(count($spec), count(Capability::cases()), 'spec 4.5 has exactly this many rows');

@@ -1083,6 +1083,11 @@ function member_from(): array
         // A line of the change table on Track RCFs (Phase 13): back is the
         // search, the Open / Fulfilled / All choice and the page.
         'rcfs'      => ['rcfs', 'Track RCFs'],
+        // The three screens of the RCF entry workflow (Phase 14): a member
+        // named on an entry links to their card; the way back is the screen.
+        'rcf-entries'     => ['rcf-entries', 'Create RCF Entries'],
+        'rcf-approvals'   => ['rcf-approvals', 'Approve RCF Entries'],
+        'rcf-consolidate' => ['rcf-consolidate', 'Consolidate RCFs'],
     ];
 }
 
@@ -2034,6 +2039,9 @@ function rcfs_screen(Rerm\App $app, Rerm\Auth\User $user): void
             'upload'  => Rerm\Auth\Access::mayUse($user, Rerm\Auth\Capability::UploadForms)
                 ? rcf_upload_limits()
                 : null,
+            // RCF entries not yet on a form (Phase 14, spec-v2 §15.4): every
+            // pending or approved entry the caller may see, with where it is.
+            'entries' => Rerm\Forms\RcfEntries::fromApp($app)->pendingFor($user),
         ],
     ]);
 }
@@ -2053,6 +2061,10 @@ function rcf_one_screen(Rerm\App $app, Rerm\Auth\User $user): void
         'user'    => $user,
         'notices' => flash_take(),
         'rcf'     => $rcf,
+        // A consolidated form (Phase 14) says which entries it was cut from.
+        'entries' => ($rcf['form']['source'] ?? 'generated') === 'consolidated'
+            ? Rerm\Forms\RcfEntries::fromApp($app)->onForm($user, (int) $rcf['form']['id'])
+            : [],
     ]);
 }
 
@@ -2333,6 +2345,318 @@ function rcf_upload_act(Rerm\App $app, Rerm\Auth\User $user): never
     }
 
     redirect($app, $back);
+}
+
+// ---------------------------------------------------------------------------
+// RCF entries and the approval flow (spec-v2 §15), Phase 14 — one requested
+// change at a time, up a chain of approvers an Admin draws, onto a
+// consolidated Roster Change Form kept like every other. Four screens, each
+// both verbs on one route: the writes post back and 303 to the screen.
+//
+// The route guard is the LEVEL question (Senior Officer and above; Admin for
+// the flow). Which entries each screen shows is the FLOW's question, answered
+// inside Rerm\Forms\RcfEntries: a write naming an entry that is not the
+// caller's to act on writes nothing.
+// ---------------------------------------------------------------------------
+
+/**
+ * The migration-013 guard every entry screen shares: a server running newer
+ * code against an older database says which migration is missing rather
+ * than going blank (rcfs_screen's rule).
+ */
+function rcf_entries_blocked(Rerm\App $app, Rerm\Auth\User $user, string $title): bool
+{
+    $blocker = import_schema_blocker($app);
+    if ($blocker === null) {
+        return false;
+    }
+
+    render($app, 'import', $title, [
+        'wide'    => false,
+        'user'    => $user,
+        'blocked' => $blocker,
+        'notices' => [],
+        'preview' => null,
+        'staged'  => [],
+        'applied' => [],
+        'failedBatches' => [],
+        'teams'   => [],
+    ]);
+
+    return true;
+}
+
+/** Create RCF Entries: the grid, as far as it has been filled in, and the caller's own entries. */
+function rcf_entries_screen(Rerm\App $app, Rerm\Auth\User $user, array $input, array $notices = []): void
+{
+    if (rcf_entries_blocked($app, $user, 'Create RCF Entries')) {
+        return;
+    }
+
+    $entries = Rerm\Forms\RcfEntries::fromApp($app);
+
+    render($app, 'rcf-entries', 'Create RCF Entries', [
+        'wide'    => true,
+        'user'    => $user,
+        'notices' => $notices === [] ? flash_take() : $notices,
+        'rcf'     => Rerm\Forms\RcfPage::fromApp($app)->page($user, $input),
+        'mine'    => $entries->mine($user),
+        'counts'  => $entries->counts($user),
+        'route'   => $entries->routeFor($user),
+    ]);
+}
+
+/**
+ * The entry screen's writes. Load and Add rows re-render with everything
+ * still typed in (rcf_act's rule: five rows of typing is too much to lose to
+ * a reload); Submit writes the entries and 303s with a flash saying where
+ * they went; a refusal re-renders with the rows intact and the sentence.
+ */
+function rcf_entries_act(Rerm\App $app, Rerm\Auth\User $user): void
+{
+    if (!Rerm\Csrf::check()) {
+        rcf_entries_screen($app, $user, $_POST, [stale_form_notice()]);
+        exit;
+    }
+
+    $action  = (string) ($_POST['action'] ?? '');
+    $entries = Rerm\Forms\RcfEntries::fromApp($app);
+
+    if ($action === 'withdraw') {
+        $id = (int) ($_POST['id'] ?? 0);
+        if ($entries->withdraw($user, $id)) {
+            flash_set('ok', 'Withdrawn. The entry stays on your list as withdrawn, and the withdrawal is logged with your name.');
+        } else {
+            flash_set('warn', 'That entry is not yours to withdraw, or it has already been decided.');
+        }
+        redirect($app, 'rcf-entries#mine');
+    }
+
+    if ($action !== 'submit') {
+        rcf_entries_screen($app, $user, $_POST);
+        exit;
+    }
+
+    $year = active_show_year($app);
+    if ($year === null) {
+        rcf_entries_screen($app, $user, $_POST, [['danger',
+            'No show year is active, so entries cannot be submitted. An Admin makes a show year active on Show Year.']]);
+        exit;
+    }
+
+    $form   = Rerm\Forms\RcfPage::fromApp($app)->formFromInput($user, $_POST);
+    $result = $entries->submit($user, (int) $year['id'], $form);
+
+    if ($result['refused'] !== null) {
+        rcf_entries_screen($app, $user, $_POST, [['warn', $result['refused']]]);
+        exit;
+    }
+
+    $n = count($result['created']);
+    flash_set('ok', sprintf(
+        '%d %s submitted and logged with your name. %s',
+        $n,
+        $n === 1 ? 'entry' : 'entries',
+        $result['state'] === 'top'
+            ? 'You are at the top of the chain, so they are approved: put them on a form on Consolidate RCFs.'
+            : 'They are waiting on ' . (string) ($result['approver']['name'] ?? 'your approver') . '.'
+    ));
+    redirect($app, 'rcf-entries#mine');
+}
+
+/** Approve RCF Entries: what is waiting on the caller, and what they have decided. */
+function rcf_approvals_screen(Rerm\App $app, Rerm\Auth\User $user): void
+{
+    if (rcf_entries_blocked($app, $user, 'Approve RCF Entries')) {
+        return;
+    }
+
+    $entries = Rerm\Forms\RcfEntries::fromApp($app);
+
+    render($app, 'rcf-approvals', 'Approve RCF Entries', [
+        'wide'    => true,
+        'user'    => $user,
+        'notices' => flash_take(),
+        'waiting' => $entries->waitingFor($user),
+        'decided' => $entries->decidedBy($user),
+        'counts'  => $entries->counts($user),
+    ]);
+}
+
+/** Approve or return the ticked entries, then 303 back with what happened. */
+function rcf_approvals_act(Rerm\App $app, Rerm\Auth\User $user): never
+{
+    if (!Rerm\Csrf::check()) {
+        flash_set(...stale_form_notice());
+        redirect($app, 'rcf-approvals');
+    }
+
+    $entries = Rerm\Forms\RcfEntries::fromApp($app);
+    $ids     = is_array($_POST['ids'] ?? null) ? $_POST['ids'] : [];
+    $action  = (string) ($_POST['action'] ?? '');
+
+    if ($ids === []) {
+        flash_set('warn', 'Nothing was ticked, so nothing changed.');
+        redirect($app, 'rcf-approvals');
+    }
+
+    if ($action === 'approve') {
+        $result = $entries->approve($user, $ids);
+        $total  = $result['advanced'] + $result['approved'];
+        if ($total === 0) {
+            flash_set('warn', 'None of those entries is waiting on you, so nothing changed.');
+        } else {
+            $parts = [];
+            if ($result['advanced'] > 0) {
+                $parts[] = $result['advanced'] . ' moved on to the next approver';
+            }
+            if ($result['approved'] > 0) {
+                $parts[] = $result['approved'] . ' approved outright and ready for you to generate';
+            }
+            flash_set('ok', 'Approved: ' . implode('; ', $parts) . '. Logged with your name.');
+        }
+        redirect($app, 'rcf-approvals');
+    }
+
+    if ($action === 'return') {
+        $returned = $entries->sendBack($user, $ids, (string) ($_POST['note'] ?? ''));
+        if ($returned === null) {
+            flash_set('warn', 'A return needs a note: the officer who asked has to read why. Nothing changed.');
+        } elseif ($returned === 0) {
+            flash_set('warn', 'None of those entries is waiting on you, so nothing changed.');
+        } else {
+            flash_set('ok', $returned . ($returned === 1 ? ' entry' : ' entries') . ' returned with your note, and logged with your name.');
+        }
+        redirect($app, 'rcf-approvals');
+    }
+
+    redirect($app, 'rcf-approvals');
+}
+
+/** Consolidate RCFs: what ended with the caller's approval, cut into forms. */
+function rcf_consolidate_screen(Rerm\App $app, Rerm\Auth\User $user, string $by = 'division'): void
+{
+    if (rcf_entries_blocked($app, $user, 'Consolidate RCFs')) {
+        return;
+    }
+
+    $entries = Rerm\Forms\RcfEntries::fromApp($app);
+    $by      = isset(Rerm\Forms\RcfEntries::GROUP_BY[$by]) ? $by : 'division';
+    $ready   = $entries->readyFor($user);
+
+    render($app, 'rcf-consolidate', 'Consolidate RCFs', [
+        'wide'    => true,
+        'user'    => $user,
+        'notices' => flash_take(),
+        'ready'   => $ready,
+        'cut'     => Rerm\Forms\RcfEntries::cut($ready, $by),
+        'by'      => $by,
+        'forms'   => $entries->generatedForms($user),
+        'counts'  => $entries->counts($user),
+    ]);
+}
+
+/**
+ * Regroup re-renders with the other cut; Generate keeps the forms and 303s
+ * back with how many, so the list below the button shows them. Nothing is
+ * downloaded here (spec-v2 §15.5): the forms' own pages are where every kept
+ * form is downloaded from.
+ */
+function rcf_consolidate_act(Rerm\App $app, Rerm\Auth\User $user): void
+{
+    $by = is_string($_POST['by'] ?? null) ? $_POST['by'] : 'division';
+
+    if (!Rerm\Csrf::check()) {
+        flash_set(...stale_form_notice());
+        redirect($app, 'rcf-consolidate');
+    }
+
+    if (($_POST['action'] ?? '') !== 'generate') {
+        rcf_consolidate_screen($app, $user, $by);
+        exit;
+    }
+
+    $year = active_show_year($app);
+    if ($year === null) {
+        flash_set('danger', 'No show year is active, so no form can be kept. An Admin makes a show year active on Show Year.');
+        redirect($app, 'rcf-consolidate');
+    }
+
+    $ids = is_array($_POST['ids'] ?? null) ? $_POST['ids'] : [];
+    if ($ids === []) {
+        flash_set('warn', 'Nothing was ticked, so no form was generated.');
+        redirect($app, 'rcf-consolidate');
+    }
+
+    try {
+        $result = Rerm\Forms\RcfEntries::fromApp($app)->generate(
+            $user,
+            (int) $year['id'],
+            $ids,
+            $by,
+            Rerm\Forms\RcfStore::fromApp($app)
+        );
+    } catch (Throwable $e) {
+        flash_set('danger', 'The forms could not be kept, so nothing was generated: ' . $e->getMessage());
+        redirect($app, 'rcf-consolidate');
+    }
+
+    if ($result['forms'] === []) {
+        flash_set('warn', 'None of those entries is yours to generate, so no form was made.');
+    } else {
+        $n = count($result['forms']);
+        flash_set('ok', sprintf(
+            '%d %s generated from %d %s and logged with your name. Open each one below to download it.',
+            $n,
+            $n === 1 ? 'form' : 'forms',
+            $result['entries'],
+            $result['entries'] === 1 ? 'entry' : 'entries'
+        ));
+    }
+    redirect($app, 'rcf-consolidate#generated');
+}
+
+/** Create Approval Flow: every account at Senior Officer and above, and who approves each. */
+function approval_flow_screen(Rerm\App $app, Rerm\Auth\User $user, array $notices = []): void
+{
+    if (rcf_entries_blocked($app, $user, 'Approval Flow')) {
+        return;
+    }
+
+    $selected = (int) ($_GET['account'] ?? $_POST['account'] ?? 0);
+
+    render($app, 'approval-flow', 'Approval Flow', [
+        'wide'     => true,
+        'user'     => $user,
+        'notices'  => $notices === [] ? flash_take() : $notices,
+        'accounts' => Rerm\Forms\ApprovalFlow::fromApp($app)->accounts(),
+        'selected' => $selected > 0 ? $selected : null,
+    ]);
+}
+
+/** Saves one account's approver; a loop is refused by name with nothing written. */
+function approval_flow_act(Rerm\App $app, Rerm\Auth\User $user): void
+{
+    if (!Rerm\Csrf::check()) {
+        flash_set(...stale_form_notice());
+        redirect($app, 'approval-flow');
+    }
+
+    $result  = Rerm\Forms\ApprovalFlow::fromApp($app)->save($user, $_POST);
+    $account = (int) ($_POST['account'] ?? 0);
+
+    if ($result['refused'] !== null) {
+        // Back onto the row, with the sentence, and the choice still open.
+        approval_flow_screen($app, $user, [['danger', $result['refused']]]);
+        exit;
+    }
+
+    if ($result['saved'] === 0) {
+        flash_set('warn', 'Nothing changed — that is what was already drawn.');
+    } else {
+        flash_set('ok', 'Saved, and logged with your name.');
+    }
+    redirect($app, 'approval-flow' . ($account > 0 ? '#a' . $account : ''));
 }
 
 // ---------------------------------------------------------------------------
@@ -3395,6 +3719,43 @@ switch ($path) {
         }
 
         rcf_upload_screen($app, $user);
+        break;
+
+    case 'rcf-entries':
+        // Both verbs on one route (Phase 14). A POST never falls through:
+        // rcf_entries_act() 303s with a flash or re-renders with the rows
+        // still typed in, and exits.
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            rcf_entries_act($app, $user);
+        }
+
+        rcf_entries_screen($app, $user, $_GET);
+        break;
+
+    case 'rcf-approvals':
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            rcf_approvals_act($app, $user);
+        }
+
+        rcf_approvals_screen($app, $user);
+        break;
+
+    case 'rcf-consolidate':
+        // A POST never falls through: Regroup re-renders and exits,
+        // Generate 303s.
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            rcf_consolidate_act($app, $user);
+        }
+
+        rcf_consolidate_screen($app, $user, is_string($_GET['by'] ?? null) ? $_GET['by'] : 'division');
+        break;
+
+    case 'approval-flow':
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            approval_flow_act($app, $user);
+        }
+
+        approval_flow_screen($app, $user);
         break;
 
     case 'show-year':

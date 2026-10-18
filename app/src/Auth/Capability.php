@@ -161,6 +161,32 @@ enum Capability: string
     case UploadForms    = 'upload_forms';
 
     /**
+     * RCF entries and the approval flow (Phase 14, spec-v2 §15). Four rows.
+     *
+     * `create_rcf_entries` — Senior Officer / SCOPED. A Vice Chairman asks
+     * for one change at a time, picking the member through
+     * `ScopedQuery::forUser()` exactly as the Roster Change Form's picker
+     * does (§1.3's reason). Senior Officer because the request said "Vice
+     * Chairmen and above": a Captain is an Officer and still fills in the
+     * form on Create Forms (§11 V2-15 is the day that changes).
+     *
+     * `approve_rcf_entries` and `generate_consolidated_rcf` — Senior Officer /
+     * EVERYWHERE. What they reach is decided by the FLOW — the table of who
+     * approves whom that an Admin draws — and not by the roster: an entry
+     * routed to an approver is theirs wherever the member sits. The level
+     * says who may hold the power; the flow says which entries it covers.
+     * An account outside every chain holds both and has nothing to act on.
+     *
+     * `manage_approval_flow` — Admin / Everywhere, its own row: the flow
+     * decides whose signature a request goes out under, which is a
+     * different power from granting a level, and either may be held alone.
+     */
+    case CreateRcfEntries        = 'create_rcf_entries';
+    case ApproveRcfEntries       = 'approve_rcf_entries';
+    case GenerateConsolidatedRcf = 'generate_consolidated_rcf';
+    case ManageApprovalFlow      = 'manage_approval_flow';
+
+    /**
      * The floor. Levels include everything below them (spec 4.1), so the
      * check is always atLeast(), never equality.
      */
@@ -179,7 +205,10 @@ enum Capability: string
             self::CreateForms             => Level::Officer,
 
             self::ViewCommitteeDashboard,
-            self::DesignateAllowedUser    => Level::SeniorOfficer,
+            self::DesignateAllowedUser,
+            self::CreateRcfEntries,
+            self::ApproveRcfEntries,
+            self::GenerateConsolidatedRcf => Level::SeniorOfficer,
 
             self::ViewAllForms            => Level::ExecutiveOfficer,
 
@@ -190,7 +219,8 @@ enum Capability: string
             self::ManageTeams,
             self::ViewAuditLog,
             self::LookUpMembers,
-            self::UploadForms             => Level::Admin,
+            self::UploadForms,
+            self::ManageApprovalFlow      => Level::Admin,
         };
     }
 
@@ -208,7 +238,8 @@ enum Capability: string
             self::ViewCommitteeDashboard,
             self::DesignateAllowedUser,
             self::ExportRoster,
-            self::CreateForms             => Scope::Scoped,
+            self::CreateForms,
+            self::CreateRcfEntries        => Scope::Scoped,
 
             self::ViewAllForms,
             self::ImportRoster,
@@ -218,7 +249,10 @@ enum Capability: string
             self::ManageTeams,
             self::ViewAuditLog,
             self::LookUpMembers,
-            self::UploadForms             => Scope::Everywhere,
+            self::UploadForms,
+            self::ApproveRcfEntries,
+            self::GenerateConsolidatedRcf,
+            self::ManageApprovalFlow      => Scope::Everywhere,
         };
     }
 }

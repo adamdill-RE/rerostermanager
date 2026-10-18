@@ -59,7 +59,9 @@ test('the dropped route is guarded, scoped, and shares view_roster', function ()
     // the notes beside them in tests/access_test.php.
     assertSame(Capability::ViewRoster->value, Routes::guard('dropped'));
     assertSame(Level::Officer, Capability::ViewRoster->minimumLevel());
-    assertSame(20, count(Capability::cases()), 'the matrix is still 20 rows');
+    // Phase 14 (spec-v2 §15.2) added four rows: the three entry capabilities
+    // and the flow. Twenty-four, transcribed here so a fifth is noticed.
+    assertSame(24, count(Capability::cases()), 'the matrix is still 24 rows');
 });
 
 test('the dropped screen has no write path at all', function (): void {

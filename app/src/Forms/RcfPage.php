@@ -541,7 +541,7 @@ final class RcfPage
      *
      * @param array<string, mixed> $row
      */
-    private static function formalName(array $row): string
+    public static function formalName(array $row): string
     {
         $full = trim((string) ($row['full_name'] ?? ''));
         if ($full !== '') {
