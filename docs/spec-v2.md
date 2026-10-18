@@ -2064,3 +2064,132 @@ record keeps the Admin's name beside it.
 | V2-21 | Should `sign_in_as` be **widened** to Executive Officers, so a Chairman can see a Captain's phone screen while on the phone with them? | Not yet. Admin, as the request said, and its own row so the widening is one line in `minimumLevel()` and the transcribed row. Everything else — the re-check, the marker, the refusal of Admin targets — holds at any floor. |
 | V2-22 | Should there be a **read-only** mode, for looking without being able to write under the account's name? | No. The request was to walk a flow, which is writes, and the marker on every row is the protection. A second mode would be a second thing for every write path to ask. |
 | V2-23 | Should the Audit Log screen **show** the marker as a word — "by Ada Admin, signed in as" — rather than as a key in the payload fold? | Not yet. The payload is behind a details on that screen and the key is plain; a column is worth adding when somebody reads the log for it. |
+
+---
+
+## 17. After the form: HLSR's answer, and the void
+
+Phase 14.2. Two housekeeping requests from the owner, both about what
+happens to an RCF entry **after** it is on a consolidated form — the part of
+the workflow Phase 14 could not show, because no entry had yet been through
+a roster import, and Phase 14.1 made unavoidable, because walking the flow
+to test it produces forms nobody meant to send.
+
+### 17.1 The entry's status ends with Rodeo Houston, not with the form
+
+Phase 14 tracked an entry as far as *On a form* and stopped, because a form
+is "an ordinary kept form in every query that follows" (§15.5) and the
+form's own page already derives "in the roster" per line (§12.5). That was
+true and not enough: the Vice Chairman who asked for the change reads
+**their** list, not the Division Chairman's form, and their list said *On a
+form* for ever. The owner asked that the status shown to everyone in the
+chain carry "the final confirmation by HLSR when the roster updates to
+reflect the change".
+
+So `RcfEntries::shape()` asks `RcfTracking::landed()` about the `rcf_row`
+each generated entry became — **the same derivation, from the same
+`import_change` rows, that the form's page and Track RCFs use**, so the
+entry and its line cannot disagree — and every list of entries carries it:
+
+| Entry | Chip | Sentence |
+| --- | --- | --- |
+| on a form, no import since says what it asked for | *On a form* (blue) | *On form #44 — not yet in the roster* |
+| on a form, and an import since recorded it | **In the roster** (green) | *On form #44 — in the roster, import of 3 Mar 2026* |
+
+Green moved. Before this phase *On a form* was the green chip, as if
+generating the form were the end; it is not, and a terminal colour on a
+request still sitting with Rodeo Houston was the wrong word in the wrong
+hue. Now the only green a generated entry gets is HLSR's.
+
+Under the chip, one line carries **the whole chain** (`RcfEntries::trail()`):
+*Asked by Erin Delta · Approved by Bob Approver · Approved by Carl Chair · On
+form #44 by Carl Chair · In the roster — HLSR processed it*. Every hand the
+entry passed through, read from `rcf_entry_step`, and then what the roster
+said, read from the import. It is on *Your entries* and on *Decided by you*,
+the two lists where somebody in the chain looks for an entry they are no
+longer holding. Nothing here is typed and nothing is stored: `landed` is
+derived at read time exactly as §12.5 insisted, and `whereabouts()` remains
+a pure function of the row it is handed.
+
+### 17.2 Voiding a consolidated form
+
+Sign In As (§16) exists so that one person can walk vc → dvc → dc and
+generate the form. The form that walk produces is kept, tracked, listed on
+Track RCFs, on the requester's list, on each approver's *Decided by you*
+and on every named member's card — for ever, because nothing deletes a kept
+form (§12.2, §15.6). The owner's request: for this one case, "the entry,
+and its tracking, to be fully removable from view for every person in the
+sequence".
+
+The honest way to remove a record from view without deleting it is the way
+this application already removes a member: a stamp, and a filter on the
+stamp everywhere the record is read. So:
+
+* **`rcf.voided_at`, `voided_by`, `void_note`** (migration 014), and
+  **`rcf_entry.voided_at`** on every entry the form was cut from, written
+  in one transaction by `RcfEntries::void()`. The entry keeps `status =
+  'generated'` and its `rcf_id` — what happened to it is still true — and
+  the stamp is what hides it. `rcf_entry_step` gains a `voided` action, so
+  the entry's own record says it in order, with the note.
+* **Every read filters the stamp.** `RcfTracking` filters `voided_at IS
+  NULL` on the forms (mine, everyone else's, one form, the change table and
+  its counts) and on the lines through the one join every line read goes
+  through, which covers the search, the member card and Look Up Members
+  without each of them knowing; `rowsForWrite()` filters it too, so a
+  voided form cannot be tracked. `RcfEntries` filters it on all seven lists
+  and the counts, and in `forWrite()`, so a voided entry cannot be acted
+  on. A voided form is the same `null`, and the same 404, as a form the
+  caller may not see: this application does not discuss what exists with
+  people who cannot see it, and nobody can see a voided one.
+* **Who may void**: `RcfEntries::mayVoid()`, one rule. Only a form with
+  `source = 'consolidated'` that is not already voided; only by **the
+  account that generated it** — the one whose signature it would have gone
+  out under, which is also the account an Admin is signed in as when they
+  walk the flow — **or an Admin**; and only while holding
+  `generate_consolidated_rcf`. A Division Vice Chairman in the chain may
+  not void the Division Chairman's form, and `view_all_forms` is seeing,
+  not voiding. **A form made on Create Forms, or uploaded, is never
+  voidable by anybody**: it was sent, or it arrived, and the record of that
+  stands. No new capability: voiding is the generator unmaking their own
+  act, and the capability that made it is the one that unmakes it.
+* **A note is required**, exactly as a return's is. A form taken out of the
+  record without a reason is a hole in it; *"Test run of the approval
+  flow; not sent."* is the ordinary one.
+* **One audit row**, `void_consolidated_rcf`, as the actor (with the
+  acting Admin's id beside it when Sign In As is in play, like every row),
+  naming the form, the sub-committee, the entries and the note. It is the
+  only place a voided form is still visible, and that is deliberate: the
+  request was removal from view, and the Audit Log is where an Admin goes
+  to see what was removed.
+
+The control is a fold at the foot of the form's own page — the page every
+other consequential thing about a kept form is done from — offered only
+where `mayVoid()` says yes, with the note box and one button that says what
+it will do to other people's screens. The route re-asks `mayVoid()` through
+`void()` whatever the screen offered, and lands the generator back on
+*Consolidate RCFs*, where the form is no longer listed. *Forms you have
+generated* says in its caption that this is where a test run is voided.
+
+### 17.3 What it never does
+
+* **Delete.** `rcf`, `rcf_row`, `rcf_entry` and `rcf_entry_step` all keep
+  every row; `tests/admin_test.php`'s protected list is unchanged and
+  `tests/rcf_entries_test.php` reads both classes for a `DELETE`.
+* **Write the roster.** Neither the fulfilment nor the void touches
+  `member` or `import_change`; one reads the second, the other reads
+  neither.
+* **Put the entries back.** A voided entry does not return to *approved* to
+  be generated again. The form was a test, and so were its entries; a
+  change that is still wanted is asked for again through the grid, which
+  is one tap more and keeps "what was asked" a straight line.
+* **Void a form that went out.** Create Forms and uploaded forms are not
+  offered the control and `void()` refuses them by source.
+
+### 17.4 Open items raised
+
+| # | Question | Assumption today |
+| --- | --- | --- |
+| V2-24 | Should an Admin be able to **see voided forms** somewhere — a *Voided* group on Track RCFs — rather than only in the Audit Log? | Not yet. The request was removal from view, and the Audit Log, filtered to *Consolidated RCF voided*, lists them with the note. A group is one more `WHERE` when somebody asks. |
+| V2-25 | Should a single **entry** be voidable before it is on a form — a test submission that was returned or withdrawn, say? | Not yet. Returned and withdrawn entries already leave every in-flight list and only the requester's own list shows them; the request named the generated form. The stamp and the filters are in place if it is wanted. |
+| V2-26 | Should voiding **restore the entries to approved**, so a form generated with the wrong grouping can be re-cut without retyping? | No, for §17.3's reason. If regrouping turns out to be the common case, the answer is a *Regroup* on the form's page that voids and regenerates in one transaction, not a void that leaves entries live. |
+| V2-27 | Should the **trail** (§17.1) carry each step's moment, not only its hand? | Not yet. The line is already the widest thing on a phone card; the steps' moments are on the form's page and in the Audit Log. |

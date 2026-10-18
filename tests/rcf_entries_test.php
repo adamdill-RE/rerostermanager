@@ -238,9 +238,45 @@ test('where an entry is reads as one sentence per state', function (): void {
         'returned_by_name' => 'Bob Approver', 'return_note' => 'Already resigned.'];
     assertSame('Waiting on Bob Approver', RcfEntries::whereabouts($base + ['status' => 'pending']));
     assertSame('Approved by Carl Chair — awaiting a form', RcfEntries::whereabouts($base + ['status' => 'approved']));
-    assertSame('On form #44', RcfEntries::whereabouts($base + ['status' => 'generated']));
+    // On a form, the sentence says whether Rodeo Houston has processed it yet
+    // (Phase 14.2): `landed` is what the imports since recorded for the line.
+    assertSame('On form #44 — not yet in the roster', RcfEntries::whereabouts($base + ['status' => 'generated']));
+    assertSame('On form #44 — not yet in the roster', RcfEntries::whereabouts($base + ['status' => 'generated', 'landed' => null]));
+    assertSame('On form #44 — in the roster', RcfEntries::whereabouts($base + ['status' => 'generated', 'landed' => ['at' => '2026-03-02 15:00:00', 'batch' => 9]]));
     assertSame('Returned by Bob Approver: Already resigned.', RcfEntries::whereabouts($base + ['status' => 'returned']));
     assertSame('Withdrawn', RcfEntries::whereabouts($base + ['status' => 'withdrawn']));
+});
+
+test('a consolidated form may be voided by its generator or an Admin, and nothing else may be voided by anybody', function (): void {
+    $user = static fn (int $id, Level $l): User => new User($id, 1, 'AF000000', $l, null, null, false, 'T');
+    $form = ['source' => 'consolidated', 'generated_by' => 7, 'voided_at' => null];
+
+    assertSame(true, RcfEntries::mayVoid($user(7, Level::SeniorOfficer), $form), 'the generator, holding generate_consolidated_rcf');
+    assertSame(true, RcfEntries::mayVoid($user(7, Level::ExecutiveOfficer), $form));
+    assertSame(true, RcfEntries::mayVoid($user(9, Level::Admin), $form), 'an Admin, whoever generated it');
+    assertSame(false, RcfEntries::mayVoid($user(8, Level::SeniorOfficer), $form), 'another Senior Officer: not theirs');
+    assertSame(false, RcfEntries::mayVoid($user(8, Level::ExecutiveOfficer), $form), 'seeing every form (view_all_forms) is not voiding one');
+    assertSame(false, RcfEntries::mayVoid($user(7, Level::Officer), $form), 'a generator who no longer holds the capability');
+
+    assertSame(false, RcfEntries::mayVoid($user(9, Level::Admin), ['source' => 'generated', 'generated_by' => 9, 'voided_at' => null]), 'a Create Forms form was sent; the record stands');
+    assertSame(false, RcfEntries::mayVoid($user(9, Level::Admin), ['source' => 'uploaded', 'generated_by' => 9, 'voided_at' => null]), 'an uploaded form arrived; the record stands');
+    assertSame(false, RcfEntries::mayVoid($user(9, Level::Admin), array_replace($form, ['voided_at' => '2026-03-02 15:00:00'])), 'once');
+    assertSame(false, RcfEntries::mayVoid($user(7, Level::SeniorOfficer), array_replace($form, ['voided_at' => '2026-03-02 15:00:00'])), 'for the generator too');
+
+    // The screen offers the control only where the write would take it, and
+    // the write asks again (public/index.php): both read the one rule.
+    assertTrue(str_contains(af_source('app/views/rcf.php'), 'value="void"'));
+    assertTrue(str_contains(af_source('app/views/rcf.php'), 'if ($mayVoid)'));
+    $index = af_source('public/index.php');
+    assertTrue(str_contains($index, "Rerm\\Forms\\RcfEntries::mayVoid(\$user, \$rcf['form'])"), 'the screen asks');
+    assertTrue(str_contains($index, "->void(\$user, \$id, (string) (\$_POST['note'] ?? ''))"), 'and the POST asks again, through void()');
+    assertSame('void_consolidated_rcf', Action::VoidConsolidatedRcf->value);
+
+    // A voided form is stamped, never deleted: the test that reads both
+    // classes for a DELETE still holds, and the stamp is the filter.
+    foreach (['app/src/Forms/RcfEntries.php', 'app/src/Forms/RcfTracking.php'] as $file) {
+        assertSame(0, preg_match('/\\bDELETE\\s+FROM\\b/i', af_source($file)), "{$file} has no DELETE at all");
+    }
 });
 
 // ---------------------------------------------------------------------------
@@ -277,6 +313,8 @@ function af_teardown(PDO $pdo): void
     $entries = "SELECT id FROM rcf_entry WHERE requested_by IN ({$users})";
 
     $pdo->exec("DELETE FROM audit_log WHERE actor_user_id IN ({$users})");
+    $pdo->exec("DELETE FROM import_change WHERE import_batch_id IN (SELECT id FROM import_batch WHERE filename LIKE 'AF-%')");
+    $pdo->exec("DELETE FROM import_batch WHERE filename LIKE 'AF-%'");
     $pdo->exec("DELETE FROM rcf_entry_step WHERE entry_id IN ({$entries})");
     $pdo->exec("DELETE FROM rcf_entry WHERE requested_by IN ({$users})");
     $pdo->exec("DELETE FROM rcf_approver WHERE app_user_id IN ({$users})");
@@ -763,8 +801,14 @@ test('generating keeps one consolidated form per division from the ticked entrie
     assertSame(['mine' => 0, 'waiting' => 0, 'ready' => 0], $entries->counts(af_user('dc')));
     // The Vice Chairman's own list says which form each of their two
     // approved entries landed on (the other two are returned and withdrawn).
-    $onForms = array_filter($entries->mine(af_user('vc')), static fn (array $e): bool => $e['where'] === 'On form #' . $rcfId);
-    assertSame(2, count($onForms), 'both of the Vice Chairman\'s approved entries say which form they are on');
+    $onForms = array_filter($entries->mine(af_user('vc')), static fn (array $e): bool => $e['where'] === 'On form #' . $rcfId . ' — not yet in the roster');
+    assertSame(2, count($onForms), 'both of the Vice Chairman\'s approved entries say which form they are on, and that HLSR has not shown it yet');
+    foreach ($onForms as $e) {
+        assertSame(null, $e['landed']);
+        assertSame('Not yet in the roster', $e['trail'][count($e['trail']) - 1], 'the trail ends with what the roster says');
+        assertSame('Asked by Erin Delta', $e['trail'][0]);
+        assertTrue(in_array('On form #' . $rcfId . ' by Carl Chair', $e['trail'], true), 'and names the form and who generated it');
+    }
     $onForm = $entries->onForm(af_user('dc'), $rcfId);
     assertSame(3, count($onForm));
     assertSame('generated', $onForm[0]['steps'][count($onForm[0]['steps']) - 1]['action']);
@@ -971,6 +1015,222 @@ test('the four screens render, escape what they show, carry the strip and stay i
     assertTrue(str_contains($html, 'Consolidated</span> by Carl Chair'));
     assertTrue(str_contains($html, 'The entries this form was made from'));
     assertTrue(str_contains($html, 'the first download is from here'));
+});
+
+// ---------------------------------------------------------------------------
+// After the form (Phase 14.2, spec-v2 §17): HLSR's answer, and the void
+// ---------------------------------------------------------------------------
+
+/** An applied import that changed one thing about one member number, at a moment. */
+function af_import(string $number, string $kind, string $field, string $occurredAt): int
+{
+    $f   = af_fixture();
+    $pdo = af_pdo();
+
+    $pdo->prepare(
+        'INSERT INTO import_batch (show_year_id, mode, filename, sha256, dry_run, applied_at)'
+        . " VALUES (:year, 'update', :file, :sha, 0, :at)"
+    )->execute([':year' => $f['year'], ':file' => 'AF-' . uniqid() . '.xls', ':sha' => str_repeat('0', 64), ':at' => $occurredAt]);
+    $batch = (int) $pdo->lastInsertId();
+
+    $pdo->prepare(
+        'INSERT INTO import_change (import_batch_id, member_id, member_number, kind, field, before_value, after_value, occurred_at)'
+        . ' VALUES (:batch, NULL, :number, :kind, :field, :before, :after, :at)'
+    )->execute([':batch' => $batch, ':number' => $number, ':kind' => $kind, ':field' => $field,
+        ':before' => 'Committee Member', ':after' => 'Assistant Captain', ':at' => $occurredAt]);
+
+    return $batch;
+}
+
+test('a generated entry says when the roster showed the change — read from the import, on every list in the chain', function (): void {
+    $f       = af_fixture();
+    $pdo     = af_pdo();
+    $entries = af_entries();
+
+    // The first consolidated form: the Division Chairman's bundle, with the
+    // Vice Chairman's title change for m3 on it.
+    $forms  = $entries->generatedForms(af_user('dc'));
+    $first  = $forms[count($forms) - 1];
+    $onForm = $entries->onForm(af_user('dc'), (int) $first['id']);
+    assertSame(3, count($onForm));
+    foreach ($onForm as $e) {
+        assertSame(null, $e['landed'], 'nothing has been imported since');
+        assertSame('Not yet in the roster', $e['trail'][count($e['trail']) - 1]);
+    }
+
+    // An import a minute from now records exactly what the line asked for.
+    $at    = (new DateTimeImmutable('+1 minute', new DateTimeZone('UTC')))->format('Y-m-d H:i:s');
+    $batch = af_import($f['members']['m3']['number'], 'updated', 'title', $at);
+
+    $byMember = [];
+    foreach ($entries->onForm(af_user('dc'), (int) $first['id']) as $e) {
+        $byMember[(string) $e['member_name']] = $e;
+    }
+    $m3 = $byMember['Frank Echo <b>'];
+    assertSame($batch, $m3['landed']['batch'], 'the import that fulfilled it');
+    assertSame($at, $m3['landed']['at']);
+    assertSame('title', $m3['landed']['field']);
+    assertSame('Assistant Captain', $m3['landed']['after']);
+    assertSame('On form #' . $first['id'] . ' — in the roster', $m3['where']);
+    assertSame('In the roster — HLSR processed it', $m3['trail'][count($m3['trail']) - 1]);
+    assertSame(
+        ['Asked by Erin Delta', 'Approved by Bob Approver', 'Approved by Carl Chair', 'On form #' . $first['id'] . ' by Carl Chair', 'In the roster — HLSR processed it'],
+        $m3['trail'],
+        'the whole chain, then HLSR\'s answer'
+    );
+    // The other title change on the form is m1's, which the import did not
+    // touch; the addition has no number to watch for.
+    assertSame(null, $byMember['Robert Alpha']['landed']);
+    assertSame(null, $byMember['Newcomer Sample']['landed']);
+
+    // The same answer wherever the entry is listed: the requester's list,
+    // the approver's "decided by you", and the form's own line.
+    $mine = array_values(array_filter($entries->mine(af_user('vc')), static fn (array $e): bool => $e['rcf_id'] === (int) $first['id'] && $e['type'] === 'T'));
+    assertSame(1, count($mine));
+    assertSame($batch, $mine[0]['landed']['batch']);
+    $decided = array_values(array_filter($entries->decidedBy(af_user('dvc')), static fn (array $e): bool => $e['id'] === $m3['id']));
+    assertSame($batch, $decided[0]['landed']['batch']);
+    $line = (new RcfTracking($pdo))->one(af_user('dc'), (int) $first['id'])['rows'][1];
+    assertSame('Frank Echo <b>', $line['member_name']);
+    assertSame($batch, $line['landed']['batch'], 'the form\'s page derives it the same way');
+
+    // And the screen says so: the chip reads In the roster, with the import.
+    $html = af_render('rcf-entries', 'Create RCF Entries', [
+        'user'   => af_user('vc'),
+        'rcf'    => (new RcfPage($pdo))->page(af_user('vc'), []),
+        'mine'   => $entries->mine(af_user('vc')),
+        'counts' => $entries->counts(af_user('vc')),
+        'route'  => $entries->routeFor(af_user('vc')),
+    ]);
+    assertSame(1, substr_count($html, '>In the roster</span>'), 'one entry has landed');
+    assertTrue(str_contains($html, 'In the roster — HLSR processed it'), 'the trail says it');
+    assertTrue(str_contains($html, 'Approved by Bob Approver · Approved by Carl Chair'), 'after the approvals');
+    assertTrue(str_contains($html, 'Not yet in the roster'), 'and the other generated entry is still waiting on HLSR');
+});
+
+test('voiding a consolidated form takes it and its entries out of view for everybody, deletes nothing, and is audited', function (): void {
+    $f        = af_fixture();
+    $pdo      = af_pdo();
+    $entries  = af_entries();
+    $tracking = new RcfTracking($pdo);
+    $store    = new RcfStore($pdo);
+    $dc       = af_user('dc');
+    $vc       = af_user('vc');
+
+    $forms = $entries->generatedForms($dc);
+    $id    = (int) $forms[count($forms) - 1]['id'];
+    $m3    = $f['members']['m3'];
+
+    // Before: visible everywhere it should be.
+    assertTrue($tracking->one($dc, $id) !== null);
+    assertSame(3, count($entries->onForm($dc, $id)));
+    $mineBefore    = count($entries->mine($vc));
+    $decidedBefore = count($entries->decidedBy(af_user('dvc')));
+    $changesBefore = $tracking->changes($dc, 'all')['counts']['all'];
+    $formsBefore   = count($tracking->mine($dc));
+    assertSame(1, count(array_filter($tracking->forMember($dc, $m3['id'], $m3['number']), static fn (array $l): bool => $l['rcf_id'] === $id)));
+    assertSame(1, count(array_filter($tracking->search($dc, 'Frank Echo')['matches'], static fn (array $l): bool => $l['rcf_id'] === $id)));
+
+    // Not theirs: the Division Vice Chairman holds the capability and is in
+    // the chain, but did not generate it; a Captain holds nothing.
+    assertSame(null, $entries->void(af_user('dvc'), $id, 'Test run.'));
+    assertSame(null, $entries->void(af_user('cap'), $id, 'Test run.'));
+    assertSame(null, $entries->void($dc, 0, 'Test run.'));
+    assertSame(null, $entries->void($dc, 999999999, 'Test run.'), 'no such form is the same answer');
+    // Theirs, but no note: refused in words, nothing written.
+    assertSame(-1, $entries->void($dc, $id, "  \n "));
+    assertTrue($tracking->one($dc, $id) !== null, 'still there');
+    assertSame(0, count(af_audit('dc', Action::VoidConsolidatedRcf)));
+
+    // Theirs, with a note.
+    assertSame(3, $entries->void($dc, $id, "Test  run of the\napproval flow; not sent."));
+
+    // Gone from view for everybody: the form…
+    assertSame(null, $tracking->one($dc, $id), 'the generator');
+    assertSame(null, $tracking->one(af_user('adm'), $id), 'an Admin');
+    assertSame($formsBefore - 1, count($tracking->mine($dc)));
+    assertSame(0, count(array_filter($tracking->others(af_user('adm'))['forms'], static fn (array $frm): bool => $frm['id'] === $id)));
+    assertSame(0, count(array_filter($tracking->search($dc, 'Frank Echo')['matches'], static fn (array $l): bool => $l['rcf_id'] === $id)), 'the search');
+    assertSame(0, count(array_filter($tracking->forMember($dc, $m3['id'], $m3['number']), static fn (array $l): bool => $l['rcf_id'] === $id)), 'the member card');
+    assertSame(0, count(array_filter($tracking->forMembers($dc, [$m3['id']], [$m3['number']]), static fn (array $l): bool => $l['rcf_id'] === $id)), 'Look Up Members');
+    assertSame($changesBefore - 3, $tracking->changes($dc, 'all')['counts']['all'], 'the change table');
+    assertSame(null, $tracking->track($dc, $id, ['track' => ['all' => ['serial' => 'DC-9']]]), 'nor can it be tracked');
+    assertSame(null, $tracking->markToday($dc, $id, 'dc'));
+    assertSame(0, count(array_filter($entries->generatedForms($dc), static fn (array $frm): bool => $frm['id'] === $id)), 'Forms you have generated');
+    // …and the entries it was cut from, for the requester and every approver.
+    assertSame([], $entries->onForm($dc, $id));
+    assertSame($mineBefore - 2, count($entries->mine($vc)), 'the Vice Chairman\'s two entries on it');
+    assertSame($decidedBefore - 2, count($entries->decidedBy(af_user('dvc'))));
+    assertSame(0, count(array_filter($entries->mine($dc), static fn (array $e): bool => $e['rcf_id'] === $id)), 'the Division Chairman\'s own entry on it');
+    assertSame(0, count(array_filter($entries->pendingFor(af_user('adm')), static fn (array $e): bool => $e['rcf_id'] === $id)));
+
+    // Nothing was deleted: the form, its lines and its entries are all there,
+    // stamped, each entry with a voided step carrying the note.
+    $count = static function (string $sql, int $id) use ($pdo): int {
+        $read = $pdo->prepare($sql);
+        $read->execute([':id' => $id]);
+
+        return (int) $read->fetchColumn();
+    };
+    assertSame(1, $count('SELECT COUNT(*) FROM rcf WHERE id = :id AND voided_at IS NOT NULL AND voided_by = ' . (int) $f['users']['dc'], $id));
+    $read = $pdo->prepare('SELECT void_note FROM rcf WHERE id = :id');
+    $read->execute([':id' => $id]);
+    assertSame('Test run of the approval flow; not sent.', $read->fetchColumn(), 'collapsed and trimmed, like a return note');
+    assertSame(3, $count('SELECT COUNT(*) FROM rcf_row WHERE rcf_id = :id', $id));
+    assertSame(3, $count("SELECT COUNT(*) FROM rcf_entry WHERE rcf_id = :id AND status = 'generated' AND voided_at IS NOT NULL", $id));
+    assertSame(3, $count("SELECT COUNT(*) FROM rcf_entry_step s INNER JOIN rcf_entry e ON e.id = s.entry_id WHERE e.rcf_id = :id AND s.action = 'voided' AND s.note = 'Test run of the approval flow; not sent.'", $id));
+    assertSame(0, $count("SELECT COUNT(*) FROM rcf_entry_step s INNER JOIN rcf_entry e ON e.id = s.entry_id WHERE e.rcf_id = :id AND s.action = 'voided' AND s.actor_user_id <> " . (int) $f['users']['dc'], $id));
+
+    // One audit row, naming the form, the entries and the note; the form's
+    // only remaining appearance.
+    $audit = af_audit('dc', Action::VoidConsolidatedRcf);
+    assertSame(1, count($audit));
+    assertSame('rcf', $audit[0]['entity']);
+    assertSame((string) $id, $audit[0]['entity_id']);
+    $after = json_decode((string) $audit[0]['after_json'], true);
+    assertSame(true, $after['voided']);
+    assertSame('Test run of the approval flow; not sent.', $after['note']);
+    assertSame(3, count($after['entries']));
+    assertSame('AF Logistics Division', json_decode((string) $audit[0]['before_json'], true)['sub_committee']);
+
+    // Twice is nothing: already voided is not voidable.
+    assertSame(null, $entries->void($dc, $id, 'Again.'));
+    assertSame(1, count(af_audit('dc', Action::VoidConsolidatedRcf)));
+
+    // A form made on Create Forms is never voidable, even by an Admin: it
+    // was sent, and the record of that stands.
+    $sent = $store->store($dc, $f['year'], (new RcfPage($pdo))->formFromInput($dc, [
+        'subcommittee' => 't:' . $f['teams']['a'],
+        'row'          => [0 => ['type' => 'T', 'member' => $f['members']['m1']['number'], 'new_title' => 'Captain']],
+    ]));
+    assertSame(null, $entries->void(af_user('adm'), $sent, 'Test.'));
+    assertTrue($tracking->one($dc, $sent) !== null, 'still visible');
+
+    // The screen: the fold is offered to the generator on a consolidated
+    // form and to nobody on a Create Forms one.
+    $other = $entries->generatedForms($dc)[0];
+    $rcf   = $tracking->one($dc, (int) $other['id']);
+    $html  = af_render('rcf', 'Roster Change Form', [
+        'user'    => $dc,
+        'rcf'     => $rcf,
+        'entries' => $entries->onForm($dc, (int) $other['id']),
+        'mayVoid' => RcfEntries::mayVoid($dc, $rcf['form']),
+    ]);
+    assertTrue(str_contains($html, 'Void this form'));
+    assertSame(1, substr_count($html, 'value="void"'));
+    assertTrue(str_contains($html, 'name="note"') && str_contains($html, 'required'), 'the note is required');
+    $view = af_source('app/views/rcf.php');
+    assertSame(substr_count($view, '<form method="post"'), substr_count($view, 'Csrf::field()'), 'every POST form on the page carries the token');
+    assertTrue(strlen($html) < 100 * 1024, 'the form page is ' . strlen($html) . ' bytes');
+
+    $rcf  = $tracking->one($dc, $sent);
+    $html = af_render('rcf', 'Roster Change Form', [
+        'user'    => $dc,
+        'rcf'     => $rcf,
+        'entries' => [],
+        'mayVoid' => RcfEntries::mayVoid($dc, $rcf['form']),
+    ]);
+    assertSame(0, substr_count($html, 'value="void"'), 'a Create Forms form cannot be voided');
 });
 
 test('rcf entries fixtures are cleaned up', function (): void {

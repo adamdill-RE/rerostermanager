@@ -56,6 +56,14 @@ use Rerm\Roster\RosterPage;
  * table an import owns, and nothing deletes a form or a line: a kept form is
  * a record. The only writes are the three tracking columns on `rcf_row`, and
  * every one of them goes to the audit log with before and after.
+ *
+ * WHAT IT NEVER SHOWS (Phase 14.2, spec-v2 §17). A consolidated form that
+ * was VOIDED — a test run of the approval flow, taken back by the account
+ * that generated it or an Admin (`RcfEntries::void()`) — is filtered out of
+ * every read here by its `voided_at` stamp: the lists, the search, one
+ * form, the change table, the member card and Look Up Members. It is the
+ * same null, and the same 404, a form the caller may not see gets. The row
+ * is still there; only the audit log still names it.
  */
 final class RcfTracking
 {
@@ -117,7 +125,7 @@ final class RcfTracking
     public function mine(User $user): array
     {
         $read = $this->pdo->prepare(
-            $this->formSelect() . ' WHERE f.generated_by = :me ORDER BY f.id DESC'
+            $this->formSelect() . ' WHERE f.voided_at IS NULL AND f.generated_by = :me ORDER BY f.id DESC'
         );
         $read->execute([':me' => $user->id]);
 
@@ -137,14 +145,14 @@ final class RcfTracking
             return null;
         }
 
-        $count = $this->pdo->prepare('SELECT COUNT(*) FROM rcf f WHERE f.generated_by <> :me');
+        $count = $this->pdo->prepare('SELECT COUNT(*) FROM rcf f WHERE f.voided_at IS NULL AND f.generated_by <> :me');
         $count->execute([':me' => $user->id]);
         $total = (int) $count->fetchColumn();
         $pages = max(1, (int) ceil($total / $this->pageSize));
         $page  = min(max(1, $page), $pages);
 
         $read = $this->pdo->prepare(
-            $this->formSelect() . ' WHERE f.generated_by <> :me ORDER BY f.id DESC'
+            $this->formSelect() . ' WHERE f.voided_at IS NULL AND f.generated_by <> :me ORDER BY f.id DESC'
             . ' LIMIT ' . $this->pageSize . ' OFFSET ' . (($page - 1) * $this->pageSize)
         );
         $read->execute([':me' => $user->id]);
@@ -283,7 +291,10 @@ final class RcfTracking
             return null;
         }
 
-        $read = $this->pdo->prepare($this->formSelect() . ' WHERE f.id = :id');
+        // A voided form (Phase 14.2) is the same null a form the caller may
+        // not see is: this application does not discuss what exists with
+        // people who cannot see it, and nobody can see a voided one.
+        $read = $this->pdo->prepare($this->formSelect() . ' WHERE f.id = :id AND f.voided_at IS NULL');
         $read->execute([':id' => $rcfId]);
         $form = $read->fetch();
         if (!is_array($form) || !self::mayView($user, (int) $form['generated_by'])) {
@@ -520,7 +531,7 @@ final class RcfTracking
             ':me'  => $user->id,
             ':all' => Access::mayUse($user, Capability::ViewAllForms) ? 1 : 0,
         ];
-        $visible = ' WHERE (f.generated_by = :me OR :all = 1)';
+        $visible = ' WHERE f.voided_at IS NULL AND (f.generated_by = :me OR :all = 1)';
 
         $count = $this->pdo->prepare(
             'SELECT COUNT(*) AS total, SUM(CASE WHEN ' . self::LANDED_EXISTS . ' THEN 1 ELSE 0 END) AS done'
@@ -632,7 +643,7 @@ final class RcfTracking
         return 'SELECT f.id, f.show_year_id, f.generated_by, f.generated_at, f.source, f.upload_filename,'
             . ' f.year_label, f.submitter,'
             . ' f.submitter_number, f.form_date, f.subcommittee, f.division_id, f.team_id, f.row_count,'
-            . ' f.regenerated_count, f.last_regenerated_at,'
+            . ' f.regenerated_count, f.last_regenerated_at, f.voided_at,'
             . ' gm.preferred_name AS g_preferred, gm.first_name AS g_first, gm.last_name AS g_last,'
             . ' gm.member_number AS g_number'
             . ' FROM rcf f'
@@ -654,7 +665,10 @@ final class RcfTracking
             . ' tm.preferred_name AS t_preferred, tm.first_name AS t_first, tm.last_name AS t_last,'
             . ' tm.member_number AS t_number'
             . ' FROM rcf_row r'
-            . ' INNER JOIN rcf f ON f.id = r.rcf_id'
+            // A voided form's lines are nobody's to see (Phase 14.2): the
+            // join is where every line read goes through, so it is the one
+            // place the stamp is filtered for all of them.
+            . ' INNER JOIN rcf f ON f.id = r.rcf_id AND f.voided_at IS NULL'
             . ' INNER JOIN app_user gu ON gu.id = f.generated_by'
             . ' INNER JOIN member gm ON gm.id = gu.member_id'
             . ' LEFT JOIN app_user tu ON tu.id = r.tracked_by'
@@ -744,6 +758,9 @@ final class RcfTracking
                 'row_count'           => (int) $form['row_count'],
                 'regenerated_count'   => (int) $form['regenerated_count'],
                 'last_regenerated_at' => $form['last_regenerated_at'] === null ? null : (string) $form['last_regenerated_at'],
+                // Always null on a form that was read at all (Phase 14.2);
+                // carried so RcfEntries::mayVoid() reads the row's own shape.
+                'voided_at'           => ($form['voided_at'] ?? null) === null ? null : (string) $form['voided_at'],
                 'rows'                => $p['rows'],
                 'numbered'            => $p['numbered'],
                 'dc'                  => $p['dc'],
@@ -876,7 +893,7 @@ final class RcfTracking
             return null;
         }
 
-        $read = $this->pdo->prepare('SELECT generated_by FROM rcf WHERE id = :id');
+        $read = $this->pdo->prepare('SELECT generated_by FROM rcf WHERE id = :id AND voided_at IS NULL');
         $read->execute([':id' => $rcfId]);
         $by = $read->fetchColumn();
         if ($by === false || !self::mayView($user, (int) $by)) {

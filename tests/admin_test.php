@@ -334,6 +334,11 @@ test('the audit vocabulary is a type, and every writer uses it', function (): vo
         // signature a request goes out under.
         'submit_rcf_entry', 'approve_rcf_entry', 'return_rcf_entry',
         'withdraw_rcf_entry', 'generate_consolidated_rcf', 'set_approver',
+        // Phase 14.2 (spec-v2 §17): a consolidated form taken out of view,
+        // with the entries it was cut from — its own verb, because "which
+        // forms went out" and "which were taken back, and why" are
+        // different questions.
+        'void_consolidated_rcf',
         // spec-v2 §16. An Admin stepping into another account and back out
         // — two verbs, because the pair brackets the window in which every
         // row under the account's id was the Admin's hand.

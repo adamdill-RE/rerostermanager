@@ -154,12 +154,16 @@ $back      = 'rcf-entries';
                     if ($entry['wait_list']) { ?> <span class="why">wait list</span><?php } ?></td>
                 <td data-label="Where it is">
                     <span class="chip <?= e(match ((string) $entry['status']) {
-                        'pending' => 'chip-warn', 'approved' => 'chip-info', 'generated' => 'chip-ok',
+                        'pending' => 'chip-warn', 'approved' => 'chip-info', 'generated' => $entry['landed'] === null ? 'chip-info' : 'chip-ok',
                         'returned' => 'chip-danger', default => 'chip-muted',
-                    }) ?>"><?= e((string) $entry['status_label']) ?></span>
+                    }) ?>"><?= e($entry['status'] === 'generated' && $entry['landed'] !== null ? 'In the roster' : (string) $entry['status_label']) ?></span>
                     <span class="why"><?php if ($entry['status'] === 'generated' && $entry['rcf_id'] !== null) { ?>
                         <a href="<?= e($app->url('rcf?id=' . (int) $entry['rcf_id'])) ?>"><?= e((string) $entry['where']) ?></a>
-                    <?php } else { ?><?= e((string) $entry['where']) ?><?php } ?></span>
+                    <?php } else { ?><?= e((string) $entry['where']) ?><?php } ?><?php
+                        if ($entry['landed'] !== null) { ?>, import of <?= View::time($app, (string) $entry['landed']['at']) ?><?php } ?></span>
+                    <?php /* The whole chain in one line (Phase 14.2): every hand, then
+                             what the roster said. HLSR's answer is the last word. */ ?>
+                    <span class="why trail"><?= e(implode(' · ', (array) $entry['trail'])) ?></span>
                 </td>
                 <td data-label="Actions"><?php if ($entry['status'] === 'pending') { ?>
                     <form method="post" action="<?= e($app->url('rcf-entries')) ?>" class="inline">
