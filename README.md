@@ -20,33 +20,75 @@ file copy.
 
 ### For the next session
 
-This branch is **1.14.1**: Phase 14.1, Sign In As — the tool the owner
-asked for to **test** Phase 14: an Admin runs their session as another
-account, sees exactly what that account sees, walks the approval flow as
-each person in it, and comes back from the bar on any screen
-(`docs/spec-v2.md` §16). It needs no migration. Before it, `main` was
-1.14.0: Phase 14, RCF Entries and the Approval Flow, merged as
-[#30](https://github.com/adamdill-RE/rerostermanager/pull/30) —
-the fourth feature to come from a real user and the first that is a
-**workflow** rather than a screen: a Vice Chairman asks for one roster
-change at a time, it goes up a chain of approvers an Admin has drawn, and
-the account at the top of the chain cuts everything it approved into one or
-more consolidated Roster Change Forms kept and tracked like every other
-(`docs/spec-v2.md` §15).
-The server carries whatever was last deployed with cPanel's **Deploy HEAD
-Commit**; the footer of every screen and `/status` say which build that is.
-**Phase 14 needs a migration**: `013_rcf_entries.sql` adds `rcf_approver`,
-`rcf_entry` and `rcf_entry_step` and widens `rcf.source`; the four new
-screens and Track RCFs say so with a sentence rather than a blank page
-until it is applied — check with `php bin/migrate.php --status`, or
-`/setup`, after the deploy. It was run twice against MariaDB 10.11 locally
-and is a no-op the second time. **And it needs one Admin act before anybody
-can use it**: on *Create Approval Flow*, draw who approves whom — until an
-account has an approver or is marked top of the chain, its entries are
-refused with a sentence, deliberately.
+`main` is **1.14.1**: Phase 14.1, Sign In As, merged as
+[#31](https://github.com/adamdill-RE/rerostermanager/pull/31) on 18 October
+2026 — the tool the owner asked for to **test** Phase 14: an Admin runs
+their session as another account, sees exactly what that account sees,
+walks the approval flow as each person in it, and comes back from the bar
+on any screen (`docs/spec-v2.md` §16). Before it, 1.14.0 was Phase 14, RCF
+Entries and the Approval Flow, merged as
+[#30](https://github.com/adamdill-RE/rerostermanager/pull/30): a Vice
+Chairman asks for one roster change at a time, it goes up a chain of
+approvers an Admin has drawn, and the account at the top cuts everything it
+approved into consolidated Roster Change Forms kept and tracked like every
+other (`docs/spec-v2.md` §15). **Neither has been exercised by a real user
+yet.** That is the next thing to do, and 14.1 exists so one person can.
 
-**What Phase 14 left for Phase 14.1**, in the order the owner is likely to
-feel them (the reasoning is `docs/spec-v2.md` §15.7):
+**The server** carries whatever was last deployed with cPanel's **Deploy HEAD
+Commit**; the footer of every screen and `/status` say which build that is.
+Two things stand between a deploy and a working flow, and both are
+deliberate:
+
+1. **Phase 14's migration.** `013_rcf_entries.sql` adds `rcf_approver`,
+   `rcf_entry` and `rcf_entry_step` and widens `rcf.source`. Until it is
+   applied the four Phase 14 screens and Track RCFs say so with a sentence,
+   and Sign In As's "RCF entries go to" column reads *Not set* everywhere.
+   Check with `/setup` or `php bin/migrate.php --status` after the deploy;
+   it was run twice against MariaDB 10.11 and is a no-op the second time.
+   14.1 itself needs no migration.
+2. **One Admin act.** On *Create Approval Flow*, draw who approves whom.
+   Until an account has an approver or is marked top of the chain, its
+   entries are refused with a sentence naming that screen — never routed
+   to a default.
+
+**How to test the approval flow as one person**, which is what 14.1 is for.
+Every step below is a screen on the menu; the audit log records the whole
+walk under the Admin's name.
+
+1. As the Admin, *Create Approval Flow*: pick a Vice Chairman, a Division
+   Vice Chairman and a Division Chairman on one division; draw VC →
+   approved by DVC, DVC → approved by DC, DC → top of the chain. The chain
+   reads beside each row in names before you save.
+2. *Sign In As* (under Administer): the list says where each account's
+   entries go, so the three rows you just drew read *approved by …* and
+   *Top of the chain*. Press **Sign in as** on the Vice Chairman. The bar
+   turns orange-edged and says *Signed in as*; the menu is theirs.
+3. As the VC, *Create RCF Entries*: the screen's first sentence says where
+   the entries will go. Fill one line of the grid and Submit. Press **Back
+   to \<you\>** in the bar.
+4. *Sign in as* the DVC. *Approve RCF Entries* lists the entry, oldest
+   first, ticked, with "then to \<DC\>" beside it. Approve. Back.
+5. *Sign in as* the DC. *Approve RCF Entries*: approve, and it becomes
+   approved with the DC as final approver. *Consolidate RCFs*: the entry
+   is cut into one form by division; Generate keeps it and lists it. Open
+   the form: it downloads from its own page, numbered and tracked like
+   every other. Back.
+6. As the Admin, *Track RCFs* shows the consolidated form among the rest
+   and no entry still waiting; *Audit Log* shows `sign_in_as` and
+   `sign_out_as` pairs under your name, and every row between them
+   (`submit_rcf_entry`, `approve_rcf_entry`, `generate_consolidated_rcf`)
+   under the account's name with `acting_admin_user_id` in its payload.
+   Also try Return with a note at step 4 and read it back as the VC.
+
+Things to know while doing that: an account that has never set its
+password (a fresh grant) works fine — the forced change does not pin the
+Admin, and `/password` is refused while acting with a sentence pointing at
+Designate Users; Admin accounts are not offered and never will be; the
+acting-as ends with Sign out, with the PHP session (about 24 minutes idle
+on this host), or the moment the Admin's own grant is revoked.
+
+**What Phase 14 and 14.1 left open**, in the order the owner is likely to
+feel them (reasoning in `docs/spec-v2.md` §15.7 and §16.5):
 
 - **V2-16, re-routing.** An entry waiting on an account that is later
   deactivated by an import, or removed from the flow, waits forever. The
@@ -58,41 +100,49 @@ feel them (the reasoning is `docs/spec-v2.md` §15.7):
   is `ApprovalFlow::FLOOR`).
 - **V2-18 and V2-20, amend and resubmit.** An approver cannot fix a typo
   in a line before approving it, and a returned entry is retyped rather
-  than copied back into the grid. Both are small: a GET with the row
-  prefilled covers the second; the first needs a decision about keeping
-  both versions.
+  than copied back into the grid. A GET with the row prefilled covers the
+  second; the first needs a decision about keeping both versions.
+- **V2-21, widening `sign_in_as`** to Executive Officers so a Chairman can
+  see a Captain's phone screen while on the phone with them. One line in
+  `minimumLevel()` and the transcribed row; the re-check, the marker and
+  the refusal of Admin targets hold at any floor.
+- **V2-23, the Audit Log showing the marker as a word** ("by Ada Admin,
+  signed in as") rather than a key in the payload fold — worth it the first
+  time somebody reads the log for it.
 - **V2-17, telling an approver something is waiting.** Mail is off by
-  design; the count on the menu tile is what exists. If the owner wants
-  mail, it is designed through spec-v1 §3.3a's interlocks.
-- **A search over entries on Track RCFs**, so the member box there finds
-  a request before it is a form; and the entries' "in the roster" once
-  they are on one is already the form's (§12.5).
-- **A CSS tick counter** on the approvals and consolidate screens (the
-  Assign pattern), so "Approve 11 ticked" reads the live count.
+  design; the count on the menu tile is what exists.
+- **A search over entries on Track RCFs**, and **a CSS tick counter** on the
+  approvals and consolidate screens (the Assign pattern).
 
 **How each phase was worked, and what to keep doing:** one branch per phase
 restarted from `origin/main`; `php tests/run.php --strict` against a
 reachable database (`RERM_DB_HOST`, `RERM_DB_NAME`, `RERM_DB_USER`,
 `RERM_DB_PASS` — the docker database, or any MySQL 8 / MariaDB 10.11 with the
-migrations applied); the three CI scripts locally before a commit
-(`.github/check-no-pii.py`, `.github/check-deployment.py`,
-`.github/check-mail-safety.php`); a PR against `main`; CI green on **both**
-MySQL 8.0 and MariaDB 10.11; then the merge. Every phase bumps `app.version`
-in `config/config.php` in the commit that closes it, adds a paragraph below
-this one, a section to `docs/spec-v2.md`, and a row to `CLAUDE.md`'s phase
-table. Tests are transcribed beside a generated fixture, never computed from
-the code under test, and every new file's examples come from `example.com`
-and `(555) 555-01xx` — the repository is public and the PII check fails the
-build on anything else.
+migrations applied; in a container with no docker daemon, `apt-get install
+mariadb-server`, start `mariadbd`, create the `rerm` database and user, and
+`php bin/migrate.php` — that is how 14.1 was tested); the three CI scripts
+locally before a commit (`.github/check-no-pii.py`,
+`.github/check-deployment.py`, `.github/check-mail-safety.php`); a PR
+against `main`; CI green on **both** MySQL 8.0 and MariaDB 10.11; then the
+merge. Every phase bumps `app.version` in `config/config.php` in the commit
+that closes it, adds a paragraph below this one, a section to
+`docs/spec-v2.md`, and a row to `CLAUDE.md`'s phase table. Tests are
+transcribed beside a generated fixture, never computed from the code under
+test — several tests hold counts (the matrix is 25 rows, the menu is 22
+tiles) that a new row has to raise on purpose — and every new file's
+examples come from `example.com` and `(555) 555-01xx`, because the
+repository is public and the PII check fails the build on anything else.
 
 **What is next is a decision, not a backlog.** The candidates, all
 documented and none started:
 
-- **`docs/spec-v2.md` §11**, the open items. The nearest to ready are
+- **The list above**, once the flow has been walked for real and the owner
+  says which of them bit first.
+- **`docs/spec-v2.md` §11**, the older open items. The nearest to ready are
   V2-11 (the Division Chairman's numbered form, generated from tracked
-  lines — the second half of the feedback that produced Phase 11, and the
-  tracking it needs now exists), V2-10 (a Vice Chairman seeing their
-  Officers' forms), V2-3 (which form follows the Roster Change Form —
+  lines — Phase 14's consolidated form may already be the answer, which is
+  worth confirming with a Division Chairman), V2-10 (a Vice Chairman seeing
+  their Officers' forms), V2-3 (which form follows the Roster Change Form —
   `/forms` is shaped for it), V2-7 and V2-8 (the team default and the
   Result column on View My Roster), and V2-6 (whether `import_change` is
   retained forever).
@@ -102,10 +152,11 @@ documented and none started:
 - **`CLAUDE.md`'s 10.x row** — recruiting and retention automation — which
   has no design yet and should get a spec-v2 section before any code.
 
-Whichever it is, the constraints that shaped the last three phases still
+Whichever it is, the constraints that shaped the last four phases still
 hold: no script, no framework, no build step, one template with two layouts
-at 720px, every figure landing on exactly the people it counted, and nothing
-that ever deletes a member or a contact.
+at 720px, every figure landing on exactly the people it counted, nothing
+that ever deletes a member or a contact — and now, nothing that asks
+whether it is being acted through.
 
 **Phase 14.1 — Sign In As.** Phase 14 could not be tested by one person:
 a chain is three accounts, and "does the Division Chairman see the entry"
