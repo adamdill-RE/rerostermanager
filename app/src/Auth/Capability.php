@@ -187,6 +187,24 @@ enum Capability: string
     case ManageApprovalFlow      = 'manage_approval_flow';
 
     /**
+     * Sign In As (Phase 14.1, spec-v2 §16) — Admin / Everywhere, its own
+     * row. An Admin runs their session as another account to see the
+     * application exactly as that account sees it: which tiles, which
+     * members, which RCF entries are waiting on them. It exists to check a
+     * scope or walk an approval flow without asking five people to sign in,
+     * and it is the one capability whose holder's own level is read on
+     * EVERY request rather than once — Rerm\Auth\Auth re-asks it before
+     * honouring the session's acting-as key, so a revoked Admin falls out of
+     * the other account's shoes on the next request.
+     *
+     * Everywhere because the question is not about a member. Admin because
+     * it is the whole committee's data seen under somebody else's name, and
+     * because the audit row for anything done while acting carries the
+     * Admin's id beside the account's.
+     */
+    case SignInAs                = 'sign_in_as';
+
+    /**
      * The floor. Levels include everything below them (spec 4.1), so the
      * check is always atLeast(), never equality.
      */
@@ -220,7 +238,8 @@ enum Capability: string
             self::ViewAuditLog,
             self::LookUpMembers,
             self::UploadForms,
-            self::ManageApprovalFlow      => Level::Admin,
+            self::ManageApprovalFlow,
+            self::SignInAs                => Level::Admin,
         };
     }
 
@@ -252,7 +271,8 @@ enum Capability: string
             self::UploadForms,
             self::ApproveRcfEntries,
             self::GenerateConsolidatedRcf,
-            self::ManageApprovalFlow      => Scope::Everywhere,
+            self::ManageApprovalFlow,
+            self::SignInAs                => Scope::Everywhere,
         };
     }
 }

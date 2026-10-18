@@ -206,6 +206,34 @@ h2 { font-size: 1.05rem; margin: 2rem 0 .5rem; }
     font-size: .85rem;
     font-weight: 600;
 }
+/* Signed in as somebody else (Phase 14.1, spec-v2 §16): the bar says so in
+   the accent, on every screen, and the way back sits beside Sign out. The
+   accent is a border and a word, never white text on orange (CLAUDE.md). */
+.topbar .who.acting { color: var(--text); }
+.topbar .who.acting .as {
+    display: inline-block;
+    padding: .1rem .5rem;
+    border: 2px solid var(--rodeo-orange);
+    border-radius: 999px;
+    font-weight: 700;
+    font-size: .8rem;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--action-orange);
+}
+.topbar form.back-to { margin: 0; }
+.topbar form.back-to button {
+    width: auto;
+    min-width: 0;
+    min-height: 44px;
+    padding: 0 .75rem;
+    font-size: .85rem;
+    font-weight: 700;
+    background: var(--action-orange);
+    color: #fff;
+    border: 0;
+}
+.topbar.acting { border-bottom: 3px solid var(--rodeo-orange); }
 
 /* The screens, in the bar (Phase 10.3). Text links, each a 56px target,
    the current one underlined in the accent; on a phone they wrap to their
@@ -1124,11 +1152,22 @@ $navItems = [
 $currentView = isset($view) && is_string($view) ? $view : '';
 ?>
 <a class="skip-main" href="#content">Skip to content</a>
+<?php
+/*
+    Signed in as somebody else (Phase 14.1, spec-v2 §16): $actor is the Admin
+    whose session this really is, passed by render() on every screen like
+    $user, or null. When it is set the bar carries a word saying so and a
+    button back to the Admin's own account — a control that has to be on
+    every screen, because the whole point is to wander the application as
+    the account and then leave from wherever that led.
+*/
+$actor = isset($actor) && $actor instanceof Rerm\Auth\User ? $actor : null;
+?>
 <?php if (isset($user) && $user instanceof Rerm\Auth\User) { ?>
-    <header class="topbar<?= ($wide ?? false) ? ' wide' : '' ?>">
+    <header class="topbar<?= ($wide ?? false) ? ' wide' : '' ?><?= $actor !== null ? ' acting' : '' ?>">
         <div class="inner">
             <span class="brand"><?= e((string) $app->config()->get('app.name')) ?></span>
-            <?php if ($user->mustChangePassword) { ?>
+            <?php if ($user->mustChangePassword && $actor === null) { ?>
                 <?php /* Every other route 303s back to /password until the
                          change is made (spec 3.2), so a Menu link here is a
                          link that loops. Sign out is the one other thing a
@@ -1144,8 +1183,17 @@ $currentView = isset($view) && is_string($view) ? $view : '';
                         ? ' aria-current="page"' : '' ?>>&larr; Menu</a>
                 </nav>
             <?php } ?>
-            <div class="who">
+            <div class="who<?= $actor !== null ? ' acting' : '' ?>">
+                <?php if ($actor !== null) { ?>
+                    <span class="as">Signed in as</span>
+                <?php } ?>
                 <span><?= e($user->displayName) ?> &middot; <?= e($user->level->label()) ?></span>
+                <?php if ($actor !== null) { ?>
+                    <form class="back-to" method="post" action="<?= e($app->url('sign-out-as')) ?>">
+                        <?= Rerm\Csrf::field() ?>
+                        <button type="submit">Back to <?= e($actor->displayName) ?> (<?= e($actor->level->label()) ?>)</button>
+                    </form>
+                <?php } ?>
                 <form class="signout" method="post" action="<?= e($app->url('logout')) ?>">
                     <?= Rerm\Csrf::field() ?>
                     <button type="submit" class="quiet">Sign out</button>

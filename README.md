@@ -20,14 +20,19 @@ file copy.
 
 ### For the next session
 
-This branch is **1.14.0**: Phase 14, RCF Entries and the Approval Flow —
+This branch is **1.14.1**: Phase 14.1, Sign In As — the tool the owner
+asked for to **test** Phase 14: an Admin runs their session as another
+account, sees exactly what that account sees, walks the approval flow as
+each person in it, and comes back from the bar on any screen
+(`docs/spec-v2.md` §16). It needs no migration. Before it, `main` was
+1.14.0: Phase 14, RCF Entries and the Approval Flow, merged as
+[#30](https://github.com/adamdill-RE/rerostermanager/pull/30) —
 the fourth feature to come from a real user and the first that is a
 **workflow** rather than a screen: a Vice Chairman asks for one roster
 change at a time, it goes up a chain of approvers an Admin has drawn, and
 the account at the top of the chain cuts everything it approved into one or
 more consolidated Roster Change Forms kept and tracked like every other
-(`docs/spec-v2.md` §15). Before it, `main` was 1.13.0: Phase 13, Upload
-RCFs, merged as [#29](https://github.com/adamdill-RE/rerostermanager/pull/29).
+(`docs/spec-v2.md` §15).
 The server carries whatever was last deployed with cPanel's **Deploy HEAD
 Commit**; the footer of every screen and `/status` say which build that is.
 **Phase 14 needs a migration**: `013_rcf_entries.sql` adds `rcf_approver`,
@@ -101,6 +106,29 @@ Whichever it is, the constraints that shaped the last three phases still
 hold: no script, no framework, no build step, one template with two layouts
 at 720px, every figure landing on exactly the people it counted, and nothing
 that ever deletes a member or a contact.
+
+**Phase 14.1 — Sign In As.** Phase 14 could not be tested by one person:
+a chain is three accounts, and "does the Division Chairman see the entry"
+meant three people signing in. So **Sign In As** (`/sign-in-as`, Admin,
+its own `sign_in_as` capability, on the menu under *Administer*) lists
+every active, non-Admin account with its level, its team and — the reason
+for the screen — where its RCF entries go, read from the same table
+*Create Approval Flow* draws; one button per row and the session runs
+**as that account**. Nothing is faked: `Rerm\Auth\Auth::currentUser()`
+returns the account, built by the same loader as a real login, so its
+scope, its tiles and its refusals are exactly the person's; the Admin is
+`accountHolder()`, the bar on every screen says *Signed in as* and carries
+**Back to \<Admin\>** (`/sign-out-as`, signed-in only, because it is
+pressed as somebody the capability would refuse). Five rules
+(`docs/spec-v2.md` §16.3): the holder's level is re-read on **every**
+request before the session's key is honoured, so a revoked Admin falls out
+of the other account's shoes at once; never another Admin, never a
+deactivated account, never yourself, each a sentence; the `sign_in_as` /
+`sign_out_as` pair is written as the Admin and every audit row in between
+carries `acting_admin_user_id` beside the account's id; `/password` is
+refused while acting and the forced first change does not pin the Admin;
+and no screen asks whether it is being acted through. The menu reads the
+flash now, so the two notices land. No migration.
 
 **Phase 14 — RCF Entries and the Approval Flow.** Create Forms is one
 officer producing one form and emailing it on; what a Division Chairman

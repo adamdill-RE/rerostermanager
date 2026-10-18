@@ -261,8 +261,9 @@ test('the menu is three groups by job, each screen with one line on what it is f
 
     $source = mc_source('app/views/menu.php');
     // Twenty-one since Phase 14: three workflow tiles under Team Functions
-    // and Create Approval Flow under Administer.
-    assertSame(21, preg_match_all("/'route' => '[a-z-]+',.*'group' => '(chase|lead|administer)', 'why' => '/", $source), 'every tile names its group and its why, on one line');
+    // and Create Approval Flow under Administer; twenty-two since 14.1,
+    // Sign In As under Administer.
+    assertSame(22, preg_match_all("/'route' => '[a-z-]+',.*'group' => '(chase|lead|administer)', 'why' => '/", $source), 'every tile names its group and its why, on one line');
 });
 
 test('the accessibility pass: a skip link, aria-sort, aria-current on every toggle, scope on every header, no disabled button', function (): void {

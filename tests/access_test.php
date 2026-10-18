@@ -115,6 +115,13 @@ test('the capability matrix matches spec 4.5, transcribed independently', functi
         'approve_rcf_entries'       => ['senior_officer', Scope::Everywhere],
         'generate_consolidated_rcf' => ['senior_officer', Scope::Everywhere],
         'manage_approval_flow'      => ['admin', Scope::Everywhere],
+        // spec-v2 §16.2. Admin / Everywhere, its own row: an Admin running
+        // their session as another account to see what that account sees.
+        // Everywhere because no member is the subject; Admin because it is
+        // the whole committee's data under somebody else's name. The row
+        // is the one whose holder's level Auth re-reads on EVERY request
+        // before honouring it. Transcribed from the spec-v2 §16.2 table.
+        'sign_in_as'                => ['admin', Scope::Everywhere],
     ];
 
     assertSame(count($spec), count(Capability::cases()), 'spec 4.5 has exactly this many rows');
