@@ -1090,9 +1090,9 @@ function member_from(): array
         'rcfs'      => ['rcfs', 'Track RCFs'],
         // The three screens of the RCF entry workflow (Phase 14): a member
         // named on an entry links to their card; the way back is the screen.
-        'rcf-entries'     => ['rcf-entries', 'Create RCF Entries'],
-        'rcf-approvals'   => ['rcf-approvals', 'Approve RCF Entries'],
-        'rcf-consolidate' => ['rcf-consolidate', 'Consolidate RCFs'],
+        'rcf-entries'     => ['rcf-entries', 'Create RCF Requests'],
+        'rcf-approvals'   => ['rcf-approvals', 'Approve RCF Requests'],
+        'rcf-consolidate' => ['rcf-consolidate', 'Export Approved Requests to RCF Forms'],
     ];
 }
 
@@ -2423,16 +2423,16 @@ function rcf_entries_blocked(Rerm\App $app, Rerm\Auth\User $user, string $title)
     return true;
 }
 
-/** Create RCF Entries: the grid, as far as it has been filled in, and the caller's own entries. */
+/** Create RCF Requests (the Create RCF Entries screen): the grid, as far as it has been filled in, and the caller's own entries. */
 function rcf_entries_screen(Rerm\App $app, Rerm\Auth\User $user, array $input, array $notices = []): void
 {
-    if (rcf_entries_blocked($app, $user, 'Create RCF Entries')) {
+    if (rcf_entries_blocked($app, $user, 'Create RCF Requests')) {
         return;
     }
 
     $entries = Rerm\Forms\RcfEntries::fromApp($app);
 
-    render($app, 'rcf-entries', 'Create RCF Entries', [
+    render($app, 'rcf-entries', 'Create RCF Requests', [
         'wide'    => true,
         'user'    => $user,
         'notices' => $notices === [] ? flash_take() : $notices,
@@ -2462,9 +2462,9 @@ function rcf_entries_act(Rerm\App $app, Rerm\Auth\User $user): void
     if ($action === 'withdraw') {
         $id = (int) ($_POST['id'] ?? 0);
         if ($entries->withdraw($user, $id)) {
-            flash_set('ok', 'Withdrawn. The entry stays on your list as withdrawn, and the withdrawal is logged with your name.');
+            flash_set('ok', 'Withdrawn. The request stays on your list as withdrawn, and the withdrawal is logged with your name.');
         } else {
-            flash_set('warn', 'That entry is not yours to withdraw, or it has already been decided.');
+            flash_set('warn', 'That request is not yours to withdraw, or it has already been decided.');
         }
         redirect($app, 'rcf-entries#mine');
     }
@@ -2477,7 +2477,7 @@ function rcf_entries_act(Rerm\App $app, Rerm\Auth\User $user): void
     $year = active_show_year($app);
     if ($year === null) {
         rcf_entries_screen($app, $user, $_POST, [['danger',
-            'No show year is active, so entries cannot be submitted. An Admin makes a show year active on Show Year.']]);
+            'No show year is active, so requests cannot be submitted. An Admin makes a show year active on Show Year.']]);
         exit;
     }
 
@@ -2493,24 +2493,24 @@ function rcf_entries_act(Rerm\App $app, Rerm\Auth\User $user): void
     flash_set('ok', sprintf(
         '%d %s submitted and logged with your name. %s',
         $n,
-        $n === 1 ? 'entry' : 'entries',
+        $n === 1 ? 'request' : 'requests',
         $result['state'] === 'top'
-            ? 'You are at the top of the chain, so they are approved: put them on a form on Consolidate RCFs.'
+            ? 'You are at the top of the chain, so they are approved: put them on a form on Export Approved Requests to RCF Forms.'
             : 'They are waiting on ' . (string) ($result['approver']['name'] ?? 'your approver') . '.'
     ));
     redirect($app, 'rcf-entries#mine');
 }
 
-/** Approve RCF Entries: what is waiting on the caller, and what they have decided. */
+/** Approve RCF Requests (the Approve RCF Entries screen): what is waiting on the caller, and what they have decided. */
 function rcf_approvals_screen(Rerm\App $app, Rerm\Auth\User $user): void
 {
-    if (rcf_entries_blocked($app, $user, 'Approve RCF Entries')) {
+    if (rcf_entries_blocked($app, $user, 'Approve RCF Requests')) {
         return;
     }
 
     $entries = Rerm\Forms\RcfEntries::fromApp($app);
 
-    render($app, 'rcf-approvals', 'Approve RCF Entries', [
+    render($app, 'rcf-approvals', 'Approve RCF Requests', [
         'wide'    => true,
         'user'    => $user,
         'notices' => flash_take(),
@@ -2541,7 +2541,7 @@ function rcf_approvals_act(Rerm\App $app, Rerm\Auth\User $user): never
         $result = $entries->approve($user, $ids);
         $total  = $result['advanced'] + $result['approved'];
         if ($total === 0) {
-            flash_set('warn', 'None of those entries is waiting on you, so nothing changed.');
+            flash_set('warn', 'None of those requests is waiting on you, so nothing changed.');
         } else {
             $parts = [];
             if ($result['advanced'] > 0) {
@@ -2560,9 +2560,9 @@ function rcf_approvals_act(Rerm\App $app, Rerm\Auth\User $user): never
         if ($returned === null) {
             flash_set('warn', 'A return needs a note: the officer who asked has to read why. Nothing changed.');
         } elseif ($returned === 0) {
-            flash_set('warn', 'None of those entries is waiting on you, so nothing changed.');
+            flash_set('warn', 'None of those requests is waiting on you, so nothing changed.');
         } else {
-            flash_set('ok', $returned . ($returned === 1 ? ' entry' : ' entries') . ' returned with your note, and logged with your name.');
+            flash_set('ok', $returned . ($returned === 1 ? ' request' : ' requests') . ' returned with your note, and logged with your name.');
         }
         redirect($app, 'rcf-approvals');
     }
@@ -2570,10 +2570,10 @@ function rcf_approvals_act(Rerm\App $app, Rerm\Auth\User $user): never
     redirect($app, 'rcf-approvals');
 }
 
-/** Consolidate RCFs: what ended with the caller's approval, cut into forms. */
+/** Export Approved Requests to RCF Forms (Consolidate RCFs): what ended with the caller's approval, cut into forms. */
 function rcf_consolidate_screen(Rerm\App $app, Rerm\Auth\User $user, string $by = 'division'): void
 {
-    if (rcf_entries_blocked($app, $user, 'Consolidate RCFs')) {
+    if (rcf_entries_blocked($app, $user, 'Export Approved Requests to RCF Forms')) {
         return;
     }
 
@@ -2581,7 +2581,7 @@ function rcf_consolidate_screen(Rerm\App $app, Rerm\Auth\User $user, string $by 
     $by      = isset(Rerm\Forms\RcfEntries::GROUP_BY[$by]) ? $by : 'division';
     $ready   = $entries->readyFor($user);
 
-    render($app, 'rcf-consolidate', 'Consolidate RCFs', [
+    render($app, 'rcf-consolidate', 'Export Approved Requests to RCF Forms', [
         'wide'    => true,
         'user'    => $user,
         'notices' => flash_take(),
@@ -2639,7 +2639,7 @@ function rcf_consolidate_act(Rerm\App $app, Rerm\Auth\User $user): void
     }
 
     if ($result['forms'] === []) {
-        flash_set('warn', 'None of those entries is yours to generate, so no form was made.');
+        flash_set('warn', 'None of those requests is yours to generate, so no form was made.');
         redirect($app, 'rcf-consolidate#generated');
     }
 

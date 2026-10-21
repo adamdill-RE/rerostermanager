@@ -119,7 +119,7 @@ test('the upload card is on Track RCFs, posts several files to the upload route,
     assertTrue(str_contains($view, "url('rcf-upload')"), 'posting to the upload route');
     assertTrue(str_contains($view, 'enctype="multipart/form-data"'));
 
-    assertTrue(str_contains(ru_source('app/views/menu.php'), 'made here or uploaded'), 'the tile says uploads are tracked too');
+    assertTrue(str_contains(ru_source('app/src/Menu.php'), 'made here or uploaded'), 'the tile says uploads are tracked too');
     assertTrue(str_contains(ru_source('app/views/rcfs.php'), 'Every change requested'), 'the change table is on the list');
 });
 

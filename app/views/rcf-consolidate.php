@@ -36,9 +36,9 @@ use Rerm\Forms\RcfEntries;
 use Rerm\Forms\RosterChangeForm;
 use Rerm\View;
 ?>
-<h1>Consolidate RCFs</h1>
+<h1>Export Approved Requests to RCF Forms</h1>
 <p class="lede">
-    Every entry that ended with your approval and is not yet on a form, cut
+    Every request that ended with your approval and is not yet on a form, cut
     into the Roster Change Forms it will print on. Generate keeps the forms;
     each one is then downloaded from its own page, numbered and tracked like
     every other form.
@@ -49,7 +49,7 @@ use Rerm\View;
 <?php if ($ready === []) { ?>
     <div class="card">
         <h2>Nothing to generate</h2>
-        <p>No approved entry has ended with you. One appears here the moment you approve an entry as the last
+        <p>No approved request has ended with you. One appears here the moment you approve a request as the last
             approver in its chain &mdash; or submit one yourself, if you are at the top of the chain.</p>
     </div>
 <?php } else { ?>
@@ -116,7 +116,7 @@ use Rerm\View;
             <p>
                 Generate keeps <?= e((string) count($cut)) ?> <?= count($cut) === 1 ? 'form' : 'forms' ?> under your name as
                 submitter, dated today, for the active show year. Nothing is downloaded yet: each form opens
-                on its own page below, where you read it over, download it and track it. Every entry taken
+                on its own page below, where you read it over, download it and track it. Every request taken
                 is marked as on its form and logged with your name.
             </p>
             <button type="submit" name="action" value="generate">Generate <?= e((string) count($cut)) ?> <?= count($cut) === 1 ? 'form' : 'forms' ?> from the ticked lines</button>
@@ -129,7 +129,7 @@ use Rerm\View;
     <div class="card"><p>No consolidated form yet. The first one appears here, ready to download from its page.</p></div>
 <?php } else { ?>
     <table class="track">
-        <caption>Newest first. Download a form from here, or open it to read it over, add the RCF number and mark it sent &mdash; or, if it was a test run, to void it, which takes it and its entries out of view for everybody.</caption>
+        <caption>Newest first. Download a form from here, or open it to read it over, add the RCF number and mark it sent &mdash; or, if it was a test run, to void it, which takes it and its requests out of view for everybody.</caption>
         <thead><tr>
             <th scope="col">Generated</th>
             <th scope="col">Sub-committee</th>

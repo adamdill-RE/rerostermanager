@@ -29,7 +29,7 @@ $number = static fn (int $n): string => number_format($n);
 <h1>Sign In As</h1>
 <p class="lede">
     See the application exactly as another account sees it &mdash; their tiles,
-    their roster, the RCF entries waiting on them &mdash; without asking them to
+    their roster, the RCF requests waiting on them &mdash; without asking them to
     sign in. Your own account stays signed in underneath, and the bar at the top
     carries a button that brings you back to it.
 </p>
@@ -90,7 +90,7 @@ $number = static fn (int $n): string => number_format($n);
                 <th scope="col">Account</th>
                 <th scope="col">Title</th>
                 <th scope="col">Level</th>
-                <th scope="col">RCF entries go to</th>
+                <th scope="col">RCF requests go to</th>
                 <th scope="col">Action</th>
             </tr>
         </thead>
@@ -113,7 +113,7 @@ $number = static fn (int $n): string => number_format($n);
                     <span class="sub"><?= $row['source'] === 'grant' ? 'Granted' : 'Title' ?><?php
                         if ($row['must_change']) { ?> &middot; password not set<?php } ?></span>
                 </td>
-                <td data-label="RCF entries go to">
+                <td data-label="RCF requests go to">
                     <?php if ($row['flow']['state'] === 'approver') { ?>
                         <?= e((string) $row['flow']['approver']) ?>
                     <?php } elseif ($row['flow']['state'] === 'top') { ?>

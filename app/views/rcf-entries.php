@@ -47,7 +47,7 @@ foreach ($subcommittees as $option) {
 $canSubmit = $route['state'] !== 'unset';
 $back      = 'rcf-entries';
 ?>
-<h1>Create RCF Entries</h1>
+<h1>Create RCF Requests</h1>
 <p class="lede">
     Ask for one change at a time &mdash; an addition, a removal, a title or a
     team change &mdash; and it goes up the chain for approval. The approver at
@@ -58,17 +58,17 @@ $back      = 'rcf-entries';
 <?= View::rcfEntriesNav($app, $user, 'rcf-entries', $counts) ?>
 
 <div class="card">
-    <h2>Where your entries go</h2>
+    <h2>Where your requests go</h2>
     <?php if ($route['state'] === 'approver' && $route['approver'] !== null) { ?>
-        <p>Every entry you submit waits on <strong><?= e((string) $route['approver']['name']) ?></strong>
+        <p>Every request you submit waits on <strong><?= e((string) $route['approver']['name']) ?></strong>
             first, and goes on up the chain from there.</p>
     <?php } elseif ($route['state'] === 'top') { ?>
-        <p>You are at the <strong>top of the chain</strong>: your entries are approved the moment you
+        <p>You are at the <strong>top of the chain</strong>: your requests are approved the moment you
             submit them, and you put them on a form yourself on
-            <a href="<?= e($app->url('rcf-consolidate')) ?>">Consolidate RCFs</a>.</p>
+            <a href="<?= e($app->url('rcf-consolidate')) ?>">Export Approved Requests to RCF Forms</a>.</p>
     <?php } else { ?>
         <p><span class="chip chip-warn">Nobody is set as your approver yet</span>
-            Your entries cannot be submitted until an Admin draws who approves them, on
+            Your requests cannot be submitted until an Admin draws who approves them, on
             Create Approval Flow. Nothing you type here is routed to a default.</p>
     <?php } ?>
 </div>
@@ -81,7 +81,7 @@ $back      = 'rcf-entries';
     <?php /* Enter submits the FIRST submit in the form (Phase 10.5's lesson):
              hidden and off the tab order, so Enter submits the entries rather
              than reloading the sub-committee and losing the rows. */ ?>
-    <button type="submit" name="action" value="submit" class="vh" tabindex="-1" aria-hidden="true">Submit these entries</button>
+    <button type="submit" name="action" value="submit" class="vh" tabindex="-1" aria-hidden="true">Submit these requests</button>
 
     <div class="card">
         <h2>Which sub-committee</h2>
@@ -97,7 +97,7 @@ $back      = 'rcf-entries';
                 ?></optgroup><?php
             } ?></select>
         <p class="hint">
-            The sub-committee these entries are about. It is written on every one
+            The sub-committee these requests are about. It is written on every one
             of them, because the form they end up on is headed with it &mdash; a
             removal or a title change does not say which team otherwise.
         </p>
@@ -112,22 +112,22 @@ $back      = 'rcf-entries';
     <div class="card">
         <h2>Submit</h2>
         <p>
-            Every filled row becomes one entry. Rows you leave blank are not
-            submitted. Each entry is logged with your name and can be withdrawn
+            Every filled row becomes one request. Rows you leave blank are not
+            submitted. Each request is logged with your name and can be withdrawn
             while it is still waiting.
         </p>
-        <button type="submit" name="action" value="submit">Submit these entries</button>
+        <button type="submit" name="action" value="submit">Submit these requests</button>
     </div>
 <?php } ?>
 </form>
 <?php } ?>
 
-<h2 id="mine">Your entries</h2>
+<h2 id="mine">Your requests</h2>
 <?php if ($mine === []) { ?>
-    <div class="card"><p>You have not submitted an entry yet. The first one appears here, with where it is waiting.</p></div>
+    <div class="card"><p>You have not submitted a request yet. The first one appears here, with where it is waiting.</p></div>
 <?php } else { ?>
     <table class="track entries">
-        <caption>Newest first. Withdraw takes back an entry that is still waiting; a returned one carries the approver&rsquo;s note.</caption>
+        <caption>Newest first. Withdraw takes back a request that is still waiting; a returned one carries the approver&rsquo;s note.</caption>
         <thead><tr>
             <th scope="col">Submitted</th>
             <th scope="col">Sub-committee</th>

@@ -337,7 +337,7 @@ final class ApprovalFlow
                 return [
                     'saved'   => 0,
                     'refused' => 'That would make a loop — ' . implode(' → ', $names)
-                        . ' — and an entry on a loop never reaches anybody. Nothing was saved.',
+                        . ' — and a request on a loop never reaches anybody. Nothing was saved.',
                 ];
             }
         }

@@ -20,7 +20,24 @@ file copy.
 
 ### For the next session
 
-This branch is **1.14.3**: Phase 14.3, the download one tap nearer
+This branch is **1.14.4**: Phase 14.4, the menu by the owner's groups and
+the shell (`docs/spec-v2.md` §18). The menu is reordered into **RCFs, Dues
+& Compliance, Team Functions, Administer**, with *Create RCF Requests*,
+*Approve RCF Requests* and *Export Approved Requests to RCF Forms* retitled
+on the menu and on their own screens, and *request* is the word everywhere
+a person reads one — body copy, strip, flashes, refusals, audit verb labels
+(routes, capabilities, tables and audit verb values keep *entry*). The
+tiles are written once, in `Rerm\Menu`, and drawn twice: on the menu page
+and in a new **drop-down** in the bar of every signed-in screen — a
+`<details>`, no JavaScript, filtered by capability, the current screen
+marked, two columns for an Admin. The bar is **one line on a phone** (it
+was three to four, a quarter of the screen); the strip of working screens
+stays at a desk; the brand is a link home. The audit behind it, done in a
+real browser at both widths and both themes, also fixed the desktop
+segmented toggles running the full page width, a 56px select beside every
+48px desktop button (one `--control` token now), the bar wrapping on
+narrow-column screens, and the member card's select overflowing a phone.
+No migration. Before it, `main` was **1.14.3**: Phase 14.3, the download one tap nearer
 (`docs/spec-v2.md` §17.4) — the first thing the owner noticed generating
 as a Division Chairman was that the file was a page away. One generated
 form now lands on its own page, every row of *Forms you have generated*

@@ -91,7 +91,15 @@ declare(strict_types=1);
        every width. Roster and dashboard screens use --page-wide. */
     --page-max: 34rem;
     --page-wide: 78rem;
+
+    /* The height of a form control: 56px on a phone — one-handed, outdoors,
+       in gloves — and 48px at a desk (Phase 14.4), the height Phase 8.6
+       already gave buttons there. One token, so an input and the button
+       beside it are the same height at either width; before this a 56px
+       select stood beside a 48px button on every desktop form. */
+    --control: 56px;
 }
+@media (min-width: 720px) { :root { --control: 48px; } }
 
 @media (prefers-color-scheme: dark) {
     :root {
@@ -144,11 +152,19 @@ h2 { font-size: 1.05rem; margin: 2rem 0 .5rem; }
     color: var(--action-orange);
 }
 
-/* The way back to the menu, on every signed-in screen (Phase 8.5).
-   Sticky, because the screen it matters on is a 100-row roster: the whole
-   point is not having to scroll to the bottom to leave. It bleeds through
-   body's padding so it meets the edges of the phone and nothing shows
-   beside it as the page scrolls under. */
+/* The bar, on every signed-in screen (Phase 8.5; redrawn at Phase 14.4,
+   spec-v2 §18.2). Sticky, because the screen it matters on is a 100-row
+   roster: the whole point is not having to scroll to the top to leave.
+   It bleeds through body's padding so it meets the edges of the phone and
+   nothing shows beside it as the page scrolls under.
+
+   ONE LINE on a phone — the brand and the Menu button, 56px, nothing
+   else. Before 14.4 the bar was three lines for an Officer and four for an
+   Admin (the brand, the screens wrapped under it, the name and Sign out),
+   a quarter of a 360x740 phone pinned over every list. The screens, the
+   name, Change password and Sign out are in the drop-down now. At a desk
+   the four working screens sit beside the brand for the one-click hop a
+   desk user makes all day, and the name sits beside the button. */
 .topbar {
     position: sticky;
     top: 0;
@@ -159,28 +175,30 @@ h2 { font-size: 1.05rem; margin: 2rem 0 .5rem; }
     border-bottom: 1px solid var(--border);
 }
 .topbar .inner {
-    max-width: var(--page-max);
+    /* The drop-down panel is positioned against this box, so it hangs
+       from the bar's bottom edge and aligns with the box's right edge. The
+       box is the WIDE column on every screen, narrow ones included: the
+       bar is the application's chrome rather than the page's content, and
+       at 34rem the brand, four screens, a name and the button did not fit
+       on one line — the button dropped under the brand on the menu, the
+       member card and every form. The content column stays the page's
+       choice, and the footer still follows it. */
+    position: relative;
+    max-width: var(--page-wide);
     margin: 0 auto;
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: 0 1rem;
+    gap: 0 .75rem;
     /* Minimum touch target is 56px — this is used one-handed, outdoors, by
        somebody wearing gloves in February. */
     min-height: 56px;
 }
-.topbar.wide .inner { max-width: var(--page-wide); }
-.topbar .brand { margin: 0; }
-.topbar a.back {
-    display: inline-flex;
-    align-items: center;
-    min-height: 56px;
-    padding: 0 .25rem;
-    font-weight: 700;
-    text-decoration: none;
-}
-.topbar a.back:hover { text-decoration: underline; }
-.topbar a.back:focus-visible { outline: 3px solid var(--rodeo-orange); outline-offset: 2px; }
+/* The brand is the way home, as on every site: the landing screen, which
+   is My Roster Status for an officer and the menu for anybody else. */
+.topbar .brand { margin: 0; text-decoration: none; }
+.topbar a.brand:hover { text-decoration: underline; }
+.topbar a.brand:focus-visible { outline: 3px solid var(--rodeo-orange); outline-offset: 2px; border-radius: 3px; }
 .topbar .who {
     margin-left: auto;
     color: var(--muted);
@@ -188,15 +206,18 @@ h2 { font-size: 1.05rem; margin: 2rem 0 .5rem; }
     display: flex;
     align-items: center;
     gap: .75rem;
-    /* Last on a phone, where the name would otherwise push the link off. */
-    flex: 1 0 100%;
-    padding-bottom: .4rem;
 }
-@media (min-width: 40rem) {
-    .topbar .who { flex: 0 1 auto; padding-bottom: 0; }
+@media (max-width: 719px) {
+    /* The name is in the drop-down on a phone. Two exceptions keep the
+       row: while an Admin is signed in as somebody else the word and the
+       way back have to be on every screen (spec-v2 §16), and while a
+       password change is forced there is no drop-down to carry it. */
+    .topbar .who:not(.acting):not(.alone) { display: none; }
+    .topbar .who.acting, .topbar .who.alone { flex: 1 0 100%; order: 9; margin-left: 0; padding: .3rem 0 .5rem; }
 }
-/* Sign out, on every signed-in screen (Phase 10.3): small, quiet, and the
-   only control offered while a password change is forced. */
+/* Sign out, on every signed-in screen (Phase 10.3): small and quiet. In
+   the drop-down since 14.4, except while a password change is forced,
+   when it is the only control offered and sits in the bar. */
 .topbar form.signout { margin: 0; margin-left: auto; }
 .topbar form.signout button {
     width: auto;
@@ -207,7 +228,7 @@ h2 { font-size: 1.05rem; margin: 2rem 0 .5rem; }
     font-weight: 600;
 }
 /* Signed in as somebody else (Phase 14.1, spec-v2 §16): the bar says so in
-   the accent, on every screen, and the way back sits beside Sign out. The
+   the accent, on every screen, and the way back sits beside the name. The
    accent is a border and a word, never white text on orange (CLAUDE.md). */
 .topbar .who.acting { color: var(--text); }
 .topbar .who.acting .as {
@@ -235,10 +256,12 @@ h2 { font-size: 1.05rem; margin: 2rem 0 .5rem; }
 }
 .topbar.acting { border-bottom: 3px solid var(--rodeo-orange); }
 
-/* The screens, in the bar (Phase 10.3). Text links, each a 56px target,
-   the current one underlined in the accent; on a phone they wrap to their
-   own line under the brand. A desk user hops between Status, Roster and
-   Committee all day, and each hop was two taps through the menu. */
+/* The four working screens, in the bar at a desk (Phase 10.3). Text
+   links, each a 44px target, the current one underlined in the accent. A
+   desk user hops between Status, Roster and Committee all day, and each
+   hop was two taps through the menu. On a phone they are not drawn: the
+   drop-down lists them under Dues & Compliance and Team Functions, and a
+   second row of links under the brand cost every list 56px of screen. */
 .topbar nav.nav { display: flex; flex-wrap: wrap; align-items: center; gap: 0 .15rem; }
 .topbar nav.nav a {
     display: inline-flex;
@@ -254,10 +277,138 @@ h2 { font-size: 1.05rem; margin: 2rem 0 .5rem; }
 .topbar nav.nav a:focus-visible { outline: 3px solid var(--rodeo-orange); outline-offset: -3px; }
 .topbar nav.nav a.current,
 .topbar nav.nav a[aria-current="page"] { color: var(--text); box-shadow: inset 0 -3px 0 var(--action-orange); }
+@media (max-width: 719px) { .topbar nav.nav { display: none; } }
+
+/* The drop-down (Phase 14.4, spec-v2 §18.2): every screen the person may
+   use, grouped as the menu page groups them, one tap from every screen.
+   A <details>, because this application ships no JavaScript and the CSP
+   allows none: the button is the summary, the panel is its content, and
+   the browser does the opening. It closes on the tap that opens the next
+   screen, which is the only way out of it anybody takes; a second tap on
+   Menu closes it otherwise. The panel hangs from the bar's bottom edge —
+   under the notices too, when there are any — edge to edge on a phone and
+   a 26rem sheet under the button at a desk, two columns when there are
+   more than two groups to show. */
+details.appmenu { margin: 0; }
+@media (max-width: 719px) { details.appmenu { margin-left: auto; } }
+details.appmenu > summary {
+    list-style: none;
+    display: inline-flex;
+    align-items: center;
+    gap: .45rem;
+    min-height: 56px;
+    padding: 0 .85rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-weight: 700;
+    color: var(--link);
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+}
+details.appmenu > summary::-webkit-details-marker { display: none; }
+/* The chevron is drawn, not a glyph: img-src is 'self' and there is no
+   icon font, and a border rotated 45deg is a chevron in every font. */
+details.appmenu > summary::after {
+    content: "";
+    width: .45em;
+    height: .45em;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    transform: translateY(-.12em) rotate(45deg);
+}
+details.appmenu[open] > summary::after { transform: translateY(.12em) rotate(225deg); }
+details.appmenu[open] > summary { background: var(--surface); }
+details.appmenu > summary:hover { background: var(--surface); }
+details.appmenu > summary:focus-visible { outline: 3px solid var(--rodeo-orange); outline-offset: 2px; }
+@media (min-width: 720px) { details.appmenu > summary { min-height: 44px; } }
+
+.appmenu .panel {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    z-index: 11;
+    width: min(26rem, calc(100vw - 2rem));
+    max-height: calc(100vh - 5rem);
+    overflow-y: auto;
+    padding: .6rem 1rem 1rem;
+    background: var(--page);
+    border: 1px solid var(--border);
+    border-top: 0;
+    border-radius: 0 0 10px 10px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, .18);
+}
+@media (max-width: 719px) {
+    .appmenu .panel {
+        left: -1rem;
+        right: -1rem;
+        width: auto;
+        border-left: 0;
+        border-right: 0;
+        border-radius: 0;
+        max-height: calc(100vh - 56px);
+    }
+}
+@media (min-width: 720px) {
+    .appmenu .panel.cols { width: min(44rem, calc(100vw - 2rem)); }
+    .appmenu .panel.cols .groups { column-count: 2; column-gap: 2.5rem; }
+    .appmenu .groups section { break-inside: avoid; }
+}
+.appmenu .account {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: .1rem .6rem;
+    margin: .25rem 0 .25rem;
+    padding-bottom: .5rem;
+    border-bottom: 1px solid var(--border);
+    color: var(--muted);
+    font-size: .88rem;
+}
+.appmenu .account strong { color: var(--text); font-size: 1rem; }
+/* The spacing between groups is on the section, not the heading: a margin
+   at the top of a column is truncated by the break, so with it on the h3
+   the second column's first heading sat higher than the first's. */
+.appmenu .groups section + section { margin-top: .75rem; }
+.appmenu .groups h3 {
+    margin: .35rem 0 .1rem;
+    font-size: .76rem;
+    font-weight: 700;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+.appmenu .groups ul { list-style: none; margin: 0; padding: 0; }
+.appmenu .groups a {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+    margin: 0 -.5rem;
+    padding: .2rem .5rem;
+    border-radius: 6px;
+    font-weight: 600;
+    color: var(--text);
+    text-decoration: none;
+}
+.appmenu .groups a:hover { background: var(--surface); color: var(--link); }
+.appmenu .groups a[aria-current="page"] { color: var(--link); box-shadow: inset 3px 0 0 var(--action-orange); }
+.appmenu .groups a:focus-visible { outline: 3px solid var(--rodeo-orange); outline-offset: -3px; }
+.appmenu .foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .25rem 1.25rem;
+    margin-top: .75rem;
+    padding-top: .5rem;
+    border-top: 1px solid var(--border);
+}
+.appmenu .foot a { display: inline-flex; align-items: center; min-height: 44px; font-weight: 600; }
+.appmenu .foot a[aria-current="page"] { color: var(--text); box-shadow: inset 0 -3px 0 var(--action-orange); text-decoration: none; }
+.appmenu .foot form.signout { margin-left: auto; }
 
 /* The notices (Phase 10.3): inside the sticky bar so they survive a landing
    further down the page, and small so they cost the phone one line. */
-.topbar .inner.notes { min-height: 0; }
+.topbar .notes { flex: 1 0 100%; }
 .notices { padding: .3rem 0 .5rem; }
 .notice { display: flex; align-items: flex-start; gap: .6rem; padding: .25rem 0; font-size: .92rem; line-height: 1.4; }
 .notice .chip { flex: 0 0 auto; margin-top: .1rem; }
@@ -351,7 +502,6 @@ button:focus-visible { outline: 3px solid var(--rodeo-orange); outline-offset: 2
 
     /* A row of filters is a set of choices, not a set of destinations, so
        each one is as wide as its own label rather than a third of the page. */
-    .toggle a { flex: 0 1 auto; min-width: 10rem; min-height: 48px; }
 }
 
 label { font-weight: 600; }
@@ -562,7 +712,9 @@ details.defs dd { margin: 0; color: var(--muted); font-size: .9rem; }
 .roster p.lc { display: grid; gap: .5rem; margin: .5rem 0; }
 .roster .pgh { margin: .35rem 0 .15rem; font-size: .9rem; }
 .roster label.pg { display: flex; align-items: center; gap: .6rem; margin: .35rem 0; font-weight: 700; }
-.roster label.pg select { flex: 1; width: auto; }
+/* min-width: 0, or the select keeps its intrinsic width inside the flex
+   row and runs out of the member card on a 360px phone (Phase 14.4). */
+.roster label.pg select { flex: 1; width: auto; min-width: 0; }
 .roster button[type="submit"] { margin: .5rem 0 .75rem; }
 
 /* --- Assign Officers (spec 7.4) --------------------------------------------
@@ -580,6 +732,16 @@ details.defs dd { margin: 0; color: var(--muted); font-size: .9rem; }
 }
 .toggle { flex-wrap: wrap; }
 .toggle a { flex: 1 1 10rem; padding: 0 .6rem; text-align: center; }
+/* A row of filters is a set of choices, not a set of destinations, so at a
+   desk each one is as wide as its own label rather than a third of the
+   page. This sits AFTER the base rule above on purpose: the same rule once
+   sat inside the 720px block near the buttons, earlier in the file, and the
+   base rule silently won — My members / My team ran the full 1,248px of a
+   desktop page as two slabs (Phase 14.4). */
+@media (min-width: 720px) {
+    .toggle { gap: .5rem .5rem; }
+    .toggle a { flex: 0 1 auto; min-width: 10rem; min-height: 48px; padding: 0 1.25rem; }
+}
 
 /* "12 selected", with no script (Phase 10.3). CSS counters count the ticked
    boxes in document order, and the action bar sits after the table, so the
@@ -977,7 +1139,7 @@ table.lookup li .why { display: block; }
 
 textarea {
     width: 100%;
-    min-height: 56px;
+    min-height: var(--control);
     padding: .5rem .75rem;
     border: 1px solid var(--border);
     border-radius: 8px;
@@ -989,7 +1151,7 @@ textarea:focus-visible { outline: 3px solid var(--rodeo-orange); outline-offset:
 
 select, input[type="file"] {
     width: 100%;
-    min-height: 56px;
+    min-height: var(--control);
     padding: .5rem .75rem;
     border: 1px solid var(--border);
     border-radius: 8px;
@@ -1006,7 +1168,7 @@ select, input[type="file"] {
 .choice .what { font-weight: 700; }
 .choice .why { display: block; color: var(--muted); font-size: .88rem; }
 
-button.quiet { background: transparent; color: var(--link); border: 1px solid var(--border); min-height: 56px; }
+button.quiet { background: transparent; color: var(--link); border: 1px solid var(--border); min-height: var(--control); }
 
 /* A link that leads to a step, drawn as the quiet button it stands where
    (Phase 10.3): Make active… and Re-open… on Show Year open the confirm
@@ -1036,7 +1198,7 @@ ul.rows li { margin: .15rem 0; }
 
 input[type="password"], input[type="text"], input[type="search"], input[type="date"] {
     width: 100%;
-    min-height: 56px;
+    min-height: var(--control);
     padding: 0 .75rem;
     border: 1px solid var(--border);
     border-radius: 8px;
@@ -1139,9 +1301,12 @@ if ($noticeHtml !== '') {
 /*
     The screens in the bar (Phase 10.3): the four working screens, filtered by
     capability exactly as the menu filters its tiles — presentation only,
-    every route re-checks. Whichever one is being drawn carries aria-current.
-    $view is render()'s own parameter, in scope because the layout is
-    required from there; a caller that renders another way gets no current.
+    every route re-checks. Whichever one is being drawn carries aria-current,
+    here and in the drop-down (Phase 14.4), which draws Rerm\Menu below. At a
+    desk this strip is the one-click hop; on a phone it is not drawn and the
+    drop-down carries the same screens. $view is render()'s own parameter, in
+    scope because the layout is required from there; a caller that renders
+    another way gets no current.
 */
 $navItems = [
     ['dashboard', 'Status',    Rerm\Auth\Capability::ViewStatusDashboard],
@@ -1164,26 +1329,32 @@ $currentView = isset($view) && is_string($view) ? $view : '';
 $actor = isset($actor) && $actor instanceof Rerm\Auth\User ? $actor : null;
 ?>
 <?php if (isset($user) && $user instanceof Rerm\Auth\User) { ?>
+    <?php
+    /*
+        The drop-down (Phase 14.4, spec-v2 §18.2) draws Rerm\Menu, the same
+        table the menu page draws, filtered by capability the same way. It
+        is withheld while a password change is forced on the person
+        themselves: every other route 303s back to /password until the
+        change is made (spec 3.2), so a menu here is a menu of loops, and
+        Sign out — the one other thing a person half signed-in may do —
+        sits in the bar instead.
+    */
+    $menuGroups = Rerm\Menu::forUser($user);
+    $showMenu   = !($user->mustChangePassword && $actor === null);
+    ?>
     <header class="topbar<?= ($wide ?? false) ? ' wide' : '' ?><?= $actor !== null ? ' acting' : '' ?>">
         <div class="inner">
-            <span class="brand"><?= e((string) $app->config()->get('app.name')) ?></span>
-            <?php if ($user->mustChangePassword && $actor === null) { ?>
-                <?php /* Every other route 303s back to /password until the
-                         change is made (spec 3.2), so a Menu link here is a
-                         link that loops. Sign out is the one other thing a
-                         person half signed-in may do, and it is offered. */ ?>
-            <?php } else { ?>
+            <a class="brand" href="<?= e($app->url()) ?>"><?= e((string) $app->config()->get('app.name')) ?></a>
+            <?php if ($showMenu) { ?>
                 <nav class="nav" aria-label="Screens">
                     <?php foreach ($navItems as [$route, $word, $capability]) { ?>
                         <?php if (!Rerm\Auth\Access::mayUse($user, $capability)) { continue; } ?>
                         <a href="<?= e($app->url($route)) ?>"<?= $currentView === $route
                             ? ' class="current" aria-current="page"' : '' ?>><?= e($word) ?></a>
                     <?php } ?>
-                    <a class="back" href="<?= e($app->url('menu')) ?>"<?= $currentView === 'menu'
-                        ? ' aria-current="page"' : '' ?>>&larr; Menu</a>
                 </nav>
             <?php } ?>
-            <div class="who<?= $actor !== null ? ' acting' : '' ?>">
+            <div class="who<?= $actor !== null ? ' acting' : '' ?><?= $showMenu ? '' : ' alone' ?>">
                 <?php if ($actor !== null) { ?>
                     <span class="as">Signed in as</span>
                 <?php } ?>
@@ -1194,15 +1365,52 @@ $actor = isset($actor) && $actor instanceof Rerm\Auth\User ? $actor : null;
                         <button type="submit">Back to <?= e($actor->displayName) ?> (<?= e($actor->level->label()) ?>)</button>
                     </form>
                 <?php } ?>
-                <form class="signout" method="post" action="<?= e($app->url('logout')) ?>">
-                    <?= Rerm\Csrf::field() ?>
-                    <button type="submit" class="quiet">Sign out</button>
-                </form>
+                <?php if (!$showMenu) { ?>
+                    <form class="signout" method="post" action="<?= e($app->url('logout')) ?>">
+                        <?= Rerm\Csrf::field() ?>
+                        <button type="submit" class="quiet">Sign out</button>
+                    </form>
+                <?php } ?>
             </div>
+            <?php if ($showMenu) { ?>
+                <details class="appmenu">
+                    <summary>Menu</summary>
+                    <div class="panel<?= count($menuGroups) > 2 ? ' cols' : '' ?>">
+                        <p class="account">
+                            <strong><?= e($user->displayName) ?></strong>
+                            <span><?= e($user->level->label()) ?> &middot; member number <?= e($user->memberNumber) ?></span>
+                        </p>
+                        <div class="groups">
+                            <?php foreach ($menuGroups as $groupKey => $group) { ?>
+                                <section aria-labelledby="mg-<?= e($groupKey) ?>">
+                                    <h3 id="mg-<?= e($groupKey) ?>"><?= e($group['heading']) ?></h3>
+                                    <ul>
+                                        <?php foreach ($group['tiles'] as $tile) { ?>
+                                            <?php if ($tile['route'] === null) { continue; } ?>
+                                            <li><a href="<?= e($app->url($tile['route'])) ?>"<?= $currentView === $tile['route']
+                                                ? ' aria-current="page"' : '' ?>><?= e($tile['label']) ?></a></li>
+                                        <?php } ?>
+                                    </ul>
+                                </section>
+                            <?php } ?>
+                        </div>
+                        <div class="foot">
+                            <a href="<?= e($app->url('menu')) ?>"<?= $currentView === 'menu'
+                                ? ' aria-current="page"' : '' ?>>Full menu</a>
+                            <a href="<?= e($app->url('password')) ?>"<?= $currentView === 'password'
+                                ? ' aria-current="page"' : '' ?>>Change password</a>
+                            <form class="signout" method="post" action="<?= e($app->url('logout')) ?>">
+                                <?= Rerm\Csrf::field() ?>
+                                <button type="submit" class="quiet">Sign out</button>
+                            </form>
+                        </div>
+                    </div>
+                </details>
+            <?php } ?>
+            <?php if ($noticeHtml !== '') { ?>
+                <div class="notes"><?= $noticeHtml ?></div>
+            <?php } ?>
         </div>
-        <?php if ($noticeHtml !== '') { ?>
-            <div class="inner notes"><?= $noticeHtml ?></div>
-        <?php } ?>
     </header>
 <?php } ?>
 <main id="content"<?= ($wide ?? false) ? ' class="wide"' : '' ?>>

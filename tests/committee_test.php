@@ -57,8 +57,8 @@ test('the committee route is guarded by the capability, at the Senior Officer fl
 });
 
 test('the menu tile points at the screen now that it exists', function (): void {
-    $source = (string) file_get_contents(__DIR__ . '/../app/views/menu.php');
-    assertTrue($source !== '', 'app/views/menu.php is readable');
+    $source = (string) file_get_contents(__DIR__ . '/../app/src/Menu.php');
+    assertTrue($source !== '', 'app/src/Menu.php is readable');
 
     $line = '';
     foreach (explode("\n", $source) as $candidate) {

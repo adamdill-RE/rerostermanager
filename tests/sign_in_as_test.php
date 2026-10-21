@@ -101,7 +101,7 @@ test('the screen is guarded by the capability; the way back is only signed-in, b
 });
 
 test('the tile is under Administer, and both audit verbs have a label', function (): void {
-    $menu = sia_source('app/views/menu.php');
+    $menu = sia_source('app/src/Menu.php');
     assertSame(1, preg_match("/'cap' => Capability::SignInAs,.*'route' => 'sign-in-as',.*'group' => 'administer'/", $menu), 'one tile, Administer');
 
     assertSame('Signed in as another account', Action::SignInAs->label());
@@ -541,7 +541,7 @@ test('the screen lists active, non-Admin accounts other than the caller, with wh
     assertTrue(str_contains($html, 'value="' . $f['users']['sen'] . '">'));
     assertTrue(str_contains($html, 'Sign in as Sam Senior'));
     assertTrue(str_contains($html, 'Sign in as Olive Officer'));
-    assertSame(1, preg_match('/data-label="RCF entries go to">\s*Abe Second\s*<\/td>/', $html), 'the approver\'s name in the flow cell');
+    assertSame(1, preg_match('/data-label="RCF requests go to">\s*Abe Second\s*<\/td>/', $html), 'the approver\'s name in the flow cell');
     assertTrue(!str_contains($html, 'Sign in as Ada Admin'), 'never the caller');
     assertTrue(!str_contains($html, 'Sign in as Gus Gone'), 'never a deactivated account');
 });

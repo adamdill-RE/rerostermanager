@@ -301,12 +301,12 @@ final class View
     public static function rcfEntriesNav(App $app, User $user, string $current, array $counts): string
     {
         $items = [
-            ['rcf-entries',     'Your entries',      Capability::CreateRcfEntries,        $counts['mine']],
+            ['rcf-entries',     'Your requests',     Capability::CreateRcfEntries,        $counts['mine']],
             ['rcf-approvals',   'Waiting for you',   Capability::ApproveRcfEntries,       $counts['waiting']],
             ['rcf-consolidate', 'Ready to generate', Capability::GenerateConsolidatedRcf, $counts['ready']],
         ];
 
-        $html = '<nav class="toggle" aria-label="RCF entries">';
+        $html = '<nav class="toggle" aria-label="RCF requests">';
         foreach ($items as [$route, $word, $capability, $count]) {
             if (!Access::mayUse($user, $capability)) {
                 continue;

@@ -72,12 +72,15 @@ test('the four entry routes are guarded by their own capabilities, transcribed f
     assertSame(true, Access::mayUse($user(Level::Admin), Capability::ManageApprovalFlow));
 });
 
-test('the menu carries the three workflow tiles under Team Functions and the flow under Administer', function (): void {
-    $menu = af_source('app/views/menu.php');
+test('the menu carries the three workflow tiles under RCFs and the flow under Administer', function (): void {
+    // Under Team Functions at Phase 14; under RCFs, by the owner's names,
+    // since Phase 14.4 (spec-v2 §18.1). The routes and the capabilities are
+    // unchanged: a screen was renamed, not a power.
+    $menu = af_source('app/src/Menu.php');
     foreach ([
-        ['Create RCF Entries', 'rcf-entries', 'lead'],
-        ['Approve RCF Entries', 'rcf-approvals', 'lead'],
-        ['Consolidate RCFs', 'rcf-consolidate', 'lead'],
+        ['Create RCF Requests', 'rcf-entries', 'rcfs'],
+        ['Approve RCF Requests', 'rcf-approvals', 'rcfs'],
+        ['Export Approved Requests to RCF Forms', 'rcf-consolidate', 'rcfs'],
         ['Create Approval Flow', 'approval-flow', 'administer'],
     ] as [$label, $route, $group]) {
         $line = '';
@@ -909,14 +912,14 @@ test('the four screens render, escape what they show, carry the strip and stay i
     // One more pending entry so every list has something in it.
     $entries->submit($vc, $f['year'], af_vc_form([0 => ['type' => 'T', 'member' => $f['members']['m3']['number'], 'new_title' => 'Captain']]));
 
-    $html = af_render('rcf-entries', 'Create RCF Entries', [
+    $html = af_render('rcf-entries', 'Create RCF Requests', [
         'user'   => $vc,
         'rcf'    => (new RcfPage($pdo))->page($vc, ['subcommittee' => 't:' . $f['teams']['b']]),
         'mine'   => $entries->mine($vc),
         'counts' => $entries->counts($vc),
         'route'  => $entries->routeFor($vc),
     ]);
-    assertTrue(str_contains($html, '<h1>Create RCF Entries</h1>'));
+    assertTrue(str_contains($html, '<h1>Create RCF Requests</h1>'));
     assertTrue(str_contains($html, 'waits on <strong>Bob Approver</strong>'), 'the route in a sentence');
     assertSame(1, substr_count($html, '<datalist id="rcf-members">'), 'the shared grid, once');
     assertTrue(str_contains($html, 'value="submit"'), 'the submit button');
@@ -924,12 +927,12 @@ test('the four screens render, escape what they show, carry the strip and stay i
     assertSame(0, substr_count($html, 'Echo <b>'), 'and never raw');
     assertTrue(str_contains($html, 'Returned by Bob Approver'), 'the returned one carries its note');
     assertTrue(str_contains($html, 'value="withdraw"'), 'a pending one can be withdrawn');
-    assertTrue(str_contains($html, 'aria-label="RCF entries"'), 'the strip');
+    assertTrue(str_contains($html, 'aria-label="RCF requests"'), 'the strip');
     assertSame(0, substr_count($html, '<script'));
     assertTrue(strlen($html) < 100 * 1024, 'Create RCF Entries is ' . strlen($html) . ' bytes');
 
     // Nothing drawn: no grid, the sentence instead.
-    $cap = af_render('rcf-entries', 'Create RCF Entries', [
+    $cap = af_render('rcf-entries', 'Create RCF Requests', [
         'user'   => af_user('adm'),
         'rcf'    => (new RcfPage($pdo))->page(af_user('adm'), []),
         'mine'   => [],
@@ -940,13 +943,13 @@ test('the four screens render, escape what they show, carry the strip and stay i
     assertSame(0, substr_count($cap, 'value="submit"'), 'no submit when entries would be refused');
 
     $dvc  = af_user('dvc');
-    $html = af_render('rcf-approvals', 'Approve RCF Entries', [
+    $html = af_render('rcf-approvals', 'Approve RCF Requests', [
         'user'    => $dvc,
         'waiting' => $entries->waitingFor($dvc),
         'decided' => $entries->decidedBy($dvc),
         'counts'  => $entries->counts($dvc),
     ]);
-    assertTrue(str_contains($html, '<h1>Approve RCF Entries</h1>'));
+    assertTrue(str_contains($html, '<h1>Approve RCF Requests</h1>'));
     assertSame(1, substr_count($html, 'name="ids[]"'), 'one tick box per waiting entry');
     assertTrue(str_contains($html, 'then to Carl Chair'), 'where it goes next');
     assertTrue(str_contains($html, 'name="note"'), 'the return note');
@@ -957,7 +960,7 @@ test('the four screens render, escape what they show, carry the strip and stay i
 
     $dc    = af_user('dc');
     $ready = $entries->readyFor($dc);
-    $html  = af_render('rcf-consolidate', 'Consolidate RCFs', [
+    $html  = af_render('rcf-consolidate', 'Export Approved Requests to RCF Forms', [
         'user'   => $dc,
         'ready'  => $ready,
         'cut'    => RcfEntries::cut($ready, 'division'),
@@ -965,7 +968,7 @@ test('the four screens render, escape what they show, carry the strip and stay i
         'forms'  => $entries->generatedForms($dc),
         'counts' => $entries->counts($dc),
     ]);
-    assertTrue(str_contains($html, '<h1>Consolidate RCFs</h1>'));
+    assertTrue(str_contains($html, '<h1>Export Approved Requests to RCF Forms</h1>'));
     assertTrue(str_contains($html, 'Form 1 of 1 &mdash; AF Logistics Division'), 'the cut, shown before it is made');
     assertTrue(str_contains($html, 'value="generate"'));
     assertTrue(str_contains($html, 'name="by"'), 'the grouping choice');
@@ -1004,7 +1007,7 @@ test('the four screens render, escape what they show, carry the strip and stay i
             'entries' => $entries->pendingFor($dc),
         ],
     ]);
-    assertTrue(str_contains($html, 'RCF entries not yet on a form'));
+    assertTrue(str_contains($html, 'RCF requests not yet on a form'));
     assertTrue(str_contains($html, 'Waiting on Bob Approver'));
     assertTrue(str_contains($html, '<span class="chip chip-info">Consolidated</span>'), 'the consolidated forms are marked');
     assertTrue(strlen($html) < 100 * 1024, 'Track RCFs is ' . strlen($html) . ' bytes');
@@ -1016,7 +1019,7 @@ test('the four screens render, escape what they show, carry the strip and stay i
         'entries' => $entries->onForm($dc, $formId),
     ]);
     assertTrue(str_contains($html, 'Consolidated</span> by Carl Chair'));
-    assertTrue(str_contains($html, 'The entries this form was made from'));
+    assertTrue(str_contains($html, 'The requests this form was made from'));
     assertTrue(str_contains($html, 'the first download is from here'));
     // Never downloaded yet, so not "again" (Phase 14.3); a Create Forms form
     // left as a file when it was made, so it always is.
@@ -1119,7 +1122,7 @@ test('a generated entry says when the roster showed the change — read from the
     assertSame($batch, $line['landed']['batch'], 'the form\'s page derives it the same way');
 
     // And the screen says so: the chip reads In the roster, with the import.
-    $html = af_render('rcf-entries', 'Create RCF Entries', [
+    $html = af_render('rcf-entries', 'Create RCF Requests', [
         'user'   => af_user('vc'),
         'rcf'    => (new RcfPage($pdo))->page(af_user('vc'), []),
         'mine'   => $entries->mine(af_user('vc')),
