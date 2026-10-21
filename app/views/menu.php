@@ -2,64 +2,23 @@
 
 declare(strict_types=1);
 
-use Rerm\Auth\Access;
-use Rerm\Auth\Capability;
+use Rerm\Menu;
 
 /**
  * The menu (spec 7.0) — its own route since Phase 5 moved the landing page
  * to My Roster Status. It still lands here for a signed-in user whose level
- * has no dashboard (a future Member-level Allowed User).
+ * has no dashboard (a future Member-level Allowed User), and it is the one
+ * place every screen carries a line on what it is FOR; the drop-down in the
+ * bar (Phase 14.4) lists the same screens by name alone.
  *
- * Tiles are FILTERED by capability, and that is presentation only: every
- * target re-checks server-side through the same Access call, and a screen
- * that has not shipped yet is simply not a route, so its tile carries no
- * link. Hiding a tile hides nothing.
+ * The tiles and their groups are Rerm\Menu, written down once for both.
+ * They are FILTERED by capability, and that is presentation only: every
+ * target re-checks server-side through the same Access call. Hiding a tile
+ * hides nothing.
  *
  * @var Rerm\App       $app
  * @var Rerm\Auth\User $user
  */
-
-/**
- * The tiles, grouped by the job they serve (Phase 10.4, spec-v2 §9.8):
- * Chase is the officer's loop, Lead is the desk, Administer is the Admin's
- * once-a-month. Fifteen identical cards in one column were a list to read;
- * three headings are a shape to recognise. Each tile stays one line, with
- * its route, because tests read the menu a line at a time.
- *
- * @var array<int, array{cap: Capability, label: string, route: ?string, phase: string, group: string, why: string}> $tiles
- */
-$tiles = [
-    ['cap' => Capability::ViewStatusDashboard,   'label' => 'My Roster Status',    'route' => 'dashboard', 'phase' => '', 'group' => 'chase', 'why' => 'Current status for your members and a button that dials them.'],
-    ['cap' => Capability::ViewRoster,            'label' => 'View My Roster',      'route' => 'roster', 'phase' => '', 'group' => 'chase', 'why' => 'Everyone you can see, searched by name or number, with their history.'],
-    ['cap' => Capability::ViewRoster,            'label' => 'Dropped Members',     'route' => 'dropped', 'phase' => '', 'group' => 'chase', 'why' => 'Members dropped from your Roster this show year.'],
-    ['cap' => Capability::AssignOfficers,        'label' => 'Assign Officers',     'route' => 'assign', 'phase' => '', 'group' => 'lead', 'why' => 'Assign Officers to call members.'],
-    ['cap' => Capability::ViewCommitteeDashboard, 'label' => 'Committee Dashboard', 'route' => 'committee', 'phase' => '', 'group' => 'lead', 'why' => 'Every division, area and team rolled up, sorted by where nobody is working.'],
-    ['cap' => Capability::CreateForms,           'label' => 'Create Forms',        'route' => 'forms', 'phase' => '', 'group' => 'lead', 'why' => 'The committee’s paperwork, filled in from the roster and downloaded.'],
-    ['cap' => Capability::CreateForms,           'label' => 'Track RCFs',          'route' => 'rcfs', 'phase' => '', 'group' => 'lead', 'why' => 'Every Roster Change Form made here or uploaded, its RCF number, where each line has got to, and the import that fulfilled it.'],
-    ['cap' => Capability::CreateRcfEntries,      'label' => 'Create RCF Entries',  'route' => 'rcf-entries', 'phase' => '', 'group' => 'lead', 'why' => 'Ask for one roster change at a time; it goes up the chain for approval and onto a consolidated RCF.'],
-    ['cap' => Capability::ApproveRcfEntries,     'label' => 'Approve RCF Entries', 'route' => 'rcf-approvals', 'phase' => '', 'group' => 'lead', 'why' => 'RCF entries waiting on you: approve them up the chain, or return them with a note.'],
-    ['cap' => Capability::GenerateConsolidatedRcf, 'label' => 'Consolidate RCFs',  'route' => 'rcf-consolidate', 'phase' => '', 'group' => 'lead', 'why' => 'Everything approved that ended with you, onto one or more Roster Change Forms.'],
-    ['cap' => Capability::ExportRoster,          'label' => 'Export Roster',       'route' => 'export', 'phase' => '', 'group' => 'lead', 'why' => 'The members you can see, as a spreadsheet, for one show year.'],
-    ['cap' => Capability::ImportRoster,          'label' => 'Import Roster',       'route' => 'import', 'phase' => '', 'group' => 'administer', 'why' => 'Rodeo Houston’s file, diffed before a row is written.'],
-    ['cap' => Capability::ImportRoster,          'label' => 'Import History',      'route' => 'import-history', 'phase' => '', 'group' => 'administer', 'why' => 'What every import changed, and when a member disappeared.'],
-    ['cap' => Capability::LookUpMembers,         'label' => 'Look Up Members',     'route' => 'lookup', 'phase' => '', 'group' => 'administer', 'why' => 'Paste a list of member numbers: where each one stands, when they first appeared, and every RCF about them.'],
-    ['cap' => Capability::ImportContactHistory,  'label' => 'Import Contact History', 'route' => 'import-contacts', 'phase' => '', 'group' => 'administer', 'why' => 'Contacts made before the application existed, on their real dates.'],
-    ['cap' => Capability::ImportRoster,          'label' => 'Flagged for Purge',   'route' => 'purge',  'phase' => '', 'group' => 'administer', 'why' => 'Members an import did not see; purge the ones you know have gone.'],
-    ['cap' => Capability::DesignateAllowedUser,  'label' => 'Designate Users',     'route' => 'designate', 'phase' => '', 'group' => 'administer', 'why' => 'Give a member a level, a scope, or a fresh password.'],
-    ['cap' => Capability::ManageApprovalFlow,    'label' => 'Create Approval Flow', 'route' => 'approval-flow', 'phase' => '', 'group' => 'administer', 'why' => 'Who approves whose RCF entries, and who is at the top of each chain.'],
-    ['cap' => Capability::SignInAs,              'label' => 'Sign In As',          'route' => 'sign-in-as', 'phase' => '', 'group' => 'administer', 'why' => 'See the application as another account sees it: check a scope, or walk an approval flow as each person in it.'],
-    ['cap' => Capability::ManageTeams,           'label' => 'Manage Teams',        'route' => 'teams',  'phase' => '', 'group' => 'administer', 'why' => 'Which area a team groups under on the Committee Dashboard.'],
-    ['cap' => Capability::ManageShowYear,        'label' => 'Show Year',           'route' => 'show-year', 'phase' => '', 'group' => 'administer', 'why' => 'Create, activate, close and carry assignments forward.'],
-    ['cap' => Capability::ViewAuditLog,          'label' => 'Audit Log',           'route' => 'audit',  'phase' => '', 'group' => 'administer', 'why' => 'Every grant, import, purge and reset, with who and when.'],
-];
-
-// The headings are the owner's words (Phase 10.4 fit): what the group is
-// FOR, in the committee's own vocabulary, with no line under them.
-$groups = [
-    'chase'      => ['This Show Year’s To-Do Items:', ''],
-    'lead'       => ['Team Functions:', ''],
-    'administer' => ['Administer', ''],
-];
 ?>
 <h1>Menu</h1>
 <p class="lede">
@@ -67,15 +26,10 @@ $groups = [
     <?= e($user->level->label()) ?>, member number <?= e($user->memberNumber) ?>.
 </p>
 
-<?php foreach ($groups as $groupKey => [$groupWord, $groupWhy]) {
-    $shown = array_filter($tiles, static fn (array $t): bool => $t['group'] === $groupKey && Access::mayUse($user, $t['cap']));
-    if ($shown === []) {
-        continue;
-    }
-?>
-    <h2 class="menu-group"><?= e($groupWord) ?><?php if ($groupWhy !== '') { ?> <span class="why"><?= e($groupWhy) ?></span><?php } ?></h2>
+<?php foreach (Menu::forUser($user) as $group) { ?>
+    <h2 class="menu-group"><?= e($group['heading']) ?></h2>
     <ul class="menu">
-        <?php foreach ($shown as $tile) { ?>
+        <?php foreach ($group['tiles'] as $tile) { ?>
             <li>
                 <?php if ($tile['route'] !== null) { ?>
                     <a href="<?= e($app->url($tile['route'])) ?>">

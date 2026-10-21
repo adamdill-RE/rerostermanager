@@ -1061,7 +1061,9 @@ test('the nav strip renders for a signed-in screen and not for an anonymous one'
 
     assertSame(1, substr_count($signedIn, 'class="topbar'), 'the bar is there, once');
     assertSame(1, substr_count($signedIn, 'class="brand"'), 'and the name is not repeated');
-    assertTrue(str_contains($signedIn, '&larr; Menu</a>'), 'with the way back');
+    // The way back to the menu is in the drop-down since Phase 14.4.
+    assertTrue(str_contains($signedIn, '<details class="appmenu">'), 'with the drop-down');
+    assertTrue(str_contains($signedIn, '>Full menu</a>'), 'and the way to the menu page inside it');
 
     // The login screen passes no user and gets no bar.
     $anonymous = ff_render('login', 'Sign in', [

@@ -2215,3 +2215,149 @@ What changed is the distance from the rule to the file:
 | V2-25 | Should a single **entry** be voidable before it is on a form — a test submission that was returned or withdrawn, say? | Not yet. Returned and withdrawn entries already leave every in-flight list and only the requester's own list shows them; the request named the generated form. The stamp and the filters are in place if it is wanted. |
 | V2-26 | Should voiding **restore the entries to approved**, so a form generated with the wrong grouping can be re-cut without retyping? | No, for §17.3's reason. If regrouping turns out to be the common case, the answer is a *Regroup* on the form's page that voids and regenerates in one transaction, not a void that leaves entries live. |
 | V2-27 | Should the **trail** (§17.1) carry each step's moment, not only its hand? | Not yet. The line is already the widest thing on a phone card; the steps' moments are on the form's page and in the Audit Log. |
+
+## 18. The menu by the owner's groups, and the shell
+
+Phase 14.4. Two requests arrived together after Phase 14.3: the menu
+reordered into the owner's groups, with three screens renamed; and a pass
+over the application's look on a phone and at a desk, with a drop-down
+menu "in addition to the main menu we already have". The first is §18.1
+and §18.2; the second is §18.3 and §18.4, and it was done by walking every
+screen in a real browser at 360×740 and 1280×900, light and dark, signed
+in as a Captain, as an Admin and as an Admin acting as somebody else.
+
+### 18.1 The groups
+
+The owner's list, transcribed:
+
+| Group | Screens, in order |
+| --- | --- |
+| **RCFs** | Create RCF Requests · Approve RCF Requests · Export Approved Requests to RCF Forms · Track RCFs |
+| **Dues & Compliance** | My Roster Status · View My Roster · Dropped Members |
+| **Team Functions** | Assign Officers · Committee Dashboard · Create Forms · Export Roster |
+| **Administer** | unchanged: not in the list, so not moved |
+| **Account** | unchanged |
+
+Three rules were stated with it and all three hold:
+
+* **The structure does not supersede a permission.** Every tile is still
+  behind the capability it was behind, and every route still re-checks.
+  A Captain's RCFs group holds Track RCFs alone, because `create_forms` is
+  theirs and `create_rcf_entries` is not; an Officer never sees
+  Administer. A test transcribes the capability behind each renamed tile.
+* **What the list did not name did not move.** Administer keeps its
+  eleven screens in their order; Account keeps Change password.
+* **The word in the menu is the word on the page.** *Create RCF Entries*,
+  *Approve RCF Entries* and *Consolidate RCFs* are retitled on their own
+  screens, in the browser tab, and in the member card's way back, because
+  a menu item that lands on a page headed something else reads as the
+  wrong page. The headings carry no trailing colon (the owner's list had
+  them on two; a heading is not a label).
+
+What did **not** change is everything a person does not read: the routes
+(`/rcf-entries`, `/rcf-approvals`, `/rcf-consolidate`), the capabilities
+(`create_rcf_entries` …), the tables (`rcf_entry` …), the audit verbs and
+the class names all keep *entry*. The body copy of the three screens, the
+strip above them (*Your entries · Waiting for you · Ready to generate*)
+and the flash messages also still say *entry* — the rename was asked for
+on the menu, and a vocabulary change across 140 lines of copy, the
+CLAUDE.md and a thousand lines of tests is a decision to take on purpose
+(V2-28).
+
+### 18.2 One table, two renderings
+
+The tiles moved out of `app/views/menu.php` into **`Rerm\Menu`**: the
+groups in order (`GROUPS`), the tiles one per line (`tiles()`), and
+`forUser()`, which filters by `Access::mayUse()` and drops a group that
+has nothing in it for the caller. The menu page draws it with the line
+under each screen; the drop-down (§18.3) draws the names alone. A screen
+added to the table is on both; a screen renamed there is renamed on both;
+the two cannot disagree. Tests that read the menu a line at a time now
+read this file, and the format of a line is unchanged so that they could.
+
+### 18.3 The drop-down, and the bar it lives in
+
+**The measurement that decided it.** On a 360×740 phone the sticky bar
+was three lines for an Officer and four for an Admin — the brand, the
+working screens wrapped under it, then the name and Sign out: 130 to
+185px, a quarter of the screen, pinned over every list the application
+exists to show. At a desk the same bar was one line and fine.
+
+**One line on a phone.** The bar is now the brand and a **Menu** button,
+56px, and nothing else. The four working screens, the name, Change
+password, Sign out and the way to the menu page are all in the
+drop-down. At a desk the strip of working screens stays beside the brand
+— a desk user hops between Status, Roster and Committee all day and one
+click is worth the width — and the name sits beside the button. The
+**brand is a link** to the landing screen, as it is on every site.
+
+**A `<details>`, not a script.** The application ships no JavaScript and
+its CSP allows none (`default-src 'none'`), which is why the status words
+already open their definitions with the native `popover` attribute. The
+drop-down is the other native disclosure: the button is the `<summary>`,
+the panel is the element's content, the browser opens and closes it, and
+a keyboard works it with Space and Enter. It closes on the tap that opens
+the next screen, which is the only way out of it anybody takes; a second
+tap on Menu closes it otherwise. What it does not do is close on a tap
+outside it or on Escape — that is the `popover` API's light dismiss, and
+`popover` cannot be anchored under a button without CSS anchor
+positioning, which is not yet safe to rely on (V2-29).
+
+**Where it hangs.** The panel is positioned against the bar's inner box,
+`top: 100%`, so it hangs from the bar's bottom edge — under the notices
+too, when a 303 has put one there, which is why the notices moved inside
+that box. Edge to edge on a phone, scrolling inside itself when an
+Admin's twenty-two screens outrun the height; a 26rem sheet under the
+button at a desk, **two columns** when there are more than two groups to
+show, so an Admin reads RCFs, Dues & Compliance and Team Functions down
+the left and Administer down the right without scrolling. The bar's inner
+box is the wide column on every screen, narrow ones included: at 34rem
+the brand, four screens, a name and the button did not fit on one line,
+and the button dropped under the brand on the menu, the member card and
+every form. The bar is the application's chrome rather than the page's
+content; the content column stays the page's choice, and the footer
+still follows it.
+
+**What it carries, and when it is withheld.** The account line (name,
+level, member number), the groups with the **current screen marked**
+(`aria-current`, a rule down its left edge), then *Full menu*, *Change
+password* and *Sign out*. While a password change is forced on the
+person themselves there is no drop-down and no strip: every other route
+303s back to `/password` until the change is made, so a menu there is a
+menu of loops. Sign out, the one other thing a person half signed-in may
+do, sits in the bar for that case alone. An Admin signed in as such an
+account is not pinned and gets the menu — that account is exactly the
+one worth walking a flow with. While acting, the *Signed in as* word and
+the way back stay in the bar on every screen as §16 requires, on their
+own row under the button on a phone; the panel's account line names the
+account, never the Admin.
+
+### 18.4 What the audit found
+
+Four defects, each fixed where it lived and each pinned by a test:
+
+* **The segmented toggles ran the full width of a desktop page.** *My
+  members / My team*, *By division / All teams*, *Your entries / Waiting
+  for you / Ready to generate* were three 1,248px slabs on a 1280px
+  screen. Phase 8.6 had written the desktop sizing (`flex: 0 1 auto;
+  min-width: 10rem`) inside the 720px block near the buttons — earlier in
+  the file than the base rule Phase 7 later added for Assign's wrapping
+  row (`flex: 1 1 10rem`), which therefore won. The desktop rule now sits
+  after the base rule, once.
+* **A 56px select beside a 48px button on every desktop form.** Buttons
+  came down to 48px at a desk in Phase 8.6; inputs, selects, textareas
+  and the quiet button never did. One token, `--control`, 56px on a
+  phone and 48px at a desk, and every control height reads it. The RCF
+  grid's own 40px is untouched.
+* **The bar wrapped on narrow-column screens at a desk** — above.
+* **The member card's progress select ran out of its card** on a 360px
+  phone: a flex child keeps its intrinsic width without `min-width: 0`.
+
+### 18.5 Open items raised
+
+| # | Question | Assumption today |
+| --- | --- | --- |
+| V2-28 | Should **entry** become **request** everywhere a person reads it — the body copy of the three screens, the strip, the flash messages, Track RCFs' *RCF entries not yet on a form* — now that the menu says *Requests*? | Not yet: the menu and the titles were what was asked for, and the rest is one decision to make on purpose. The routes, capabilities, tables and audit verbs would keep *entry* either way. |
+| V2-29 | Should the drop-down **close on a tap outside it or on Escape**? | Not without a script or the `popover` API; `popover` light-dismisses but cannot be anchored under the button without CSS anchor positioning, which is not yet safe to rely on. Revisit when it is. |
+| V2-30 | Should the desk **strip** carry a Vice Chairman's *Create RCF Requests* beside Status and Roster, now that the RCF screens are the first group? | Not yet. The strip is the four screens a person works in all day; the drop-down is one click. |
+| V2-31 | On a phone the acting-as row is three lines when the Admin's name is long (*Back to Master Administrator (Admin)*). | Left as it is: an Admin's testing tool, and the row has to say whose session it is. |

@@ -36,7 +36,7 @@ use Rerm\Forms\RcfEntries;
 use Rerm\Forms\RosterChangeForm;
 use Rerm\View;
 ?>
-<h1>Consolidate RCFs</h1>
+<h1>Export Approved Requests to RCF Forms</h1>
 <p class="lede">
     Every entry that ended with your approval and is not yet on a form, cut
     into the Roster Change Forms it will print on. Generate keeps the forms;

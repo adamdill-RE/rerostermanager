@@ -101,7 +101,7 @@ test('the screen is guarded by the capability; the way back is only signed-in, b
 });
 
 test('the tile is under Administer, and both audit verbs have a label', function (): void {
-    $menu = sia_source('app/views/menu.php');
+    $menu = sia_source('app/src/Menu.php');
     assertSame(1, preg_match("/'cap' => Capability::SignInAs,.*'route' => 'sign-in-as',.*'group' => 'administer'/", $menu), 'one tile, Administer');
 
     assertSame('Signed in as another account', Action::SignInAs->label());

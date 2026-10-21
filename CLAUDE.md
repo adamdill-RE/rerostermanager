@@ -169,6 +169,16 @@ data-comprehension tool used year-round, at a desk as often as on a phone.
   screen, signed out included, with **minor as the build phase**; and RESM's
   "RE" tab icon, byte for byte, because the two applications sit in adjacent
   tabs on the same phone (`docs/spec-v2.md` §5).
+- **The bar is one line on a phone, and the menu is one table.** Since
+  Phase 14.4 (`docs/spec-v2.md` §18) the sticky bar is the brand and a
+  **Menu** button on a phone — a `<details>` drop-down, no script, because
+  the CSP allows none — with the four working screens beside the brand at
+  a desk. `Rerm\Menu` is the one place the screens, their groups (RCFs,
+  Dues & Compliance, Team Functions, Administer — the owner's, in the
+  owner's order) and their capabilities are written; the menu page and the
+  drop-down both draw it, filtered by `Access::mayUse()`. Hiding a tile
+  still hides nothing. Control height is one token, `--control`: 56px on
+  a phone, 48px at a desk.
 
 ---
 
@@ -693,7 +703,11 @@ lines not yet fulfilled. An uploaded form never writes the roster either.
 Phase 14 (spec-v2 §15) is the first **workflow** rather than a screen, and
 it is a second way of producing a Roster Change Form that leaves the first
 exactly as it is. Create Forms is one officer, one form, sent on by hand —
-a Captain's job, and it stays. **Create RCF Entries** is for Vice Chairmen
+a Captain's job, and it stays. **Create RCF Entries** — titled *Create RCF
+Requests* on the menu and the screen since Phase 14.4, as *Approve RCF
+Entries* is *Approve RCF Requests* and *Consolidate RCFs* is *Export
+Approved Requests to RCF Forms*; the routes, capabilities, tables and
+audit verbs keep *entry* (spec-v2 §18.1) — is for Vice Chairmen
 and above: one requested change at a time, through the RCF's own grid
 (`app/views/rcf-grid.php`, one partial drawn by both screens from one
 `RcfPage::page()`), routed up a chain of approvers and cut by the account at
@@ -785,6 +799,7 @@ Each phase ends shippable. `docs/spec-v1.md` carries the detail through 8.7,
 | **14.1 · Sign In As** | `/sign-in-as` (Admin, `sign_in_as`, under Administer): every active non-Admin account with where its RCF entries go, one button per row; the session runs as that account through the same loader a real login uses; *Signed in as* and **Back to** in the bar on every screen (`/sign-out-as`); the holder re-checked every request; the audit pair and the marker on every row between | An Admin walks a three-account approval chain alone, and the record still says whose hand every step was |
 | **14.2 · After the form** | A generated entry carries HLSR's answer on every list in the chain — *not yet in the roster* or **In the roster**, with the import — and one trail line spelling every hand it passed through; a consolidated form can be **voided** by its generator or an Admin, with a note, taking it and its entries out of view for everybody and deleting nothing (`014_rcf_void.sql`) | A Vice Chairman reads on their own list that Rodeo Houston processed their request, and a test run of the flow leaves no trace on anybody's screen but the Audit Log's |
 | **14.3 · The download, one tap nearer** | One generated form lands on its own page; every row of *Forms you have generated* carries a Download button, the same logged POST as the form's page; a consolidated form says *again* only once it has been downloaded | A Division Chairman has the file in hand the moment the form is generated, and the rule that Generate keeps rather than downloads is unchanged |
+| **14.4 · The menu by the owner's groups, and the shell** | The menu reordered into RCFs, Dues & Compliance, Team Functions and Administer, three RCF screens retitled on the menu and the page, written once in `Rerm\Menu`; a `<details>` drop-down of every screen the caller may use in the bar of every signed-in screen, the bar one line on a phone; the brand a link home; and the audit's four fixes — the desktop toggle sizing, one control-height token, the bar on narrow columns, the member card's select | A Captain on a 360px phone sees 56px of bar instead of 130, reaches any screen in two taps, and an Admin reads all twenty-two in two columns without scrolling |
 | **10.x · v2** | Recruiting and retention automation; multi-year contact history (OI-12) | see `docs/spec-v2.md` |
 
 Phases 4 and 5 are the product. Everything before them is plumbing and

@@ -223,7 +223,9 @@ test('the bar carries the four working screens, filtered by capability, with the
     assertTrue(str_contains($officer, '>Roster</a>'));
     assertTrue(str_contains($officer, '>Assign</a>'));
     assertTrue(!str_contains($officer, '>Committee</a>'), 'an Officer has no Committee Dashboard');
-    assertTrue(str_contains($officer, 'aria-current="page">&larr; Menu</a>'), 'the menu is current on the menu');
+    // The way to the menu page is in the drop-down since Phase 14.4, and
+    // it is current there on the menu.
+    assertTrue(str_contains($officer, 'aria-current="page">Full menu</a>'), 'the menu is current on the menu');
     assertTrue(str_contains($officer, 'class="signout"'), 'and Sign out is in the bar');
 
     $senior = cl_render('menu', 'Menu', ['user' => cl_user(Level::SeniorOfficer)]);
@@ -231,12 +233,12 @@ test('the bar carries the four working screens, filtered by capability, with the
 
     $member = cl_render('menu', 'Menu', ['user' => cl_user(Level::Member)]);
     assertTrue(!str_contains($member, '>Status</a>'), 'a Member-level login has no working screen');
-    assertTrue(str_contains($member, '&larr; Menu</a>'), 'and still has the menu');
+    assertTrue(str_contains($member, '>Full menu</a>'), 'and still has the menu');
 
     // The current screen: render() passes $view, and the layout marks it.
     $view    = 'dashboard';
     $current = cl_render('menu', 'Menu', ['user' => cl_user(Level::Officer), 'view' => 'menu']);
-    assertTrue(str_contains($current, 'aria-current="page">&larr; Menu</a>'));
+    assertTrue(str_contains($current, 'aria-current="page">Full menu</a>'));
 });
 
 test('while a password change is forced the bar offers Sign out and nothing that loops', function (): void {
@@ -244,7 +246,8 @@ test('while a password change is forced the bar offers Sign out and nothing that
         'user' => cl_user(Level::Officer, true), 'notices' => [], 'forced' => true, 'minLength' => 8,
     ]);
     assertSame(1, substr_count($forced, 'class="topbar'), 'the bar is there');
-    assertTrue(!str_contains($forced, '&larr; Menu</a>'), 'without the link that 303s straight back');
+    assertTrue(!str_contains($forced, '>Full menu</a>'), 'without the link that 303s straight back');
+    assertTrue(!str_contains($forced, '<details class="appmenu">'), 'and without the drop-down, which is a menu of loops');
     assertTrue(!str_contains($forced, '>Status</a>'), 'and without the screens');
     assertTrue(str_contains($forced, 'class="signout"'), 'Sign out is the one way out');
     assertTrue(!str_contains($forced, 'Back to the menu'), 'the view does not offer it either');

@@ -39,7 +39,7 @@ $member = static function (array $entry) use ($app): string {
     return $name;
 };
 ?>
-<h1>Approve RCF Entries</h1>
+<h1>Approve RCF Requests</h1>
 <p class="lede">
     Entries other officers have asked for that are waiting on you. Approve them
     and they move up the chain &mdash; or, if you are the last approver, they

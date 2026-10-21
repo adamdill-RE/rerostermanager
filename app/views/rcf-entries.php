@@ -47,7 +47,7 @@ foreach ($subcommittees as $option) {
 $canSubmit = $route['state'] !== 'unset';
 $back      = 'rcf-entries';
 ?>
-<h1>Create RCF Entries</h1>
+<h1>Create RCF Requests</h1>
 <p class="lede">
     Ask for one change at a time &mdash; an addition, a removal, a title or a
     team change &mdash; and it goes up the chain for approval. The approver at
@@ -65,7 +65,7 @@ $back      = 'rcf-entries';
     <?php } elseif ($route['state'] === 'top') { ?>
         <p>You are at the <strong>top of the chain</strong>: your entries are approved the moment you
             submit them, and you put them on a form yourself on
-            <a href="<?= e($app->url('rcf-consolidate')) ?>">Consolidate RCFs</a>.</p>
+            <a href="<?= e($app->url('rcf-consolidate')) ?>">Export Approved Requests to RCF Forms</a>.</p>
     <?php } else { ?>
         <p><span class="chip chip-warn">Nobody is set as your approver yet</span>
             Your entries cannot be submitted until an Admin draws who approves them, on

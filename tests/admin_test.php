@@ -111,8 +111,8 @@ test('the spec table says Officer / Scoped too', function (): void {
 });
 
 test('every Phase 8 menu tile points at its screen', function (): void {
-    $source = (string) file_get_contents(__DIR__ . '/../app/views/menu.php');
-    assertTrue($source !== '', 'app/views/menu.php is readable');
+    $source = (string) file_get_contents(__DIR__ . '/../app/src/Menu.php');
+    assertTrue($source !== '', 'app/src/Menu.php is readable');
 
     // No tile anywhere still promises Phase 8: this is Phase 8.
     assertSame(0, substr_count($source, "'phase' => 'Phase 8'"), 'nothing still says "Arrives with Phase 8"');

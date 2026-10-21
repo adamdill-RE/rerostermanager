@@ -66,7 +66,7 @@ test('both tracking routes are guarded by create_forms, and everyone else\'s for
 });
 
 test('the menu tile is behind create_forms and points at the list', function (): void {
-    $menu = tk_source('app/views/menu.php');
+    $menu = tk_source('app/src/Menu.php');
     assertTrue(str_contains($menu, "'label' => 'Track RCFs'"), 'the tile is called Track RCFs');
     assertTrue(str_contains($menu, "'route' => 'rcfs'"), 'and it links to the list');
     assertTrue(str_contains(tk_source('app/views/forms.php'), "url('rcfs')"), 'Create Forms links to it too');

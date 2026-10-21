@@ -247,23 +247,29 @@ test('on paper the table is a table, every details is open, and the controls are
     assertTrue(str_contains($print, '.roster tbody.member { display: table-row-group;'), 'the stacked card is a row again');
 });
 
-test('the menu is three groups by job, each screen with one line on what it is for', function (): void {
+test('the menu is four groups by job, each screen with one line on what it is for', function (): void {
+    // The groups are the owner's, in the owner's order (Phase 14.4,
+    // spec-v2 §18.1): RCFs, Dues & Compliance, Team Functions, Administer.
     $officer = mc_render('menu', 'Menu', ['user' => mc_user(Level::Officer)]);
-    assertTrue(str_contains($officer, 'To-Do Items:'), 'the owner\'s word for the officer\'s loop');
-    assertTrue(str_contains($officer, 'Team Functions:'), 'and for the desk — Assign is an Officer\'s');
+    assertTrue(str_contains($officer, '>Dues &amp; Compliance<'), 'the owner\'s word for the officer\'s loop');
+    assertTrue(str_contains($officer, '>Team Functions<'), 'and for the desk — Assign is an Officer\'s');
     assertTrue(!str_contains($officer, '>Administer<'), 'no Administer for an Officer');
     assertTrue(str_contains($officer, 'a button that dials them'), 'the line under a screen');
     assertTrue(str_contains($officer, 'Assign Officers to call members.'), 'in the owner\'s words');
 
     $admin = mc_render('menu', 'Menu', ['user' => mc_user(Level::Admin)]);
     assertTrue(str_contains($admin, '>Administer<'));
-    assertSame(3, substr_count($admin, '<h2 class="menu-group">') - 1, 'three job groups, plus Account');
+    assertSame(4, substr_count($admin, '<h2 class="menu-group">') - 1, 'four job groups, plus Account');
 
-    $source = mc_source('app/views/menu.php');
+    // One source for the page and the drop-down (Phase 14.4): the tiles
+    // live in Rerm\Menu, and the page draws them from there.
+    assertTrue(str_contains(mc_source('app/views/menu.php'), 'Menu::forUser($user)'), 'the page draws Rerm\\Menu');
+    $source = mc_source('app/src/Menu.php');
     // Twenty-one since Phase 14: three workflow tiles under Team Functions
     // and Create Approval Flow under Administer; twenty-two since 14.1,
-    // Sign In As under Administer.
-    assertSame(22, preg_match_all("/'route' => '[a-z-]+',.*'group' => '(chase|lead|administer)', 'why' => '/", $source), 'every tile names its group and its why, on one line');
+    // Sign In As under Administer. Phase 14.4 moved the RCF tiles into a
+    // group of their own and added none.
+    assertSame(22, preg_match_all("/'route' => '[a-z-]+',.*'group' => '(rcfs|chase|lead|administer)', 'why' => '/", $source), 'every tile names its group and its why, on one line');
 });
 
 test('the accessibility pass: a skip link, aria-sort, aria-current on every toggle, scope on every header, no disabled button', function (): void {

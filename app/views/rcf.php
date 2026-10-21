@@ -263,7 +263,7 @@ $steps = RcfTracking::STEPS;
                 who asked, every approver, Track RCFs and the member card &mdash; as if the form
                 had not been generated. Nothing is deleted: the rows stay, each entry records who
                 voided it and why, and the audit log keeps the form under your name. If a change
-                on it is still wanted, it is asked for again on Create RCF Entries.
+                on it is still wanted, it is asked for again on Create RCF Requests.
             </p>
             <form method="post" action="<?= e($action) ?>">
                 <?= Csrf::field() ?>

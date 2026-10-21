@@ -58,7 +58,7 @@ test('the lookup route is guarded by its own Admin / Everywhere capability', fun
 });
 
 test('the menu tile is behind look_up_members, in Administer, and points at the screen', function (): void {
-    $menu = lk_source('app/views/menu.php');
+    $menu = lk_source('app/src/Menu.php');
     assertSame(1, preg_match(
         "/Capability::LookUpMembers,\\s+'label' => 'Look Up Members',\\s+'route' => 'lookup',.*'group' => 'administer'/",
         $menu

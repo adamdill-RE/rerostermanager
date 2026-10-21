@@ -56,7 +56,7 @@ test('both form routes are guarded by create_forms, at the Officer floor and sco
 });
 
 test('the menu tile is behind the same capability and points at the screen', function (): void {
-    $source = (string) file_get_contents(__DIR__ . '/../app/views/menu.php');
+    $source = (string) file_get_contents(__DIR__ . '/../app/src/Menu.php');
 
     assertTrue(str_contains($source, "Capability::CreateForms"), 'the tile names the capability');
     assertTrue(str_contains($source, "'label' => 'Create Forms'"), 'and it is called Create Forms');

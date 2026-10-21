@@ -198,7 +198,7 @@ $others = $tracking['others'];
     <h2 id="entries">RCF entries not yet on a form</h2>
     <?php if ($pending === []) { ?>
         <div class="card"><p>No RCF entry you can see is waiting for approval or for a form. Entries are asked for on
-            <a href="<?= e($app->url('rcf-entries')) ?>">Create RCF Entries</a> and appear here until they are on a form.</p></div>
+            <a href="<?= e($app->url('rcf-entries')) ?>">Create RCF Requests</a> and appear here until they are on a form.</p></div>
     <?php } else { ?>
         <table class="track entries">
             <caption><?= e($number(count($pending))) ?> <?= count($pending) === 1 ? 'entry' : 'entries' ?> in flight, newest first: asked for, approved up the chain, and not yet on a form.</caption>
