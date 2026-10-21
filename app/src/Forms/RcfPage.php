@@ -53,16 +53,22 @@ use Rerm\Roster\ScopedQuery;
 final class RcfPage
 {
     /**
-     * A member reference as one control: `1234567 - Jane Smith`.
+     * A member is TWO cells, number and name, and the number decides
+     * (Phase 14.5, spec-v2 §19.1).
      *
-     * The form has two columns, HLS&R NO and MEMBER NAME, and the screen has
-     * one field, because the job is one decision. Picking somebody out of the
-     * list and typing somebody who is not in it are the same gesture — which
-     * is the point: an addition is a person "from the ether that is
+     * The form has two columns, HLS&R NO and MEMBER NAME, and so does the
+     * screen. A number that is on the roster carries the roster's name —
+     * whatever was typed beside it — so a row about a known member can
+     * never say one thing in the number cell and another in the name cell.
+     * A name picked from the list with the number left blank is resolved
+     * back to its number, when it names exactly one person on the list.
+     * Somebody not on the roster yet is typed in both cells, and both go
+     * on the form as typed: an addition is a person "from the ether that is
      * membership", who by definition has no row here yet.
      *
-     * Read forgivingly, in both orders, because a person typing a new recruit
-     * is not copying a format: number first, name first, or either alone.
+     * The number cell is still read forgivingly — `1234567 - Jane Smith`
+     * in either order, as the one-cell control took it — because a person
+     * who has filled this in before is not copying a format.
      */
     private const NUMBER_FIRST = '/^(\S+)\s*[-\x{2010}-\x{2015}]\s*(.+)$/u';
     private const NAME_FIRST   = '/^(.+?)\s*[-\x{2010}-\x{2015}]\s*(\S+)$/u';
@@ -171,7 +177,7 @@ final class RcfPage
 
         $entries = [];
         foreach ($page['entries'] as $entry) {
-            $entries[] = $this->entry($user, $entry, $page['subcommittees']);
+            $entries[] = $this->entry($user, $entry, $page['subcommittees'], $page['members']);
         }
 
         return [
@@ -200,32 +206,42 @@ final class RcfPage
     /**
      * One submitted row, resolved.
      *
-     * Two things are filled in FOR the officer rather than asked of them, and
-     * both are things this application already knows:
+     * The member is the number's call (the class comment): a number on the
+     * roster, in the caller's scope, carries the roster's name over anything
+     * typed beside it; a name alone is matched against the list the screen
+     * offered and takes that person's number when it names exactly one of
+     * them; anything else goes on the form as typed, number and name both.
      *
-     *   * the member's name, when they gave only a number that is in scope;
-     *   * their PREVIOUS TITLE, when they left it blank — a title change is a
-     *     request to replace a title we are already holding, and making
-     *     somebody retype it is how it ends up disagreeing with the roster.
+     * One more thing is filled in FOR the officer rather than asked of them:
+     * their PREVIOUS TITLE, when they left it blank — a title change is a
+     * request to replace a title we are already holding, and making
+     * somebody retype it is how it ends up disagreeing with the roster. A
+     * typed previous title still wins.
      *
-     * Anything typed always wins. The lookup is through the caller's own
-     * scope, so it can only ever fill in a member they could already read.
+     * The lookup is through the caller's own scope, so it can only ever
+     * fill in a member they could already read.
      *
      * @param array<string, string> $entry
      * @param array<int, array<string, mixed>> $subcommittees
+     * @param array<int, array<string, string>> $members the list the screen offered
      * @return array<string, string>
      */
-    private function entry(User $user, array $entry, array $subcommittees): array
+    private function entry(User $user, array $entry, array $subcommittees, array $members): array
     {
         $resolved = RosterChangeForm::emptyEntry();
 
-        [$number, $name] = self::parseMember((string) ($entry['member'] ?? ''));
+        [$number, $typed] = self::memberCells($entry);
 
-        $known = $number === '' ? null : $this->memberInScope($user, $number);
+        $known = null;
+        if ($number !== '') {
+            $known = $this->memberInScope($user, $number);
+        } elseif ($typed !== '') {
+            $known = self::matchMember($members, $typed);
+        }
 
         $resolved['type']          = self::oneOf((string) ($entry['type'] ?? ''), array_keys(RosterChangeForm::TYPES));
-        $resolved['member_number'] = $number;
-        $resolved['member_name']   = $name !== '' ? $name : (string) ($known['form_name'] ?? '');
+        $resolved['member_number'] = $known !== null ? (string) $known['member_number'] : $number;
+        $resolved['member_name']   = $known !== null ? (string) $known['form_name'] : $typed;
         $resolved['new_title']     = self::text((string) ($entry['new_title'] ?? ''));
         $resolved['previous_title'] = self::text((string) ($entry['previous_title'] ?? ''));
         $resolved['remove_reason'] = self::oneOf(
@@ -498,6 +514,84 @@ final class RcfPage
     }
 
     /**
+     * The two member cells of a submitted row as a number and a typed name,
+     * before either is looked up.
+     *
+     * Both cells are read forgivingly. The number cell takes `1234567`, or
+     * `1234567 - Jane Smith` in either order (the one-cell control's
+     * format, which hands still know); a bare name in it is the name when
+     * the name cell is empty, and is otherwise kept as the number as typed
+     * — dropping it is how a row loses what somebody wrote. The name cell
+     * takes a name, or the same number-and-name pair when the number cell
+     * is empty.
+     *
+     * @param array<string, string> $entry
+     * @return array{0: string, 1: string} member number, typed name
+     */
+    public static function memberCells(array $entry): array
+    {
+        [$number, $spill] = self::parseMember((string) ($entry['member_number'] ?? ''));
+        $name = self::text((string) ($entry['member_name'] ?? ''));
+
+        if ($number === '' && $spill !== '') {
+            if ($name === '') {
+                $name = $spill;
+            } else {
+                $number = mb_substr($spill, 0, 32);
+            }
+        } elseif ($name === '') {
+            $name = $spill;
+        }
+
+        if ($number === '' && $name !== '') {
+            [$fromName, $rest] = self::parseMember($name);
+            if ($fromName !== '') {
+                $number = $fromName;
+                $name   = $rest;
+            }
+        }
+
+        return [$number, $name];
+    }
+
+    /**
+     * The one person on the offered list a typed name picks out, or null.
+     *
+     * Exact, case- and space-insensitive, against the name as the roster
+     * spells it and the name they are known by — the two things the list
+     * showed. Two people with that name is nobody: the number is the key,
+     * and a name that cannot decide is left as typed with the number blank
+     * rather than guessed (CLAUDE.md: never key on a name). A list the
+     * screen did not offer (over PICKER_LIMIT) matches nothing, which is
+     * also what the screen offered.
+     *
+     * @param array<int, array<string, string>> $members the list the screen offered
+     * @return array<string, string>|null
+     */
+    public static function matchMember(array $members, string $typed): ?array
+    {
+        $wanted = mb_strtolower(self::text($typed));
+        if ($wanted === '') {
+            return null;
+        }
+
+        $found = null;
+        foreach ($members as $member) {
+            if (mb_strtolower((string) $member['form_name']) !== $wanted
+                && mb_strtolower((string) $member['known_as']) !== $wanted
+            ) {
+                continue;
+            }
+            if ($found !== null && (string) $found['member_number'] !== (string) $member['member_number']) {
+                return null;
+            }
+            $found = $member;
+        }
+
+        return $found;
+    }
+
+    /**
      * `1234567 - Jane Smith`, in either order, or either half alone.
      *
      * @return array{0: string, 1: string} member number, member name
@@ -631,7 +725,7 @@ final class RcfPage
      * RosterChangeForm::ROWS of them however many arrived.
      *
      * `max_input_vars` is 1000 on this host and PHP truncates past it in
-     * SILENCE (CLAUDE.md). Twenty-five rows of ten fields is 250, plus the
+     * SILENCE (CLAUDE.md). Twenty-five rows of eleven fields is 275, plus the
      * header and the token — comfortably inside it, and the reason the form
      * is one page rather than a growing list.
      *
@@ -649,7 +743,8 @@ final class RcfPage
             $entries[$i] = [
                 'type'             => self::text((string) ($row['type'] ?? '')),
                 'rookie'           => self::text((string) ($row['rookie'] ?? '')),
-                'member'           => self::text((string) ($row['member'] ?? '')),
+                'member_number'    => self::text((string) ($row['member_number'] ?? ''), 160),
+                'member_name'      => self::text((string) ($row['member_name'] ?? '')),
                 'new_title'        => self::text((string) ($row['new_title'] ?? '')),
                 'previous_title'   => self::text((string) ($row['previous_title'] ?? '')),
                 'wait_list'        => self::text((string) ($row['wait_list'] ?? '')),

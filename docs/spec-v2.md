@@ -184,23 +184,39 @@ at least as much as to the export — more, because a human reads a form. Its
 **teams** are real and are offered, under their own names, with nothing
 prefixed. A test asserts that nothing printed on any form says it.
 
-### 2.3 One control for "pick them, or type them in"
+### 2.3 Two cells for "pick them, or type them in"
 
-The form has two columns, `HLS&R NO` and `MEMBER NAME`; the screen has one
-field, because the job is one decision. Picking somebody off the roster and
-typing somebody who is not on it are the same gesture — which is the point: an
-addition is a person from the wider membership, who by definition has no row
-here yet.
+*Revised in Phase 14.5 (§19.1). Until then the member was one field,
+`1234567 - Jane Smith`, on the reasoning that picking somebody off the
+roster and typing somebody not on it are the same gesture. The owner's
+feedback was that one field invites formatting trouble for exactly the
+person it was meant to help — a newcomer typed as "Bob" when the roster
+will say "Robert" — and that the number, not the name, is the only thing
+the tracking can trust. Both points stand, and the control is now two.*
 
-The field is a text box with a shared `<datalist>`, read forgivingly, in both
-orders, because somebody typing a new recruit is not copying a format:
+The form has two columns, `HLS&R NO` and `MEMBER NAME`, and so does the
+screen. Each is a text box with a shared `<datalist>` (§2.4): the number
+list's **value is the number** and its label the name as the roster spells
+it, with the name they are known by in brackets when that differs, so
+typing either into the number cell finds the number; the name list offers
+the same people by the roster's spelling. **The number decides**:
 
 ```
-1234567 - Jane Smith        number and name
-Jane Smith - 1234567        name and number
-1234567                     number alone; the name is filled in from the roster
-Jane Smith                  name alone; HLS&R NO is left for Rodeo Houston
+number on the roster            the roster's name goes on the form, whatever
+                                was typed beside it — the two cells cannot
+                                say two people
+name alone, on the list         resolved to that person's number, when it
+                                names exactly one of them; two is nobody
+number and name, not on it      both as typed — a newcomer, or a member the
+                                caller cannot read
+name alone, not on the list     kept as typed; HLS&R NO is left for Rodeo
+                                Houston, as before
 ```
+
+The number cell is still read forgivingly — `1234567 - Jane Smith` in either
+order, as the one-cell control took it — because a hand that has filled this
+in before is not copying a format, and a bare name in it is the name when the
+name cell is empty.
 
 A member number is "unbroken, at least four characters, letters and digits
 only, carrying at least one digit" — not `\d{6,7}`, though every real one is:
@@ -209,18 +225,21 @@ arithmetic, the seeded master administrator is `987654321`, and leading zeros
 have to survive a round trip. The digit requirement is what keeps "Jane
 Sample-Smith" a name.
 
-**Two fields fill themselves in**, and both are things this application already
-knows:
+**Two things fill themselves in**, and both are things this application already
+knows: the member's **name**, from the number; and their **previous title**,
+when it was left blank — a title change is a request to replace a title we
+are already holding, and making somebody retype it is how it ends up
+disagreeing with the roster. A typed previous title still wins; a typed name
+beside a known number does not, which is the whole of the revision.
 
-* the member's **name**, when only a number was given and it is in scope;
-* their **previous title**, when it was left blank — a title change is a
-  request to replace a title we are already holding, and making somebody
-  retype it is how it ends up disagreeing with the roster.
-
-Anything typed always wins, and the lookup runs through the caller's own scope,
-so it can only ever fill in a member they could already read. A number
-belonging to somebody out of scope fills in nothing and the row still goes on
-the form with what they typed — the same answer every other screen gives them.
+The lookup by number runs through the caller's own scope, so it can only ever
+fill in a member they could already read; a number belonging to somebody out
+of scope fills in nothing and the row still goes on the form with what they
+typed — the same answer every other screen gives them. The lookup by name
+runs only over the list the screen offered — the chosen sub-committee, in
+scope, under the picker cap — because that list is what "picking" means, and
+because resolving a name against the whole committee is the thing
+`CLAUDE.md` forbids.
 
 ### 2.4 The page, and the byte budget
 
@@ -2364,3 +2383,111 @@ Four defects, each fixed where it lived and each pinned by a test:
 | V2-29 | Should the drop-down **close on a tap outside it or on Escape**? | Not without a script or the `popover` API; `popover` light-dismisses but cannot be anchored under the button without CSS anchor positioning, which is not yet safe to rely on. Revisit when it is. |
 | V2-30 | Should the desk **strip** carry a Vice Chairman's *Create RCF Requests* beside Status and Roster, now that the RCF screens are the first group? | Not yet. The strip is the four screens a person works in all day; the drop-down is one click. |
 | V2-31 | On a phone the acting-as row is three lines when the Admin's name is long (*Back to Master Administrator (Admin)*). | Left as it is: an Admin's testing tool, and the row has to say whose session it is. |
+
+---
+
+## 19. Two cells for one person, and the top of the chain
+
+Phase 14.5. Two pieces of feedback on Phase 14 from the owner, walking the
+flow as a Division Chairman through Sign In As (§16).
+
+### 19.1 The member is two cells
+
+*"I have concerns about the Member - number and name because this invites
+formatting issues when adding new members. Would it be possible to split
+these cells; if the user selects an existing member number or name they
+both auto populate [and] the user can't break the relationship. If they are
+typing in a new member not yet on the roster and known to you they type both
+the name and number. It would be important to make sure your track RCF
+functions all use the member number only as it is the source of truth.
+Names can be problems with new users (i.e. Robert, Bob, Bobby, Rob vs. what
+is actually on the roster / the member's legal name)."*
+
+Done, and §2.3 now reads as the rule. Three decisions in it:
+
+* **The number decides, server-side.** There is no script in this
+  application (`CLAUDE.md`; the CSP forbids it), so the cells cannot fill
+  each other in as somebody types. They fill in where it matters instead:
+  when the row is read, in `RcfPage::entry()`, which is the one place a row
+  becomes a line of a form or an entry. A known number carries the roster's
+  name whatever was typed beside it, so a kept form or an entry about a
+  known member can never carry a name the roster does not. That is what
+  "can't break the relationship" means for a record, and it is stronger
+  than a screen that fills a box in and then lets the box be edited.
+* **A name picks, a name never keys.** A name typed with the number blank
+  is matched against the list the screen offered — the chosen
+  sub-committee, in the caller's scope, under the picker cap — exactly,
+  case- and space-insensitively, against the roster's spelling and the
+  known-as name the list showed. It takes that person's number when it
+  names exactly one of them. Two people with that name is nobody: the row
+  goes on as typed with the number blank, as a name alone always did. The
+  rule is the contact import's (`CLAUDE.md`): a name resolved within one
+  list, once, into a number, and refused where it is not decisive.
+* **Tracking was already number-only, and now a test says so.**
+  `RcfTracking::landed()` and `LANDED_WHEN` join `import_change` on
+  `member_number` and ignore a line with none; `forMember()` reads
+  `member_id` or the number; Look Up Members reads numbers. The member
+  search on Track RCFs matches names as well, because it is a search box
+  and "Alpha" is how a person asks; it decides nothing.
+
+The grid is eleven controls a row rather than ten: 275 of this host's 1,000
+`max_input_vars`, still comfortably inside. The name list is values only, so
+the picker's cap costs ~10KB more at 300 people than it did; the three
+measured pages in §2.4 are unchanged in shape and the test still holds them
+under budget.
+
+### 19.2 The top of the chain is drawn, and the screen now says so
+
+*"Division chairmen are the final approver on RCFs, however, it appears they
+cannot create their own entries for a consolidated RCF. Am I missing where
+they would import this information?"*
+
+They were not missing a screen; they were missing a row. §15.3's three
+states are *approved by X*, *top of the chain* and *not set*, and being
+drawn as somebody **else's** approver is none of them. A Division Chairman
+the Vice Chairmen route to, whose own row was never opened, is the end of
+everybody's chain (`ApprovalFlow::nextAfter()` ends a chain at an account
+with nothing drawn above it, deliberately — §15.3) and is refused their own
+requests, because `routeFor()` reads only their own row. The fix was one
+save on Create Approval Flow — their row, *Nobody — top of the chain* —
+and nothing on either screen said that was the fix. The sentence on Create
+RCF Requests said "nobody is set as your approver", which sends a final
+approver looking for an approver.
+
+The rule is unchanged, on purpose: the flow is drawn, never inferred, and an
+account approving other people's requests is not evidence that its own
+should be approved on submission — a Vice Chairman drawn as a peer's
+approver, with the Division Chairman not yet drawn above them, is the
+ordinary half-finished table, and inferring "top" from it would approve
+their requests unannounced, which is the one thing §15.3 forbids. What
+changed is that the screens now say which of the two fixes is wanted:
+
+* `ApprovalFlow::accounts()` and `RcfEntries::routeFor()` carry
+  **`approves`** — how many accounts are drawn as approved by this one.
+* **Create RCF Requests**, for an account that is not set and that others
+  route to, says so in those words: *N accounts route their requests to
+  you, but your own row on Create Approval Flow is not set … an Admin marks
+  you Top of the chain there*. For an account nobody routes to, the sentence
+  names both fixes — an approver, or top of the chain.
+* **Create Approval Flow** flags the same row — *approves N — set to top of
+  the chain?* — beside *requests refused until set*, and the card at the top
+  says that being somebody's approver places nobody.
+
+### 19.3 What the phone showed
+
+Rendering the grid at 390px for the two cells found that the stacked card
+was about a hundred pixels wide, and had been since Phase 9: the eleven
+`<col>` widths were inline styles, and an inline width on a column still
+applies when every row is a `display: block` card, so the card took the
+first column's 3%. The widths now live in the stylesheet under the 720px
+breakpoint, where the table is a table, and a test reads the partial for an
+inline width. Below 720px the card is the full column, as spec-v1 §8.2 says
+every table is.
+
+### 19.4 Open items raised
+
+| # | Question | Assumption today |
+| --- | --- | --- |
+| V2-32 | Should an account that is somebody's approver, with nothing drawn above it, be **treated as the top** for its own requests, so the Admin draws one row fewer? | No (§19.2): the flow is drawn, never inferred, and the half-drawn table is the case the inference gets wrong. The screens name the missing row instead. |
+| V2-33 | Should a known number with a **different name typed** beside it be flagged on the screen, rather than silently carrying the roster's name? | Not yet. The roster's name is the right answer and the row shows it as soon as the grid comes back; a notice per row is a second thing to read on a screen whose job is twenty-five names. Revisit if an officer reports surprise. |
+| V2-34 | Should the picker resolve a name typed with **first name only**, or `Smith, Jane`? | No. A name picks only when it is the list's own spelling, because anything looser is a guess about a person; the number cell is where a person is found by part of a name, since the browser matches labels. |

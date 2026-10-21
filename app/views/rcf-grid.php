@@ -7,8 +7,14 @@ declare(strict_types=1);
  * screens (Phase 14, spec-v2 §15.4): the form itself on /form-rcf, and
  * Create RCF Entries on /rcf-entries, where every filled row becomes one
  * entry instead of one line of a file. One partial, one `RcfPage::page()`,
- * so the two cannot drift — the same three shared datalists, the same five
+ * so the two cannot drift — the same four shared datalists, the same five
  * rows growing five at a time, the same two tick boxes.
+ *
+ * A member is two cells, number and name (Phase 14.5, spec-v2 §19.1), as
+ * the paper form has two columns. The number is the key: a number on the
+ * roster carries the roster's name whatever is typed beside it, a name
+ * picked from the list takes its number, and a newcomer is typed in both.
+ * `RcfPage::entry()` is where that is decided; this only draws the cells.
  *
  * Required from inside a <form>, after the sub-committee has been chosen:
  * the caller draws the heading, the buttons and the "nothing chosen yet"
@@ -38,17 +44,29 @@ $entries = $rcf['entries'];
 $visibleRows = (int) $rcf['visible_rows'];
 ?>
     <?php
-    // The three shared lists, emitted once each and used by all twenty-five
+    // The four shared lists, emitted once each and used by all twenty-five
     // rows. See the file comment.
     ?>
     <datalist id="rcf-members"><?php foreach ($members as $member) {
-        // The label carries the name officers actually use, and ONLY when it
-        // differs from the one on the membership record — "Bud" is how they
-        // will look him up and "Robert Alpha" is what goes on the form.
+        // The NUMBER is the value, because the number is the key; the
+        // label is the name as the roster spells it, with the name officers
+        // actually use beside it when that differs — "Bud" is how they will
+        // look him up and "Robert Alpha" is what goes on the form. Browsers
+        // match what is typed against the label as well as the value, so
+        // typing a name into the number cell finds the number.
         $knownAs = (string) $member['known_as'] === (string) $member['form_name']
-            ? '' : (string) $member['known_as'];
-        ?><option value="<?= e((string) $member['member_number'] . ' - ' . (string) $member['form_name']) ?>"<?=
-            $knownAs === '' ? '' : ' label="' . e($knownAs) . '"' ?>></option><?php
+            ? '' : ' (' . (string) $member['known_as'] . ')';
+        ?><option value="<?= e((string) $member['member_number']) ?>" label="<?=
+            e((string) $member['form_name'] . $knownAs) ?>"></option><?php
+    } ?></datalist>
+
+    <datalist id="rcf-member-names"><?php foreach ($members as $member) {
+        // The same people by name, for the name cell: picking one here with
+        // the number cell blank resolves to their number on the server
+        // (RcfPage::matchMember()). Values only — this list is paid for
+        // once more per person, and the number list already carries the
+        // known-as names.
+        ?><option value="<?= e((string) $member['form_name']) ?>"></option><?php
     } ?></datalist>
 
     <datalist id="rcf-subcommittees"><?php foreach ($subcommittees as $option) {
@@ -65,15 +83,16 @@ $visibleRows = (int) $rcf['visible_rows'];
             <?php if ($members === []) { ?>
                 There is no member list for this sub-committee &mdash; either you
                 can see nobody on it, or it is too large to offer as a list. Type
-                each person as
-                <strong>member number - name</strong> instead; the form takes it
-                either way.
+                each person&rsquo;s <strong>member number</strong> and
+                <strong>name</strong>; a number that is on the roster carries the
+                roster&rsquo;s name.
             <?php } else { ?>
                 <?= e(number_format(count($members))) ?>
                 <?= count($members) === 1 ? 'person is' : 'people are' ?>
                 in the member list below &mdash; the ones you can see on this
-                sub-committee. Somebody who is not on it yet is typed in:
-                <strong>member number - name</strong>.
+                sub-committee. Pick somebody by <strong>number</strong> or by
+                <strong>name</strong> and the other cell fills in from the roster;
+                somebody who is not on the roster yet is typed in both cells.
             <?php } ?>
         </p>
     </div>
@@ -126,21 +145,25 @@ $visibleRows = (int) $rcf['visible_rows'];
     ?>
     <table class="rcf">
         <caption>
-            One row per person. Leave the rest blank &mdash; blank rows print
-            blank, exactly as they do on the paper form.
+            One row per person. A number that is on the roster carries the
+            roster&rsquo;s name, so the name can be left blank; type both only for
+            somebody who is not on the roster yet. Leave the rest blank &mdash;
+            blank rows print blank, exactly as they do on the paper form.
         </caption>
+        <?php /* The column widths live in the stylesheet, under the 720px
+                 breakpoint, and not here: an inline width on a <col> still
+                 applies when the rows are stacked cards on a phone, and a
+                 3% first column made the whole card 3% wide (Phase 14.5). */ ?>
         <colgroup>
-            <col style="width:3%"><col style="width:6%"><col style="width:5%">
-            <col style="width:19%"><col style="width:11%"><col style="width:11%">
-            <col style="width:4%"><col style="width:12%"><col style="width:14%">
-            <col style="width:15%">
+            <col><col><col><col><col><col><col><col><col><col><col>
         </colgroup>
         <thead>
             <tr>
                 <th scope="col"><span class="vh">Row</span>#</th>
                 <th scope="col">*Type</th>
                 <th scope="col">RE rookie</th>
-                <th scope="col">Member &mdash; number and name</th>
+                <th scope="col">HLS&amp;R no.</th>
+                <th scope="col">Member name</th>
                 <th scope="col">Change/add title</th>
                 <th scope="col">Previous title</th>
                 <th scope="col">Wait list</th>
@@ -157,8 +180,10 @@ $visibleRows = (int) $rcf['visible_rows'];
 <td class="tick" data-label="RE rookie"><input type="checkbox" name="row[<?= $i ?>][rookie]"
     value="<?= e(RosterChangeForm::TICKED) ?>" aria-label="Rodeo Express rookie, row <?= $n ?>"<?=
     (string) $entry['rookie'] === RosterChangeForm::TICKED ? ' checked' : '' ?>></td>
-<td data-label="Member"><?= $field($i, $n, 'member', 'Member', (string) $entry['member'],
-    'rcf-members', '1234567 - Jane Smith') ?></td>
+<td data-label="HLS&amp;R no."><?= $field($i, $n, 'member_number', 'Member number', (string) $entry['member_number'],
+    'rcf-members', '1234567') ?></td>
+<td data-label="Member name"><?= $field($i, $n, 'member_name', 'Member name', (string) $entry['member_name'],
+    'rcf-member-names', 'from the roster') ?></td>
 <td data-label="Change/add title"><?= $field($i, $n, 'new_title', 'New title',
     (string) $entry['new_title']) ?></td>
 <td data-label="Previous title"><?= $field($i, $n, 'previous_title', 'Previous title',

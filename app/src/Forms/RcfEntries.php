@@ -180,9 +180,12 @@ final class RcfEntries
     /**
      * Where this caller's entries go, with the approver's name — the sentence
      * at the top of Create RCF Entries. `ApprovalFlow::routeFor()` with the
-     * id turned into a person.
+     * id turned into a person, and how many accounts route to this one, so
+     * the screen can tell a Division Chairman whose own row was never drawn
+     * that the fix is "top of the chain" and not "an approver" (Phase
+     * 14.5, spec-v2 §19.2).
      *
-     * @return array{state: string, approver: ?array{id: int, name: string}}
+     * @return array{state: string, approver: ?array{id: int, name: string}, approves: int}
      */
     public function routeFor(User $requester): array
     {
@@ -191,6 +194,7 @@ final class RcfEntries
         return [
             'state'    => $route['state'],
             'approver' => $route['approver'] === null ? null : $this->account($route['approver']),
+            'approves' => $this->flow->approvesCount($requester->id),
         ];
     }
 

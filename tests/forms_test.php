@@ -695,6 +695,48 @@ test('a member is read out of one field, in either order, or either half alone',
     assertSame(['', 'Jane Sample-Smith'], RcfPage::parseMember('Jane Sample-Smith'));
 });
 
+test('two cells make one member: the number cell is read forgivingly, and a name in it is a name', function (): void {
+    // Phase 14.5 (spec-v2 §19.1): the screen has two cells, and the number
+    // cell still takes the one-cell format a hand remembers.
+    assertSame(['1234567', ''], RcfPage::memberCells(['member_number' => '1234567']));
+    assertSame(['1234567', 'Jane Sample'], RcfPage::memberCells(['member_number' => '1234567', 'member_name' => 'Jane Sample']));
+    assertSame(['1234567', 'Jane Sample'], RcfPage::memberCells(['member_number' => '1234567 - Jane Sample']));
+    assertSame(['1234567', 'Jane Sample'], RcfPage::memberCells(['member_number' => 'Jane Sample - 1234567']));
+    assertSame(['1234567', 'Jane Sample'], RcfPage::memberCells(['member_name' => 'Jane Sample - 1234567']), 'and so does the name cell');
+
+    // The name cell wins over a name spilled into the number cell.
+    assertSame(['1234567', 'J. Sample'], RcfPage::memberCells(['member_number' => '1234567 - Jane Sample', 'member_name' => 'J. Sample']));
+
+    // A bare name in the number cell is the name when the name cell is
+    // empty, and otherwise stays as typed: dropping it would lose what
+    // somebody wrote, and a human reads HLS&R NO.
+    assertSame(['', 'Jane Sample'], RcfPage::memberCells(['member_number' => 'Jane Sample']));
+    assertSame(['Jane', 'Jane Sample'], RcfPage::memberCells(['member_number' => 'Jane', 'member_name' => 'Jane Sample']));
+    assertSame(['', ''], RcfPage::memberCells(['member_number' => '  ', 'member_name' => '']));
+    assertSame(['', ''], RcfPage::memberCells([]));
+});
+
+test('a typed name picks one person off the offered list, and never two', function (): void {
+    $list = [
+        ['member_number' => '1000001', 'form_name' => 'Robert Alpha', 'known_as' => 'Bob Alpha', 'title' => 'Committee Member'],
+        ['member_number' => '1000002', 'form_name' => 'Carol Bravo',  'known_as' => 'Carol Bravo', 'title' => 'Committee Member'],
+        ['member_number' => '1000003', 'form_name' => 'Carol Bravo',  'known_as' => 'Carol Bravo', 'title' => 'Committee Member'],
+    ];
+
+    assertSame('1000001', RcfPage::matchMember($list, 'Robert Alpha')['member_number']);
+    assertSame('1000001', RcfPage::matchMember($list, '  robert   ALPHA ')['member_number'], 'case and spacing are not the person');
+    assertSame('1000001', RcfPage::matchMember($list, 'Bob Alpha')['member_number'], 'the name he is known by finds him too');
+    assertSame('Robert Alpha', RcfPage::matchMember($list, 'Bob Alpha')['form_name'], 'and what goes on the form is the roster\'s spelling');
+
+    // Two Carol Bravos: a name cannot decide, so nobody is picked. The
+    // number is the key (CLAUDE.md), and a guess here is a form about the
+    // wrong person.
+    assertSame(null, RcfPage::matchMember($list, 'Carol Bravo'));
+    assertSame(null, RcfPage::matchMember($list, 'Robert'), 'a first name alone is not a match');
+    assertSame(null, RcfPage::matchMember($list, ''));
+    assertSame(null, RcfPage::matchMember([], 'Robert Alpha'), 'no list, no pick');
+});
+
 test('the filename says which year and which sub-committee, and survives a header', function (): void {
     $name = RosterChangeForm::filename('2027', 'RC Logistics Division - RC Bus Ops Team A');
 
@@ -1033,7 +1075,7 @@ test('a submitted form is resolved against the lists, never taken as typed', fun
         'row'          => [
             0 => [
                 'type'             => 'T',
-                'member'           => $f['members']['m1']['number'],
+                'member_number'           => $f['members']['m1']['number'],
                 'new_title'        => 'Assistant Captain',
                 'new_subcommittee' => 'RC Logistics Division - RC Bus Ops Team B',
             ],
@@ -1042,7 +1084,7 @@ test('a submitted form is resolved against the lists, never taken as typed', fun
                 'type'             => 'Z',
                 'rookie'           => 'maybe',
                 'remove_reason'    => '99',
-                'member'           => 'Somebody Unknown',
+                'member_name'           => 'Somebody Unknown',
             ],
         ],
     ]);
@@ -1080,7 +1122,7 @@ test('a typed previous title wins over the roster, and a sub-committee outside t
         'subcommittee' => 'd:' . $f['divisions']['none'],
         'row'          => [
             0 => [
-                'member'         => $f['members']['m1']['number'],
+                'member_number'         => $f['members']['m1']['number'],
                 'previous_title' => 'Whatever they actually were',
             ],
         ],
@@ -1091,6 +1133,79 @@ test('a typed previous title wins over the roster, and a sub-committee outside t
         'what an officer typed is never overwritten');
 });
 
+test('the number decides: a known number carries the roster name, a picked name takes its number, a newcomer is both as typed', function (): void {
+    $f    = rcf_fixture();
+    $page = new RcfPage(rcf_pdo());
+    $team = 't:' . $f['teams']['a'];
+
+    $form = $page->formFromInput(rcf_captain(), [
+        'subcommittee' => $team,
+        'row'          => [
+            // A known number with a different name typed beside it: the
+            // roster's name goes on the form, so the two cells cannot say
+            // two people (Phase 14.5, spec-v2 §19.1).
+            0 => ['member_number' => $f['members']['m1']['number'], 'member_name' => 'Bobby Alfa'],
+            // The number blank and a name picked off the list, by the
+            // roster's spelling: the number fills in.
+            1 => ['member_name' => 'Carol Bravo'],
+            // The same, by the name he is known by.
+            2 => ['member_name' => 'bob alpha'],
+            // A newcomer: not on the roster, so both cells as typed.
+            3 => ['member_number' => '7654321', 'member_name' => 'Newcomer Sample'],
+            // A name alone that matches nobody on the list: kept, with
+            // HLS&R NO left for Rodeo Houston, as before.
+            4 => ['member_name' => 'Somebody Unknown'],
+            // A number nobody in scope has: both as typed, nothing invented.
+            5 => ['member_number' => 'RC999999', 'member_name' => 'Out Of Scope'],
+        ],
+    ]);
+
+    assertSame($f['members']['m1']['number'], $form['entries'][0]['member_number']);
+    assertSame('Robert Alpha', $form['entries'][0]['member_name'], 'the roster\'s name, not the typed one');
+    assertSame('Committee Member', $form['entries'][0]['previous_title'], 'and the previous title still fills in');
+
+    assertSame($f['members']['m2']['number'], $form['entries'][1]['member_number'], 'the picked name resolved to the number');
+    assertSame('Carol Bravo', $form['entries'][1]['member_name']);
+    assertSame('Committee Member', $form['entries'][1]['previous_title']);
+
+    assertSame($f['members']['m1']['number'], $form['entries'][2]['member_number'], 'known-as finds him');
+    assertSame('Robert Alpha', $form['entries'][2]['member_name'], 'and the form says Robert');
+
+    assertSame('7654321', $form['entries'][3]['member_number']);
+    assertSame('Newcomer Sample', $form['entries'][3]['member_name']);
+    assertSame('', $form['entries'][3]['previous_title'], 'nothing is invented for a newcomer');
+
+    assertSame('', $form['entries'][4]['member_number']);
+    assertSame('Somebody Unknown', $form['entries'][4]['member_name']);
+
+    assertSame('RC999999', $form['entries'][5]['member_number']);
+    assertSame('Out Of Scope', $form['entries'][5]['member_name']);
+
+    // A member of ANOTHER sub-committee in scope is still reached by number
+    // — a transfer names its subject — but not by name, because the name
+    // list is the chosen sub-committee's. The Senior Officer sees m4's
+    // division and has Team A loaded.
+    $other = $page->formFromInput(rcf_senior(), [
+        'subcommittee' => $team,
+        'row'          => [
+            0 => ['member_number' => $f['members']['m4']['number']],
+            1 => ['member_name' => 'Frank Echo'],
+        ],
+    ]);
+    assertSame('Frank Echo', $other['entries'][0]['member_name'], 'by number, from anywhere in scope');
+    assertSame('', $other['entries'][1]['member_number'], 'by name, only from the list the screen offered');
+    assertSame('Frank Echo', $other['entries'][1]['member_name'], 'kept as typed');
+
+    // And a number belonging to somebody OUT of the caller's scope fills in
+    // nothing: a Captain cannot read m4.
+    $outside = $page->formFromInput(rcf_captain(), [
+        'subcommittee' => $team,
+        'row'          => [0 => ['member_number' => $f['members']['m4']['number'], 'member_name' => 'Who Ever']],
+    ]);
+    assertSame($f['members']['m4']['number'], $outside['entries'][0]['member_number']);
+    assertSame('Who Ever', $outside['entries'][0]['member_name'], 'the typed name stands when the number is not theirs to read');
+});
+
 test('the two tick boxes carry an answer on every row without making one look filled', function (): void {
     $f    = rcf_fixture();
     $page = new RcfPage(rcf_pdo());
@@ -1099,11 +1214,11 @@ test('the two tick boxes carry an answer on every row without making one look fi
         'subcommittee' => 't:' . $f['teams']['a'],
         'row'          => [
             0 => [
-                'member'    => $f['members']['m1']['number'],
+                'member_number'    => $f['members']['m1']['number'],
                 'wait_list' => RosterChangeForm::TICKED,
                 'rookie'    => RosterChangeForm::TICKED,
             ],
-            1 => ['member' => $f['members']['m2']['number']],
+            1 => ['member_number' => $f['members']['m2']['number']],
         ],
     ]);
 
@@ -1141,31 +1256,40 @@ function rcf_render(User $user, array $input): string
     return (string) ob_get_clean();
 }
 
-test('the screen renders, escapes what it shows and shares its three long lists', function (): void {
+test('the screen renders, escapes what it shows and shares its four long lists', function (): void {
     $f    = rcf_fixture();
     $html = rcf_render(rcf_captain(), ['subcommittee' => 't:' . $f['teams']['a']]);
 
     assertTrue(str_contains($html, 'RC Logistics Division - RC Bus Ops Team A'), 'the chosen sub-committee');
-    assertTrue(str_contains($html, 'RC000002 - Robert Alpha'), 'a member, ready to be picked');
+
+    // A member is two cells (Phase 14.5, spec-v2 §19.1): the number list's
+    // VALUE is the number, because the number is the key, and its label is
+    // the name; the name list offers the same people by the name the roster
+    // spells.
+    assertTrue(str_contains($html, '<option value="RC000002" label="Robert Alpha (Bob Alpha)">'), 'a member, ready to be picked by number');
+    assertTrue(str_contains($html, '<option value="Robert Alpha">'), 'and by name');
+    assertSame(0, substr_count($html, 'RC000002 - Robert Alpha'), 'the one-cell format is gone');
     assertTrue(
         str_contains($html, 'RC Member Services &amp; Support Division'),
         'a division name with an ampersand in it is escaped'
     );
     assertSame(0, substr_count($html, 'Support Division</option>'), 'and never raw');
 
-    // A preferred name is offered as the datalist's LABEL and never as its
+    // A preferred name is offered in the datalist's LABEL and never as a
     // value: "Bud" is how an officer looks him up, and the membership record
     // says Robert.
-    assertTrue(str_contains($html, 'label="Bob Alpha"'), 'the name he is known by helps find him');
-    assertSame(0, substr_count($html, '- Bob Alpha'), 'but it is never what goes on the form');
+    assertTrue(str_contains($html, '(Bob Alpha)"'), 'the name he is known by helps find him');
+    assertSame(0, substr_count($html, 'value="Bob Alpha"'), 'but it is never what goes on the form');
 
-    // The three long lists are emitted ONCE each and shared by every row.
+    // The four long lists are emitted ONCE each and shared by every row.
     // Drawing a hundred teams twenty-five times over is 150KB of <option> on
     // a page with a 100KB budget (spec 10).
     assertSame(1, substr_count($html, '<datalist id="rcf-members">'));
+    assertSame(1, substr_count($html, '<datalist id="rcf-member-names">'));
     assertSame(1, substr_count($html, '<datalist id="rcf-subcommittees">'));
     assertSame(1, substr_count($html, '<datalist id="rcf-officers">'));
-    assertSame(RcfPage::VISIBLE_ROWS, substr_count($html, 'list="rcf-members"'), 'one field per drawn row');
+    assertSame(RcfPage::VISIBLE_ROWS, substr_count($html, 'list="rcf-members"'), 'one number cell per drawn row');
+    assertSame(RcfPage::VISIBLE_ROWS, substr_count($html, 'list="rcf-member-names"'), 'and one name cell');
 
     // Both tick boxes are tick boxes on the screen because both are tick
     // boxes on the paper.
@@ -1179,6 +1303,13 @@ test('the screen renders, escapes what it shows and shares its three long lists'
 
     // No script anywhere: the host has no build step and render() forbids it.
     assertSame(0, substr_count($html, '<script'), 'there is no JavaScript in this application');
+
+    // The column widths are the stylesheet's, under the desk breakpoint,
+    // and never inline on a <col>: an inline width still applies when the
+    // rows are stacked cards on a phone, and made the card 3% wide (Phase
+    // 14.5, spec-v2 §19.3).
+    assertSame(11, substr_count($html, '<col>'), 'eleven bare columns');
+    assertSame(0, preg_match('/<col\s+style=/', $html), 'and no inline width on any of them');
 });
 
 test('the screen draws five rows, grows on request, and never hides a filled one', function (): void {
@@ -1202,7 +1333,7 @@ test('the screen draws five rows, grows on request, and never hides a filled one
     assertSame(12, $page->page(rcf_captain(), [
         'subcommittee' => $team,
         'visible'      => '1',
-        'row'          => [11 => ['member' => 'RC000002']],
+        'row'          => [11 => ['member_number' => 'RC000002']],
     ])['visible_rows'], 'row twelve is filled in, so twelve rows are drawn');
 });
 

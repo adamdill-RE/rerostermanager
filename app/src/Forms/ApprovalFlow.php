@@ -99,6 +99,7 @@ final class ApprovalFlow
         $read->execute($bind);
 
         $table    = $this->table();
+        $approves = self::approvesCounts($table);
         $accounts = [];
         foreach ($read->fetchAll() as $row) {
             $id    = (int) $row['id'];
@@ -120,6 +121,12 @@ final class ApprovalFlow
                 'approver_id'   => $drawn['approver'],
                 'is_top'        => $drawn['top'],
                 'state'         => self::state($drawn),
+                // How many accounts are drawn as approved by this one. An
+                // account that approves others and is itself "not set" is
+                // the trap Phase 14.5 names (spec-v2 §19.2): their chain
+                // ends with this account, and this account's own requests
+                // are refused. The screen says so beside the row.
+                'approves'      => $approves[$id] ?? 0,
                 // The select's value for what is drawn now.
                 'value'         => $drawn['top'] ? self::TOP : ($drawn['approver'] === null ? self::UNSET : (string) $drawn['approver']),
             ];
@@ -158,6 +165,34 @@ final class ApprovalFlow
         }
 
         return $table;
+    }
+
+    /**
+     * How many accounts are drawn as approved by this one — directly, not
+     * the whole chain below. Zero for an account nobody routes to.
+     */
+    public function approvesCount(int $userId): int
+    {
+        return self::approvesCounts($this->table())[$userId] ?? 0;
+    }
+
+    /**
+     * approver id => how many accounts name them, over a table shaped like
+     * table(). Pure, so accounts() counts once for the whole screen.
+     *
+     * @param array<int, array{approver: ?int, top: bool}> $table
+     * @return array<int, int>
+     */
+    public static function approvesCounts(array $table): array
+    {
+        $counts = [];
+        foreach ($table as $drawn) {
+            if ($drawn['approver'] !== null) {
+                $counts[$drawn['approver']] = ($counts[$drawn['approver']] ?? 0) + 1;
+            }
+        }
+
+        return $counts;
     }
 
     /**
