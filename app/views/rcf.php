@@ -135,8 +135,12 @@ $steps = RcfTracking::STEPS;
         <?php } ?>
     </div>
 
+    <?php /* A consolidated form is kept when it is made and downloaded from
+             here first (spec-v2 §15.5), so "again" is earned only once it
+             has been (Phase 14.3). Every other kind left as a file already. */ ?>
+    <?php $downloadedBefore = ($form['source'] ?? 'generated') !== 'consolidated' || (int) $form['regenerated_count'] > 0; ?>
     <div class="card">
-        <h2>Download it again</h2>
+        <h2>Download it<?= $downloadedBefore ? ' again' : '' ?></h2>
         <p>
             <?php if ($uploaded) { ?>
                 The form as this application prints it, rebuilt from what was
@@ -162,7 +166,7 @@ $steps = RcfTracking::STEPS;
             <input type="hidden" name="id" value="<?= e((string) $form['id']) ?>">
             <span class="chip chip-warn">This file is personal data</span>
             <p class="hint">It leaves this server the moment you download it, and the download is logged with your name.</p>
-            <button type="submit" name="action" value="download">Download the form again</button>
+            <button type="submit" name="action" value="download">Download the form<?= $downloadedBefore ? ' again' : '' ?></button>
         </form>
     </div>
 </div>

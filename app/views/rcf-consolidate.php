@@ -129,12 +129,13 @@ use Rerm\View;
     <div class="card"><p>No consolidated form yet. The first one appears here, ready to download from its page.</p></div>
 <?php } else { ?>
     <table class="track">
-        <caption>Newest first. Open a form to download it, add the RCF number and mark it sent &mdash; or, if it was a test run, to void it, which takes it and its entries out of view for everybody.</caption>
+        <caption>Newest first. Download a form from here, or open it to read it over, add the RCF number and mark it sent &mdash; or, if it was a test run, to void it, which takes it and its entries out of view for everybody.</caption>
         <thead><tr>
             <th scope="col">Generated</th>
             <th scope="col">Sub-committee</th>
             <th scope="col" class="num">Lines</th>
             <th scope="col">Downloaded</th>
+            <th scope="col"><span class="vh">Download</span></th>
         </tr></thead>
         <tbody>
         <?php foreach ($forms as $form) { ?>
@@ -146,6 +147,16 @@ use Rerm\View;
                 <td data-label="Downloaded"><?= (int) $form['regenerated_count'] === 0
                     ? '<span class="chip chip-warn">not yet</span>'
                     : '<span class="chip chip-ok">' . e((string) $form['regenerated_count']) . ' time' . ((int) $form['regenerated_count'] === 1 ? '' : 's') . '</span>' ?></td>
+                <td data-label="Download"><?php /* The same POST the form's own page makes (Phase 14.3): a
+                        filled-in form is personal data, so it is never a link, and
+                        each download is logged with the caller's name. One small form
+                        per row, so pressing one never submits the grid above. */ ?>
+                    <form method="post" action="<?= e($app->url('rcf?id=' . (int) $form['id'])) ?>" class="inline">
+                        <?= Csrf::field() ?>
+                        <input type="hidden" name="id" value="<?= e((string) $form['id']) ?>">
+                        <input type="hidden" name="action" value="download">
+                        <button type="submit" class="quiet" aria-label="Download form #<?= e((string) $form['id']) ?>">Download</button>
+                    </form></td>
             </tr>
         <?php } ?>
         </tbody>

@@ -20,9 +20,16 @@ file copy.
 
 ### For the next session
 
-This branch is **1.14.2**: Phase 14.2, After the form — the two
-housekeeping requests that followed testing Phase 14 (`docs/spec-v2.md`
-§17). Every list of RCF entries now carries **Rodeo Houston's answer**: a
+This branch is **1.14.3**: Phase 14.3, the download one tap nearer
+(`docs/spec-v2.md` §17.4) — the first thing the owner noticed generating
+as a Division Chairman was that the file was a page away. One generated
+form now lands on its own page, every row of *Forms you have generated*
+carries a Download button (the same logged POST the form's page makes),
+and a consolidated form says *again* only once it has been downloaded.
+§15.5's rule that Generate keeps rather than downloads is unchanged. No
+migration. Before it, `main` was **1.14.2**: Phase 14.2, After the form —
+the two housekeeping requests that followed testing Phase 14
+(`docs/spec-v2.md` §17). Every list of RCF entries now carries **Rodeo Houston's answer**: a
 generated entry reads *not yet in the roster* until an import records the
 change it asked for, then **In the roster** with the import, derived from
 `import_change` exactly as the form's page derives it; and one trail line
