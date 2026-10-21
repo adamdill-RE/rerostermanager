@@ -970,7 +970,10 @@ test('the four screens render, escape what they show, carry the strip and stay i
     assertTrue(str_contains($html, 'value="generate"'));
     assertTrue(str_contains($html, 'name="by"'), 'the grouping choice');
     assertTrue(str_contains($html, 'Forms you have generated'));
-    assertSame(3, substr_count($html, 'rcf?id='), 'the three forms generated so far link to their pages');
+    assertSame(6, substr_count($html, 'rcf?id='), 'the three forms generated so far link to their pages, and each carries a Download form posting there');
+    assertSame(3, substr_count($html, 'value="download"'), 'one Download per generated form (Phase 14.3)');
+    $view = af_source('app/views/rcf-consolidate.php');
+    assertSame(substr_count($view, '<form method="post"'), substr_count($view, 'Csrf::field()'), 'every one of them carries the token');
     assertSame(0, substr_count($html, '<script'));
     assertTrue(strlen($html) < 100 * 1024, 'Consolidate RCFs is ' . strlen($html) . ' bytes');
 
@@ -1015,6 +1018,27 @@ test('the four screens render, escape what they show, carry the strip and stay i
     assertTrue(str_contains($html, 'Consolidated</span> by Carl Chair'));
     assertTrue(str_contains($html, 'The entries this form was made from'));
     assertTrue(str_contains($html, 'the first download is from here'));
+    // Never downloaded yet, so not "again" (Phase 14.3); a Create Forms form
+    // left as a file when it was made, so it always is.
+    assertTrue(str_contains($html, '<h2>Download it</h2>'));
+    assertTrue(str_contains($html, '>Download the form</button>'));
+    assertSame(0, substr_count($html, 'Download the form again'));
+    $pdo->prepare('UPDATE rcf SET regenerated_count = 1, last_regenerated_at = UTC_TIMESTAMP() WHERE id = :id')->execute([':id' => $formId]);
+    $again = af_render('rcf', 'Roster Change Form', [
+        'user'    => $dc,
+        'rcf'     => $tracking->one($dc, $formId),
+        'entries' => $entries->onForm($dc, $formId),
+    ]);
+    assertTrue(str_contains($again, '<h2>Download it again</h2>'), 'once it has been');
+    assertTrue(str_contains($again, '>Download the form again</button>'));
+    $pdo->prepare('UPDATE rcf SET regenerated_count = 0, last_regenerated_at = NULL WHERE id = :id')->execute([':id' => $formId]);
+
+    // The route lands one generated form on its own page and several on the
+    // list (Phase 14.3): read from the handler, since it 303s.
+    $index = af_source('public/index.php');
+    assertTrue(str_contains($index, "redirect(\$app, 'rcf?id=' . \$result['forms'][0]);"), 'one form: its page');
+    assertTrue(str_contains($index, "if (\$n === 1) {"), 'and only one');
+    assertTrue(str_contains($index, "redirect(\$app, 'rcf-consolidate#generated');"), 'several: the list');
 });
 
 // ---------------------------------------------------------------------------

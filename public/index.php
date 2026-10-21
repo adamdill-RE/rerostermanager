@@ -2640,16 +2640,29 @@ function rcf_consolidate_act(Rerm\App $app, Rerm\Auth\User $user): void
 
     if ($result['forms'] === []) {
         flash_set('warn', 'None of those entries is yours to generate, so no form was made.');
-    } else {
-        $n = count($result['forms']);
+        redirect($app, 'rcf-consolidate#generated');
+    }
+
+    $n = count($result['forms']);
+    if ($n === 1) {
+        // The common case — a Division Chairman's one form — lands on the
+        // form itself (Phase 14.3): the download, the RCF number and the
+        // sent buttons are all there, and a list of one is a detour.
         flash_set('ok', sprintf(
-            '%d %s generated from %d %s and logged with your name. Open each one below to download it.',
-            $n,
-            $n === 1 ? 'form' : 'forms',
+            'Form #%d generated from %d %s and logged with your name. It is kept; download it from here.',
+            $result['forms'][0],
             $result['entries'],
             $result['entries'] === 1 ? 'entry' : 'entries'
         ));
+        redirect($app, 'rcf?id=' . $result['forms'][0]);
     }
+
+    flash_set('ok', sprintf(
+        '%d forms generated from %d %s and logged with your name. Download each one below, or open it to read it over.',
+        $n,
+        $result['entries'],
+        $result['entries'] === 1 ? 'entry' : 'entries'
+    ));
     redirect($app, 'rcf-consolidate#generated');
 }
 

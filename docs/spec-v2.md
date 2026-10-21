@@ -2185,7 +2185,29 @@ generated* says in its caption that this is where a test run is voided.
 * **Void a form that went out.** Create Forms and uploaded forms are not
   offered the control and `void()` refuses them by source.
 
-### 17.4 Open items raised
+### 17.4 The download, one tap nearer
+
+Phase 14.3. The first thing the owner noticed on generating as a Division
+Chairman: *"there is no link to download the RCF when I generate it.
+Instead I have to go to the RCF and hit download again."* §15.5's rule —
+Generate keeps, it does not download — stands, for its two reasons (one
+POST cannot send three files; a form kept before it is sent is the record).
+What changed is the distance from the rule to the file:
+
+* **One form generated lands on the form's own page**, with the Done
+  notice, where the download, the RCF number and the two *sent* buttons
+  are. A list of one was a detour. Several forms still land on *Forms you
+  have generated*.
+* **Every row of *Forms you have generated* carries a Download button** —
+  the same POST the form's page makes, one small form per row, so the file
+  is one tap from the list and still never a link: a filled-in form is
+  personal data, and each download is logged with the caller's name.
+* **"Again" is earned.** A consolidated form that has never been downloaded
+  reads *Download it* and *Download the form*; once `regenerated_count` is
+  above zero, *again*. Every other kind of form left as a file when it was
+  made, so for those it always was again.
+
+### 17.5 Open items raised
 
 | # | Question | Assumption today |
 | --- | --- | --- |
