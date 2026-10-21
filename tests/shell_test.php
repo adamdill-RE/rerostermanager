@@ -295,6 +295,44 @@ test('the word in the menu is the word on the page: the three RCF screens are ti
     assertSame('generate_consolidated_rcf', Capability::GenerateConsolidatedRcf->value);
 });
 
+test('request is the word in every line a person reads; entry stays in everything they do not', function (): void {
+    // V2-28, decided: the body copy, the strip, the flashes, the refusals and
+    // the Audit Log's labels all say request. Comments keep the old word as
+    // the record of what was built, so they are set aside before reading.
+    $prose = static function (string $relative): string {
+        $source = sh_source($relative);
+        $source = (string) preg_replace('#/\*.*?\*/#s', '', $source);
+
+        return (string) preg_replace('#^\s*//[^\n]*$#m', '', $source);
+    };
+    foreach (['rcf-entries', 'rcf-approvals', 'rcf-consolidate', 'rcfs', 'rcf', 'sign-in-as', 'approval-flow'] as $view) {
+        $code = $prose('app/views/' . $view . '.php');
+        // A bare word, not an identifier ($entry), a key ('entries'), a route
+        // (rcf-entries), an anchor (#entries) or the table's class.
+        $code = str_replace(['class="track entries"', 'id="entries"', '#entries'], '', $code);
+        assertSame(0, preg_match_all('/(?<![$\-_\w\'"\[])(entry|entries|Entries|Entry)(?![\w_\-\'\]])/', $code, $m), $view . '.php still says ' . implode(', ', array_unique($m[0] ?? [])));
+    }
+    foreach (['Your requests', 'aria-label="RCF requests"'] as $word) {
+        assertTrue(str_contains(sh_source('app/src/View.php'), $word), 'the strip says ' . $word);
+    }
+    assertSame('RCF request submitted', Rerm\Audit\Action::SubmitRcfEntry->label());
+    assertSame('submit_rcf_entry', Rerm\Audit\Action::SubmitRcfEntry->value, 'the stored verb is unchanged');
+    foreach ([
+        "'request' : 'requests'",
+        "'None of those requests is waiting on you, so nothing changed.'",
+        "'That request is not yours to withdraw, or it has already been decided.'",
+    ] as $flash) {
+        assertTrue(str_contains(sh_source('public/index.php'), $flash), 'the flash says ' . $flash);
+    }
+    assertTrue(str_contains(sh_source('app/src/Forms/RcfEntries.php'), 'so your requests cannot be submitted.'), 'the refusal');
+    assertTrue(str_contains(sh_source('app/src/Forms/ApprovalFlow.php'), 'a request on a loop never reaches anybody'), 'the loop refusal');
+    // And the things that must not move did not.
+    assertSame('rcf_entry', 'rcf_entry');
+    assertTrue(str_contains(sh_source('app/src/Forms/RcfEntries.php'), 'INSERT INTO rcf_entry '), 'the table keeps its name');
+    assertSame(null, Rerm\Routes::guard('rcf-requests'), 'no route was renamed');
+    assertTrue(Rerm\Routes::guard('rcf-entries') !== null, 'the route is where it was');
+});
+
 // ---------------------------------------------------------------------------
 // 5. The two fixes
 // ---------------------------------------------------------------------------

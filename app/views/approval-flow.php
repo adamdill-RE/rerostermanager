@@ -40,24 +40,24 @@ foreach ($accounts as $account) {
 ?>
 <h1>Approval Flow</h1>
 <p class="lede">
-    Who approves whose RCF entries. An entry goes to the officer&rsquo;s approver,
+    Who approves whose RCF requests. A request goes to the officer&rsquo;s approver,
     then to that approver&rsquo;s approver, and so on until it reaches somebody
     at the <strong>top of the chain</strong>, who puts everything they approved
     onto a Roster Change Form. If Bob approves Sheila and Carl approves Bob,
-    Sheila&rsquo;s entry waits on Bob, then on Carl, and Carl generates the form.
+    Sheila&rsquo;s request waits on Bob, then on Carl, and Carl generates the form.
 </p>
 
 <div class="card">
     <h2>Three states, all in words</h2>
     <ul class="rows">
-        <li><strong>Approved by</strong> somebody &mdash; their entries wait on that account.</li>
-        <li><strong>Top of the chain</strong> &mdash; nobody is above them; their own entries are approved the moment
+        <li><strong>Approved by</strong> somebody &mdash; their requests wait on that account.</li>
+        <li><strong>Top of the chain</strong> &mdash; nobody is above them; their own requests are approved the moment
             they are submitted and they generate the forms.</li>
-        <li><strong>Not set</strong> &mdash; their entries are <em>refused</em> with a sentence naming this screen.
+        <li><strong>Not set</strong> &mdash; their requests are <em>refused</em> with a sentence naming this screen.
             Nothing is routed to a default.<?php if ($unset > 0) { ?>
                 <span class="chip chip-warn"><?= e((string) $unset) ?> not set</span><?php } ?></li>
     </ul>
-    <p class="hint">Only accounts at Senior Officer and above are listed: Captains fill in Roster Change Forms on Create Forms rather than submitting entries.</p>
+    <p class="hint">Only accounts at Senior Officer and above are listed: Captains fill in Roster Change Forms on Create Forms rather than submitting requests.</p>
 </div>
 
 <?php if ($accounts === []) { ?>
@@ -84,7 +84,7 @@ foreach ($accounts as $account) {
                         <input type="hidden" name="account" value="<?= $id ?>">
                         <label for="approver" class="vh">Approved by</label>
                         <select id="approver" name="approver[<?= $id ?>]">
-                            <option value="<?= e(ApprovalFlow::UNSET) ?>"<?= $account['value'] === ApprovalFlow::UNSET ? ' selected' : '' ?>>&mdash; not set: entries refused</option>
+                            <option value="<?= e(ApprovalFlow::UNSET) ?>"<?= $account['value'] === ApprovalFlow::UNSET ? ' selected' : '' ?>>&mdash; not set: requests refused</option>
                             <option value="<?= e(ApprovalFlow::TOP) ?>"<?= $account['value'] === ApprovalFlow::TOP ? ' selected' : '' ?>>Nobody &mdash; top of the chain</option>
                             <?php foreach ($accounts as $candidate) { if ((int) $candidate['id'] === $id) { continue; } ?>
                                 <option value="<?= e((string) $candidate['id']) ?>"<?= $account['value'] === (string) $candidate['id'] ? ' selected' : '' ?>><?=
@@ -102,7 +102,7 @@ foreach ($accounts as $account) {
                     } ?>
                 <?php } ?></td>
                 <td data-label="Chain"><?php if ($account['chain_end'] === 'unset') { ?>
-                        <span class="why">entries refused until set</span>
+                        <span class="why">requests refused until set</span>
                     <?php } elseif ($account['chain'] === []) { ?>
                         <span class="why">approves their own; generates the form</span>
                     <?php } else { ?>

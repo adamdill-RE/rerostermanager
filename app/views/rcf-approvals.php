@@ -41,7 +41,7 @@ $member = static function (array $entry) use ($app): string {
 ?>
 <h1>Approve RCF Requests</h1>
 <p class="lede">
-    Entries other officers have asked for that are waiting on you. Approve them
+    Requests other officers have asked for that are waiting on you. Approve them
     and they move up the chain &mdash; or, if you are the last approver, they
     become yours to put on a form. Return one with a note and the officer who
     asked reads why.
@@ -51,13 +51,13 @@ $member = static function (array $entry) use ($app): string {
 
 <h2 id="waiting">Waiting for you</h2>
 <?php if ($waiting === []) { ?>
-    <div class="card"><p>Nothing is waiting on you. An entry appears here the moment somebody whose approver you are submits one.</p></div>
+    <div class="card"><p>Nothing is waiting on you. A request appears here the moment somebody whose approver you are submits one.</p></div>
 <?php } else { ?>
     <form method="post" action="<?= e($app->url('rcf-approvals')) ?>" class="approvals">
         <?= Csrf::field() ?>
         <?php /* Enter approves (Phase 10.5's lesson): the first submit is the
                  one a finished review wants, hidden and off the tab order. */ ?>
-        <button type="submit" name="action" value="approve" class="vh" tabindex="-1" aria-hidden="true">Approve the ticked entries</button>
+        <button type="submit" name="action" value="approve" class="vh" tabindex="-1" aria-hidden="true">Approve the ticked requests</button>
         <table class="track approvals">
             <caption>Oldest first &mdash; the order to work them in. Every row starts ticked; untick the ones you are not deciding today.</caption>
             <thead><tr>
@@ -101,8 +101,8 @@ $member = static function (array $entry) use ($app): string {
         <div class="cards">
             <div class="card">
                 <h2>Approve</h2>
-                <p>The ticked entries move on to the next approver, or become yours to generate.</p>
-                <button type="submit" name="action" value="approve">Approve the ticked entries</button>
+                <p>The ticked requests move on to the next approver, or become yours to generate.</p>
+                <button type="submit" name="action" value="approve">Approve the ticked requests</button>
             </div>
             <div class="card">
                 <h2>Return</h2>
@@ -110,7 +110,7 @@ $member = static function (array $entry) use ($app): string {
                 <textarea id="note" name="note" rows="2" maxlength="<?= e((string) RcfEntries::NOTE_MAX) ?>"
                     placeholder="e.g. Already resigned in March; no form needed."></textarea>
                 <p class="hint">A return without a note is refused.</p>
-                <button type="submit" name="action" value="return" class="quiet">Return the ticked entries with this note</button>
+                <button type="submit" name="action" value="return" class="quiet">Return the ticked requests with this note</button>
             </div>
         </div>
     </form>
@@ -118,10 +118,10 @@ $member = static function (array $entry) use ($app): string {
 
 <h2 id="decided">Decided by you</h2>
 <?php if ($decided === []) { ?>
-    <div class="card"><p>You have not approved or returned an entry yet.</p></div>
+    <div class="card"><p>You have not approved or returned a request yet.</p></div>
 <?php } else { ?>
     <table class="track">
-        <caption>The last fifty entries you approved or returned, newest first, and where each is now.</caption>
+        <caption>The last fifty requests you approved or returned, newest first, and where each is now.</caption>
         <thead><tr>
             <th scope="col">Asked</th>
             <th scope="col">Sub-committee</th>

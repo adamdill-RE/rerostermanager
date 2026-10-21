@@ -541,7 +541,7 @@ test('the screen lists active, non-Admin accounts other than the caller, with wh
     assertTrue(str_contains($html, 'value="' . $f['users']['sen'] . '">'));
     assertTrue(str_contains($html, 'Sign in as Sam Senior'));
     assertTrue(str_contains($html, 'Sign in as Olive Officer'));
-    assertSame(1, preg_match('/data-label="RCF entries go to">\s*Abe Second\s*<\/td>/', $html), 'the approver\'s name in the flow cell');
+    assertSame(1, preg_match('/data-label="RCF requests go to">\s*Abe Second\s*<\/td>/', $html), 'the approver\'s name in the flow cell');
     assertTrue(!str_contains($html, 'Sign in as Ada Admin'), 'never the caller');
     assertTrue(!str_contains($html, 'Sign in as Gus Gone'), 'never a deactivated account');
 });

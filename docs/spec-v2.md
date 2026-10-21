@@ -2256,13 +2256,16 @@ Three rules were stated with it and all three hold:
 
 What did **not** change is everything a person does not read: the routes
 (`/rcf-entries`, `/rcf-approvals`, `/rcf-consolidate`), the capabilities
-(`create_rcf_entries` …), the tables (`rcf_entry` …), the audit verbs and
-the class names all keep *entry*. The body copy of the three screens, the
-strip above them (*Your entries · Waiting for you · Ready to generate*)
-and the flash messages also still say *entry* — the rename was asked for
-on the menu, and a vocabulary change across 140 lines of copy, the
-CLAUDE.md and a thousand lines of tests is a decision to take on purpose
-(V2-28).
+(`create_rcf_entries` …), the tables (`rcf_entry` …), the audit verbs'
+stored values (`submit_rcf_entry` …) and the class names all keep *entry*.
+Everything a person **does** read says *request*, on the owner's word
+(V2-28, decided the same day): the body copy of the three screens, the
+strip above them (*Your requests · Waiting for you · Ready to generate*),
+the flash messages, the refusal sentences, Track RCFs' *RCF requests not
+yet on a form*, the form page's *The requests this form was made from*,
+Create Approval Flow, Sign In As, and the Audit Log's verb labels (*RCF
+request submitted* …). Comments and this specification keep the old word
+where they record what was built, so the history still reads.
 
 ### 18.2 One table, two renderings
 
@@ -2357,7 +2360,7 @@ Four defects, each fixed where it lived and each pinned by a test:
 
 | # | Question | Assumption today |
 | --- | --- | --- |
-| V2-28 | Should **entry** become **request** everywhere a person reads it — the body copy of the three screens, the strip, the flash messages, Track RCFs' *RCF entries not yet on a form* — now that the menu says *Requests*? | Not yet: the menu and the titles were what was asked for, and the rest is one decision to make on purpose. The routes, capabilities, tables and audit verbs would keep *entry* either way. |
+| V2-28 | Should **entry** become **request** everywhere a person reads it — the body copy of the three screens, the strip, the flash messages, Track RCFs' *RCF entries not yet on a form* — now that the menu says *Requests*? | **Yes — decided by the owner and done in the same phase.** Every word a person reads says *request*; the routes, capabilities, tables, audit verb values and class names keep *entry*, and a test holds the line between the two. |
 | V2-29 | Should the drop-down **close on a tap outside it or on Escape**? | Not without a script or the `popover` API; `popover` light-dismisses but cannot be anchored under the button without CSS anchor positioning, which is not yet safe to rely on. Revisit when it is. |
 | V2-30 | Should the desk **strip** carry a Vice Chairman's *Create RCF Requests* beside Status and Roster, now that the RCF screens are the first group? | Not yet. The strip is the four screens a person works in all day; the drop-down is one click. |
 | V2-31 | On a phone the acting-as row is three lines when the Admin's name is long (*Back to Master Administrator (Admin)*). | Left as it is: an Admin's testing tool, and the row has to say whose session it is. |

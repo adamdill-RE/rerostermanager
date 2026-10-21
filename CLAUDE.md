@@ -706,8 +706,9 @@ exactly as it is. Create Forms is one officer, one form, sent on by hand —
 a Captain's job, and it stays. **Create RCF Entries** — titled *Create RCF
 Requests* on the menu and the screen since Phase 14.4, as *Approve RCF
 Entries* is *Approve RCF Requests* and *Consolidate RCFs* is *Export
-Approved Requests to RCF Forms*; the routes, capabilities, tables and
-audit verbs keep *entry* (spec-v2 §18.1) — is for Vice Chairmen
+Approved Requests to RCF Forms*, and *request* is the word in every line a
+person reads; the routes, capabilities, tables, audit verb values and class
+names keep *entry* (spec-v2 §18.1) — is for Vice Chairmen
 and above: one requested change at a time, through the RCF's own grid
 (`app/views/rcf-grid.php`, one partial drawn by both screens from one
 `RcfPage::page()`), routed up a chain of approvers and cut by the account at

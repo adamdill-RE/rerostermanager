@@ -927,7 +927,7 @@ test('the four screens render, escape what they show, carry the strip and stay i
     assertSame(0, substr_count($html, 'Echo <b>'), 'and never raw');
     assertTrue(str_contains($html, 'Returned by Bob Approver'), 'the returned one carries its note');
     assertTrue(str_contains($html, 'value="withdraw"'), 'a pending one can be withdrawn');
-    assertTrue(str_contains($html, 'aria-label="RCF entries"'), 'the strip');
+    assertTrue(str_contains($html, 'aria-label="RCF requests"'), 'the strip');
     assertSame(0, substr_count($html, '<script'));
     assertTrue(strlen($html) < 100 * 1024, 'Create RCF Entries is ' . strlen($html) . ' bytes');
 
@@ -1007,7 +1007,7 @@ test('the four screens render, escape what they show, carry the strip and stay i
             'entries' => $entries->pendingFor($dc),
         ],
     ]);
-    assertTrue(str_contains($html, 'RCF entries not yet on a form'));
+    assertTrue(str_contains($html, 'RCF requests not yet on a form'));
     assertTrue(str_contains($html, 'Waiting on Bob Approver'));
     assertTrue(str_contains($html, '<span class="chip chip-info">Consolidated</span>'), 'the consolidated forms are marked');
     assertTrue(strlen($html) < 100 * 1024, 'Track RCFs is ' . strlen($html) . ' bytes');
@@ -1019,7 +1019,7 @@ test('the four screens render, escape what they show, carry the strip and stay i
         'entries' => $entries->onForm($dc, $formId),
     ]);
     assertTrue(str_contains($html, 'Consolidated</span> by Carl Chair'));
-    assertTrue(str_contains($html, 'The entries this form was made from'));
+    assertTrue(str_contains($html, 'The requests this form was made from'));
     assertTrue(str_contains($html, 'the first download is from here'));
     // Never downloaded yet, so not "again" (Phase 14.3); a Create Forms form
     // left as a file when it was made, so it always is.

@@ -227,7 +227,7 @@ final class RcfEntries
 
         if ((string) ($form['subcommittee'] ?? '') === '') {
             return ['created' => [], 'state' => '', 'approver' => null,
-                'refused' => 'Choose the sub-committee these entries are about before submitting them.'];
+                'refused' => 'Choose the sub-committee these requests are about before submitting them.'];
         }
         if ($filled === []) {
             return ['created' => [], 'state' => '', 'approver' => null,
@@ -237,14 +237,14 @@ final class RcfEntries
         $route = $this->flow->routeFor($requester);
         if ($route['state'] === 'unset') {
             return ['created' => [], 'state' => 'unset', 'approver' => null,
-                'refused' => 'Nobody is set as your approver yet, so your entries cannot be submitted. '
+                'refused' => 'Nobody is set as your approver yet, so your requests cannot be submitted. '
                     . 'An Admin draws who approves whom on Create Approval Flow.'];
         }
 
         $approver = $route['approver'] === null ? null : $this->account($route['approver']);
         if ($route['state'] === 'approver' && $approver === null) {
             return ['created' => [], 'state' => 'unset', 'approver' => null,
-                'refused' => 'The account set as your approver no longer exists or is inactive, so your entries '
+                'refused' => 'The account set as your approver no longer exists or is inactive, so your requests '
                     . 'cannot be submitted. An Admin redraws it on Create Approval Flow.'];
         }
 
