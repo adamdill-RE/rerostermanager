@@ -1050,6 +1050,20 @@ select:focus-visible { outline: 3px solid var(--rodeo-orange); outline-offset: 1
 
 @media (min-width: 720px) {
     .rcf { table-layout: fixed; }
+    /* The eleven columns' widths, here and not inline on the column elements:
+       an inline width still applies on a phone, where every row is a
+       stacked card and a 3% first column made the card 3% wide. */
+    .rcf col:nth-child(1) { width: 3%; }
+    .rcf col:nth-child(2) { width: 6%; }
+    .rcf col:nth-child(3) { width: 5%; }
+    .rcf col:nth-child(4) { width: 10%; }
+    .rcf col:nth-child(5) { width: 15%; }
+    .rcf col:nth-child(6) { width: 10%; }
+    .rcf col:nth-child(7) { width: 10%; }
+    .rcf col:nth-child(8) { width: 4%; }
+    .rcf col:nth-child(9) { width: 11%; }
+    .rcf col:nth-child(10) { width: 12%; }
+    .rcf col:nth-child(11) { width: 14%; }
     .rcf th, .rcf td { padding: .2rem .25rem; vertical-align: middle; }
     .rcf thead th { font-size: .78rem; line-height: 1.25; white-space: normal; }
     .rcf input, .rcf select {

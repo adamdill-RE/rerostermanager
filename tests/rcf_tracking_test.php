@@ -100,6 +100,25 @@ test('nothing in the tracking code deletes a form, a line, or anything the roste
     }
 });
 
+test('"in the roster" is derived from the member NUMBER and never from a name', function (): void {
+    // Phase 14.5 (spec-v2 §19.1): the owner's rule — "make sure your track
+    // RCF functions all use the member number only as it is the source of
+    // truth". Every join from a kept line to import_change is on the
+    // number, and a line with no number lands nowhere. The one place a name
+    // is read is the search box, which finds forms and decides nothing.
+    $source = tk_source('app/src/Forms/RcfTracking.php');
+
+    assertTrue(substr_count($source, 'c.member_number = r.member_number') >= 2, 'landed() and the EXISTS predicate join on the number');
+    assertSame(0, preg_match('/c\.member_name|r\.member_name\s*=|member_name\s*=\s*[cr]\./', $source), 'and never on a name');
+    assertTrue(str_contains($source, "r.member_number <> ''"), 'a line with no number has not landed');
+
+    // The entries read landed() through RcfTracking rather than deriving
+    // their own answer.
+    $entries = tk_source('app/src/Forms/RcfEntries.php');
+    assertTrue(str_contains($entries, '->landed($rowIds)'), 'one derivation');
+    assertSame(0, preg_match('/(JOIN|FROM)\s+import_change/', $entries), 'and no join of its own');
+});
+
 test('the change summary reads the line in the form\'s own vocabulary', function (): void {
     $line = static fn (array $o): array => $o + [
         'type' => '', 'new_title' => '', 'previous_title' => '', 'remove_reason' => '', 'new_subcommittee' => '',
@@ -265,9 +284,9 @@ function tk_captain_form(): array
         'subcommittee' => 't:' . $f['teams']['a'],
         'date'         => '2027-03-01',
         'row'          => [
-            0 => ['type' => 'T', 'member' => $f['members']['m1']['number'], 'new_title' => 'Assistant Captain'],
+            0 => ['type' => 'T', 'member_number' => $f['members']['m1']['number'], 'new_title' => 'Assistant Captain'],
             // Row three, not two: a gap the regeneration has to print blank.
-            2 => ['type' => 'A', 'member' => 'Newcomer Sample', 'sponsor' => 'Erin Delta', 'rookie' => '1', 'wait_list' => '1'],
+            2 => ['type' => 'A', 'member_name' => 'Newcomer Sample', 'sponsor' => 'Erin Delta', 'rookie' => '1', 'wait_list' => '1'],
         ],
     ]);
 }
@@ -385,7 +404,7 @@ test('an officer sees the forms they made; an Executive Officer sees everybody e
     $capForm = tk_keep('cap');
     $vcForm  = tk_keep('vc', (new RcfPage(tk_pdo()))->formFromInput(tk_user('vc'), [
         'subcommittee' => 't:' . $f['teams']['b'],
-        'row'          => [0 => ['type' => 'R', 'member' => $f['members']['m3']['number'], 'remove_reason' => '4']],
+        'row'          => [0 => ['type' => 'R', 'member_number' => $f['members']['m3']['number'], 'remove_reason' => '4']],
     ]));
 
     $tracking = new RcfTracking(tk_pdo());
@@ -576,8 +595,8 @@ test('a line has landed when an import since says what it asked for, and not bef
     $id = tk_keep('cap', (new RcfPage($pdo))->formFromInput(tk_user('cap'), [
         'subcommittee' => 't:' . $f['teams']['a'],
         'row'          => [
-            0 => ['type' => 'T', 'member' => $m1, 'new_title' => 'Assistant Captain'],
-            1 => ['type' => 'R', 'member' => $m2, 'remove_reason' => '4'],
+            0 => ['type' => 'T', 'member_number' => $m1, 'new_title' => 'Assistant Captain'],
+            1 => ['type' => 'R', 'member_number' => $m2, 'remove_reason' => '4'],
         ],
     ]));
     $pdo->exec("UPDATE rcf SET generated_at = DATE_SUB(UTC_TIMESTAMP(), INTERVAL 1 DAY) WHERE id = {$id}");
@@ -620,7 +639,7 @@ test('a member is found on any form the caller may see, by number or by name, ev
     $capForm  = tk_keep('cap');
     $vcForm   = tk_keep('vc', (new RcfPage(tk_pdo()))->formFromInput(tk_user('vc'), [
         'subcommittee' => 't:' . $f['teams']['b'],
-        'row'          => [0 => ['type' => 'R', 'member' => $f['members']['m3']['number'], 'remove_reason' => '4']],
+        'row'          => [0 => ['type' => 'R', 'member_number' => $f['members']['m3']['number'], 'remove_reason' => '4']],
     ]));
     $tracking = new RcfTracking(tk_pdo());
 
@@ -655,7 +674,7 @@ test('the member card lists every form a member is on, saying which the caller m
     // The Vice Chairman also puts m1 on a form — a transfer onto their team.
     $vcForm = tk_keep('vc', (new RcfPage(tk_pdo()))->formFromInput(tk_user('vc'), [
         'subcommittee' => 't:' . $f['teams']['b'],
-        'row'          => [0 => ['type' => 'S', 'member' => $f['members']['m1']['number'] . ' - Robert Alpha', 'new_subcommittee' => 'TK Bus Ops Team B']],
+        'row'          => [0 => ['type' => 'S', 'member_number' => $f['members']['m1']['number'] . ' - Robert Alpha', 'new_subcommittee' => 'TK Bus Ops Team B']],
     ]));
 
     $lines = $tracking->forMember(tk_user('cap'), $f['members']['m1']['id'], $f['members']['m1']['number']);

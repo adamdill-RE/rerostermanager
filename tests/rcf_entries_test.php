@@ -127,6 +127,7 @@ test('the grid is one partial drawn by both screens, and the three workflow scre
     assertTrue(str_contains(af_source('app/views/rcf-entries.php'), "require __DIR__ . '/rcf-grid.php'"), 'and so does Create RCF Entries');
     $grid = af_source('app/views/rcf-grid.php');
     assertSame(1, substr_count($grid, '<datalist id="rcf-members">'));
+    assertSame(1, substr_count($grid, '<datalist id="rcf-member-names">'));
     assertSame(1, substr_count($grid, '<datalist id="rcf-subcommittees">'));
     assertSame(1, substr_count($grid, '<datalist id="rcf-officers">'));
 
@@ -452,8 +453,8 @@ function af_vc_form(array $rows = null): array
     return (new RcfPage(af_pdo()))->formFromInput(af_user('vc'), [
         'subcommittee' => 't:' . $f['teams']['b'],
         'row'          => $rows ?? [
-            0 => ['type' => 'T', 'member' => $f['members']['m3']['number'], 'new_title' => 'Assistant Captain'],
-            1 => ['type' => 'A', 'member' => 'Newcomer Sample', 'sponsor' => 'Erin Delta', 'rookie' => '1', 'wait_list' => '1'],
+            0 => ['type' => 'T', 'member_number' => $f['members']['m3']['number'], 'new_title' => 'Assistant Captain'],
+            1 => ['type' => 'A', 'member_name' => 'Newcomer Sample', 'sponsor' => 'Erin Delta', 'rookie' => '1', 'wait_list' => '1'],
         ],
     ]);
 }
@@ -529,6 +530,22 @@ test('an Admin draws the chain vc → dvc → dc, a loop is refused by name with
     assertSame(['state' => 'top', 'approver' => null], $flow->routeFor(af_user('dc')));
     assertSame(['state' => 'top', 'approver' => null], $flow->routeFor(af_user('adm')));
 
+    // How many route to each account — what Create RCF Requests uses to
+    // tell a final approver whose own row is not set which fix they need
+    // (Phase 14.5, spec-v2 §19.2). The chain is vc → dvc → dc.
+    assertSame(1, $accounts[$f['users']['dvc']]['approves'], 'the Vice Chairman routes to the Division Vice Chairman');
+    assertSame(1, $accounts[$f['users']['dc']]['approves']);
+    assertSame(0, $accounts[$f['users']['vc']]['approves'], 'nobody routes to the Vice Chairman');
+    assertSame(1, $flow->approvesCount($f['users']['dc']));
+    assertSame(0, $flow->approvesCount($f['users']['adm']));
+    assertSame([7 => 2, 9 => 1], ApprovalFlow::approvesCounts([
+        1 => ['approver' => 7, 'top' => false],
+        2 => ['approver' => 7, 'top' => false],
+        7 => ['approver' => 9, 'top' => false],
+        9 => ['approver' => null, 'top' => true],
+    ]), 'pure, over a table');
+    assertSame(1, af_entries()->routeFor(af_user('dc'))['approves'], 'and the entries read it through the flow');
+
     // dc → vc would close the circle: refused, named, nothing written.
     $refused = $flow->save(af_user('adm'), ['approver' => [(string) $f['users']['dc'] => (string) $f['users']['vc']]]);
     assertSame(0, $refused['saved']);
@@ -603,7 +620,7 @@ test('submitting makes one entry per filled row, resolved like a line of a form,
 
     // Blank grid and no sub-committee are refused in words, writing nothing.
     assertTrue(str_contains((string) $entries->submit(af_user('vc'), $f['year'], af_vc_form([]))['refused'], 'Nothing is filled in'));
-    $noTeam = (new RcfPage(af_pdo()))->formFromInput(af_user('vc'), ['row' => [0 => ['type' => 'R', 'member' => 'Somebody']]]);
+    $noTeam = (new RcfPage(af_pdo()))->formFromInput(af_user('vc'), ['row' => [0 => ['type' => 'R', 'member_name' => 'Somebody']]]);
     assertTrue(str_contains((string) $entries->submit(af_user('vc'), $f['year'], $noTeam)['refused'], 'sub-committee'));
     assertSame(2, count($entries->mine(af_user('vc'))));
 });
@@ -661,8 +678,8 @@ test('a return needs a note and ends the entry with it; a withdrawal is the requ
     $entries = af_entries();
 
     $created = $entries->submit(af_user('vc'), $f['year'], af_vc_form([
-        0 => ['type' => 'R', 'member' => $f['members']['m3']['number'], 'remove_reason' => '4'],
-        1 => ['type' => 'R', 'member' => 'Gone Sample', 'remove_reason' => '1'],
+        0 => ['type' => 'R', 'member_number' => $f['members']['m3']['number'], 'remove_reason' => '4'],
+        1 => ['type' => 'R', 'member_name' => 'Gone Sample', 'remove_reason' => '1'],
     ]))['created'];
     [$first, $second] = $created;
 
@@ -708,7 +725,7 @@ test('the top of the chain is approved on submission, with a step that says so',
 
     $result = $entries->submit(af_user('dc'), $f['year'], (new RcfPage(af_pdo()))->formFromInput(af_user('dc'), [
         'subcommittee' => 't:' . $f['teams']['a'],
-        'row'          => [0 => ['type' => 'T', 'member' => $f['members']['m1']['number'], 'new_title' => 'Captain']],
+        'row'          => [0 => ['type' => 'T', 'member_number' => $f['members']['m1']['number'], 'new_title' => 'Captain']],
     ]));
     assertSame('top', $result['state']);
     assertSame(1, count($result['created']));
@@ -855,13 +872,13 @@ test('by team the same entries are two forms, each headed Division - Team', func
     $page = new RcfPage($pdo);
     $entries->submit(af_user('dc'), $f['year'], $page->formFromInput(af_user('dc'), [
         'subcommittee' => 't:' . $f['teams']['a'],
-        'row'          => [0 => ['type' => 'R', 'member' => $f['members']['m2']['number'], 'remove_reason' => '5']],
+        'row'          => [0 => ['type' => 'R', 'member_number' => $f['members']['m2']['number'], 'remove_reason' => '5']],
     ]));
     $entries->submit(af_user('dc'), $f['year'], $page->formFromInput(af_user('dc'), [
         'subcommittee' => 't:' . $f['teams']['b'],
         'row'          => [
-            0 => ['type' => 'A', 'member' => 'Second Newcomer', 'sponsor' => 'Carl Chair'],
-            1 => ['type' => 'A', 'member' => 'Third Newcomer', 'sponsor' => 'Carl Chair'],
+            0 => ['type' => 'A', 'member_name' => 'Second Newcomer', 'sponsor' => 'Carl Chair'],
+            1 => ['type' => 'A', 'member_name' => 'Third Newcomer', 'sponsor' => 'Carl Chair'],
         ],
     ]));
     $ids = array_map(static fn (array $e): int => (int) $e['id'], $entries->readyFor(af_user('dc')));
@@ -910,7 +927,7 @@ test('the four screens render, escape what they show, carry the strip and stay i
     $vc      = af_user('vc');
 
     // One more pending entry so every list has something in it.
-    $entries->submit($vc, $f['year'], af_vc_form([0 => ['type' => 'T', 'member' => $f['members']['m3']['number'], 'new_title' => 'Captain']]));
+    $entries->submit($vc, $f['year'], af_vc_form([0 => ['type' => 'T', 'member_number' => $f['members']['m3']['number'], 'new_title' => 'Captain']]));
 
     $html = af_render('rcf-entries', 'Create RCF Requests', [
         'user'   => $vc,
@@ -940,7 +957,22 @@ test('the four screens render, escape what they show, carry the strip and stay i
         'route'  => ['state' => 'unset', 'approver' => null],
     ]);
     assertTrue(str_contains($cap, 'Nobody is set as your approver yet'));
+    assertTrue(str_contains($cap, 'marks you <strong>Top of the chain</strong>'), 'and the sentence names both fixes');
     assertSame(0, substr_count($cap, 'value="submit"'), 'no submit when entries would be refused');
+
+    // The final approver's trap (Phase 14.5, spec-v2 §19.2): an account
+    // other people route to, whose own row was never drawn. The sentence
+    // says that the fix is "top of the chain", not "an approver".
+    $top = af_render('rcf-entries', 'Create RCF Requests', [
+        'user'   => af_user('adm'),
+        'rcf'    => (new RcfPage($pdo))->page(af_user('adm'), []),
+        'mine'   => [],
+        'counts' => ['mine' => 0, 'waiting' => 0, 'ready' => 0],
+        'route'  => ['state' => 'unset', 'approver' => null, 'approves' => 3],
+    ]);
+    assertTrue(str_contains($top, '3 accounts route their requests to you'), 'who routes to them');
+    assertTrue(str_contains($top, 'marks you <strong>Top of the chain</strong>'), 'the fix, by its name on the flow screen');
+    assertSame(0, substr_count($top, 'value="submit"'));
 
     $dvc  = af_user('dvc');
     $html = af_render('rcf-approvals', 'Approve RCF Requests', [
@@ -1228,7 +1260,7 @@ test('voiding a consolidated form takes it and its entries out of view for every
     // was sent, and the record of that stands.
     $sent = $store->store($dc, $f['year'], (new RcfPage($pdo))->formFromInput($dc, [
         'subcommittee' => 't:' . $f['teams']['a'],
-        'row'          => [0 => ['type' => 'T', 'member' => $f['members']['m1']['number'], 'new_title' => 'Captain']],
+        'row'          => [0 => ['type' => 'T', 'member_number' => $f['members']['m1']['number'], 'new_title' => 'Captain']],
     ]));
     assertSame(null, $entries->void(af_user('adm'), $sent, 'Test.'));
     assertTrue($tracking->one($dc, $sent) !== null, 'still visible');

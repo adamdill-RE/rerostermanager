@@ -57,6 +57,12 @@ foreach ($accounts as $account) {
             Nothing is routed to a default.<?php if ($unset > 0) { ?>
                 <span class="chip chip-warn"><?= e((string) $unset) ?> not set</span><?php } ?></li>
     </ul>
+    <p class="hint">
+        Being somebody&rsquo;s approver places nobody. A Division Chairman the Vice
+        Chairmen route to still needs their own row drawn &mdash; <strong>Top of the
+        chain</strong> &mdash; or they can approve everybody&rsquo;s requests and submit none
+        of their own.
+    </p>
     <p class="hint">Only accounts at Senior Officer and above are listed: Captains fill in Roster Change Forms on Create Forms rather than submitting requests.</p>
 </div>
 
@@ -102,7 +108,9 @@ foreach ($accounts as $account) {
                     } ?>
                 <?php } ?></td>
                 <td data-label="Chain"><?php if ($account['chain_end'] === 'unset') { ?>
-                        <span class="why">requests refused until set</span>
+                        <span class="why">requests refused until set</span><?php
+                        if ((int) ($account['approves'] ?? 0) > 0) { ?>
+                        <span class="chip chip-warn">approves <?= e((string) $account['approves']) ?> &mdash; set to top of the chain?</span><?php } ?>
                     <?php } elseif ($account['chain'] === []) { ?>
                         <span class="why">approves their own; generates the form</span>
                     <?php } else { ?>

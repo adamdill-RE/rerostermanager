@@ -24,7 +24,7 @@ declare(strict_types=1);
  * @var array<string, mixed>                 $rcf     RcfPage::page()'s answer
  * @var array<int, array<string, mixed>>     $mine    RcfEntries::mine()
  * @var array{mine: int, waiting: int, ready: int} $counts
- * @var array{state: string, approver: ?array{id: int, name: string}} $route
+ * @var array{state: string, approver: ?array{id: int, name: string}, approves?: int} $route
  */
 
 use Rerm\Csrf;
@@ -66,10 +66,23 @@ $back      = 'rcf-entries';
         <p>You are at the <strong>top of the chain</strong>: your requests are approved the moment you
             submit them, and you put them on a form yourself on
             <a href="<?= e($app->url('rcf-consolidate')) ?>">Export Approved Requests to RCF Forms</a>.</p>
+    <?php } elseif ((int) ($route['approves'] ?? 0) > 0) { ?>
+        <?php /* The final approver's trap (Phase 14.5, spec-v2 §19.2): other
+                 people's requests end with this account, and its own are
+                 refused, because being somebody's approver places nobody.
+                 Say which of the two fixes this is. */ ?>
+        <p><span class="chip chip-warn">Nobody is set as your approver yet</span>
+            <?= e((string) ($route['approves'] ?? 0)) ?> <?= (int) ($route['approves'] ?? 0) === 1 ? 'account routes its' : 'accounts route their' ?> requests to you,
+            but your own row on Create Approval Flow is <strong>not set</strong>,
+            so your own requests cannot be submitted. If you are the final approver, an Admin
+            marks you <strong>Top of the chain</strong> there: your requests are then approved the
+            moment you submit them, and you put them on a form with everything you approved.
+            Nothing you type here is routed to a default.</p>
     <?php } else { ?>
         <p><span class="chip chip-warn">Nobody is set as your approver yet</span>
-            Your requests cannot be submitted until an Admin draws who approves them, on
-            Create Approval Flow. Nothing you type here is routed to a default.</p>
+            Your requests cannot be submitted until an Admin draws, on Create Approval Flow,
+            who approves them &mdash; or marks you <strong>Top of the chain</strong>, if nobody
+            does. Nothing you type here is routed to a default.</p>
     <?php } ?>
 </div>
 

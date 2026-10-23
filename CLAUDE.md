@@ -632,9 +632,21 @@ Four rules, and the first is the whole feature:
   it. Its teams are real and are offered, under their own names.
 
 The screen also carries the application's only genuine byte-budget tension —
-twenty-five rows of ten controls against spec §10's 100KB — and the three
+twenty-five rows of eleven controls against spec §10's 100KB — and the three
 measured decisions that resolve it (shared datalists, five rows drawn at a
 time, a 300-member picker cap) are in spec-v2 §2.4 with the numbers.
+
+**A member on the grid is two cells, and the number decides** (Phase 14.5,
+spec-v2 §19.1). `HLS&R no.` and `Member name` are the paper form's two
+columns; there is no script, so `RcfPage::entry()` is where they fill each
+other in. A number on the roster, in the caller's scope, carries the
+roster's name whatever was typed beside it, so a kept line about a known
+member can never carry a name the roster does not. A name typed with the
+number blank picks one person off the list the screen offered — exact,
+unique, the chosen sub-committee only — and takes their number; two people
+with that name is nobody. A newcomer is typed in both cells and goes on as
+typed. Tracking joins on the number and never a name, and a test reads
+`RcfTracking` for it.
 
 ### Every form is kept, and every line of it is tracked
 
@@ -722,6 +734,10 @@ the top into one or more **consolidated** forms kept through the same
   never routed to a default. An Admin with no row is the top. A save that
   would make a loop is refused by name and writes nothing. The table is
   current state like `app_user_team`; its history is `set_approver`.
+  **Being somebody's approver places nobody**: a Division Chairman the
+  Vice Chairmen route to still needs their own row drawn *top of the
+  chain*, or they approve everybody's requests and can submit none. Both
+  screens say so beside the row (`approves`, Phase 14.5, spec-v2 §19.2).
 - **An entry is a record.** `rcf_entry` carries the ten cells as `rcf_row`
   does plus the sub-committee it is about; `rcf_entry_step` is every hand
   it passed through. Both are on `tests/admin_test.php`'s protected list,
@@ -801,6 +817,7 @@ Each phase ends shippable. `docs/spec-v1.md` carries the detail through 8.7,
 | **14.2 · After the form** | A generated entry carries HLSR's answer on every list in the chain — *not yet in the roster* or **In the roster**, with the import — and one trail line spelling every hand it passed through; a consolidated form can be **voided** by its generator or an Admin, with a note, taking it and its entries out of view for everybody and deleting nothing (`014_rcf_void.sql`) | A Vice Chairman reads on their own list that Rodeo Houston processed their request, and a test run of the flow leaves no trace on anybody's screen but the Audit Log's |
 | **14.3 · The download, one tap nearer** | One generated form lands on its own page; every row of *Forms you have generated* carries a Download button, the same logged POST as the form's page; a consolidated form says *again* only once it has been downloaded | A Division Chairman has the file in hand the moment the form is generated, and the rule that Generate keeps rather than downloads is unchanged |
 | **14.4 · The menu by the owner's groups, and the shell** | The menu reordered into RCFs, Dues & Compliance, Team Functions and Administer, three RCF screens retitled on the menu and the page, written once in `Rerm\Menu`; a `<details>` drop-down of every screen the caller may use in the bar of every signed-in screen, the bar one line on a phone; the brand a link home; and the audit's four fixes — the desktop toggle sizing, one control-height token, the bar on narrow columns, the member card's select | A Captain on a 360px phone sees 56px of bar instead of 130, reaches any screen in two taps, and an Admin reads all twenty-two in two columns without scrolling |
+| **14.5 · Two cells for one person, and the top of the chain** | The RCF grid's member control split into `HLS&R no.` and `Member name`, the number deciding: a known number carries the roster's name, a picked name takes its number, a newcomer is typed in both; tracking held to the number by a test; Create RCF Requests and Create Approval Flow name *top of the chain* as the missing row for a final approver whose own row was never drawn | A Division Chairman learns from the screen which one row an Admin has to draw, and a newcomer typed as "Bob" cannot stand beside a number the roster spells "Robert" |
 | **10.x · v2** | Recruiting and retention automation; multi-year contact history (OI-12) | see `docs/spec-v2.md` |
 
 Phases 4 and 5 are the product. Everything before them is plumbing and
