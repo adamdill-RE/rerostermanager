@@ -83,6 +83,14 @@ URL and cookie path is built from `app.base_path` (`/rerm/`) via
   `file` whatever config says. CI fails the build if the committed defaults
   could deliver. An import loads ~1,950 real addresses — a stray loop reaches
   real people and cannot be recalled. Full design: `docs/spec-v1.md` §3.3a.
+  **Two messages exist and no bulk path**: password recovery, and since
+  Phase 14.6 the note to the account RCF requests have just been routed to
+  (`Rerm\Forms\ApprovalNotice`, spec-v2 §20.2) — a Vice Chairman or above,
+  re-checked against the recipient's effective level; one message per
+  recipient per request; **no member's details in it**; sent after the
+  commit and never able to fail the write; behind the interlocks and its own
+  switch, `mail.rcf_approval_notices`. A return, a withdrawal and a
+  generation email nobody.
 - **Nothing ever deletes a member or a contact.** Purge is `purged_at`; every
   foreign key referencing `member` is `RESTRICT`, never `CASCADE`. Contact
   history must still be queryable years from now (`docs/spec-v1.md` §5.5).
@@ -646,7 +654,12 @@ number blank picks one person off the list the screen offered — exact,
 unique, the chosen sub-committee only — and takes their number; two people
 with that name is nobody. A newcomer is typed in both cells and goes on as
 typed. Tracking joins on the number and never a name, and a test reads
-`RcfTracking` for it.
+`RcfTracking` for it. **The name is `Last, First`** (Phase 14.6, spec-v2
+§20.3): `RcfPage::memberName()` builds it from the roster's two name
+columns, never the preferred name, and it is what the grid fills in, the
+name list offers, and a kept line carries; a name typed forwards still
+picks. The officer's own name on `G4` stays `First Last, Title`, and a form
+kept before the change keeps what it printed.
 
 ### Every form is kept, and every line of it is tracked
 
@@ -818,6 +831,7 @@ Each phase ends shippable. `docs/spec-v1.md` carries the detail through 8.7,
 | **14.3 · The download, one tap nearer** | One generated form lands on its own page; every row of *Forms you have generated* carries a Download button, the same logged POST as the form's page; a consolidated form says *again* only once it has been downloaded | A Division Chairman has the file in hand the moment the form is generated, and the rule that Generate keeps rather than downloads is unchanged |
 | **14.4 · The menu by the owner's groups, and the shell** | The menu reordered into RCFs, Dues & Compliance, Team Functions and Administer, three RCF screens retitled on the menu and the page, written once in `Rerm\Menu`; a `<details>` drop-down of every screen the caller may use in the bar of every signed-in screen, the bar one line on a phone; the brand a link home; and the audit's four fixes — the desktop toggle sizing, one control-height token, the bar on narrow columns, the member card's select | A Captain on a 360px phone sees 56px of bar instead of 130, reaches any screen in two taps, and an Admin reads all twenty-two in two columns without scrolling |
 | **14.5 · Two cells for one person, and the top of the chain** | The RCF grid's member control split into `HLS&R no.` and `Member name`, the number deciding: a known number carries the roster's name, a picked name takes its number, a newcomer is typed in both; tracking held to the number by a test; Create RCF Requests and Create Approval Flow name *top of the chain* as the missing row for a final approver whose own row was never drawn | A Division Chairman learns from the screen which one row an Admin has to draw, and a newcomer typed as "Bob" cannot stand beside a number the roster spells "Robert" |
+| **14.6 · The menu on sign-in, the approver's email, and `Last, First`** | A sign-in lands on the menu for every level, `/dashboard` one tap away; the application's second email — `Rerm\Forms\ApprovalNotice`, to the Vice Chairman or above that RCF requests have just been routed to, on submission and on an approval that passes them on, one message per recipient, no member's details in it, after the commit, behind the interlocks and `mail.rcf_approval_notices`; the flash says emailed or why not; the MEMBER NAME cell is `Last, First` from the roster, matched either way round | A Division Chairman learns from their inbox that three requests are waiting, opens the link, and reads every name last name first |
 | **10.x · v2** | Recruiting and retention automation; multi-year contact history (OI-12) | see `docs/spec-v2.md` |
 
 Phases 4 and 5 are the product. Everything before them is plumbing and

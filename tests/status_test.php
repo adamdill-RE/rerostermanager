@@ -42,9 +42,27 @@ test('the dashboard route is "dashboard", never /status — that is the health c
 });
 
 test('the landing path stays SIGNED_IN, the menu has its own route, the write is guarded', function (): void {
-    assertSame(Routes::SIGNED_IN, Routes::guard(''), 'the landing swap is the handler\'s, not the guard\'s');
+    assertSame(Routes::SIGNED_IN, Routes::guard(''), 'what the landing path renders is the handler\'s, not the guard\'s');
     assertSame(Routes::SIGNED_IN, Routes::guard('menu'));
     assertSame(Capability::LogContact->value, Routes::guard('log-contact'));
+});
+
+test('a sign-in lands on the menu, for every level, and the dashboard keeps its own route', function (): void {
+    // Phase 14.6 (spec-v2 §20.1): the owner's rule — on login, the main
+    // menu. Read from the front controller, because the landing page is a
+    // dispatch arm and not a route: the arm for '' renders the menu and no
+    // longer swaps My Roster Status in for anyone, and a successful login
+    // 303s to that arm (or to /password for the forced first change).
+    $source = (string) file_get_contents(__DIR__ . '/../public/index.php');
+
+    assertSame(1, preg_match("/case '':\\s*\\n(.*?)\\n\\s*break;/s", $source, $arm), 'the landing arm is there');
+    assertTrue(str_contains($arm[1], "render(\$app, 'menu', 'Menu'"), 'and it renders the menu');
+    assertSame(0, substr_count($arm[1], 'dashboard_screen('), 'with no swap to the dashboard');
+    assertSame(0, substr_count($arm[1], 'mayUse('), 'for every level alike');
+
+    assertTrue(str_contains($source, "redirect(\$app, (int) \$account['must_change_password'] === 1 ? 'password' : '');"),
+        'a login lands on the landing page, or on the forced first change');
+    assertTrue(str_contains($source, "case 'dashboard':\n        dashboard_screen(\$app, \$user);"), 'My Roster Status is one tap away, by name');
 });
 
 test('the renamed labels and their definitions come from the one enum', function (): void {

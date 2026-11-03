@@ -336,7 +336,7 @@ test('a produced form is kept as printed: header, filled rows only, at their pos
 
     assertSame('T', $rows[0]['type']);
     assertSame($f['members']['m1']['id'], (int) $rows[0]['member_id'], 'the number resolved to the member');
-    assertSame('Robert Alpha', $rows[0]['member_name'], 'the name the roster spelled');
+    assertSame('Alpha, Robert', $rows[0]['member_name'], 'the roster\'s name, last name first');
     assertSame('Committee Member', $rows[0]['previous_title'], 'filled in from the roster at the time');
     assertSame('Assistant Captain', $rows[0]['new_title']);
 

@@ -52,7 +52,8 @@ if (!in_array($transport, ['log', 'file', 'send'], true)) {
     $problems[] = "mail.transport must be one of log|file|send; found " . var_export($transport, true);
 }
 
-// Interlock 4. Recovery sends exactly one message. A large ceiling here would
+// Interlock 4. Recovery sends exactly one message and an approval notice is one
+// per recipient (Phase 14.6). A large ceiling here would
 // let a loop through before anything noticed.
 $max = $mail['max_per_request'] ?? null;
 if (!is_int($max) || $max < 1 || $max > 25) {

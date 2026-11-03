@@ -716,22 +716,41 @@ test('two cells make one member: the number cell is read forgivingly, and a name
     assertSame(['', ''], RcfPage::memberCells([]));
 });
 
+test('the MEMBER NAME cell is Last, First from the roster, never the preferred name', function (): void {
+    // Phase 14.6 (spec-v2 §20.3): the owner's rule — the form shows the
+    // member as lastname, firstname. Built from the two roster columns;
+    // whichever is blank is left out; neither falls back to the name as
+    // Rodeo Houston spells it, then the number, like formalName().
+    assertSame('Alpha, Robert', RcfPage::memberName(['first_name' => 'Robert', 'last_name' => 'Alpha', 'preferred_name' => 'Bob', 'full_name' => 'Robert Alpha']));
+    assertSame('Alpha, Robert', RcfPage::memberName(['first_name' => ' Robert ', 'last_name' => ' Alpha ']), 'trimmed');
+    assertSame('Alpha', RcfPage::memberName(['first_name' => '', 'last_name' => 'Alpha']), 'a last name alone, with no stray comma');
+    assertSame('Robert', RcfPage::memberName(['first_name' => 'Robert', 'last_name' => '']));
+    assertSame('R. Alpha', RcfPage::memberName(['first_name' => '', 'last_name' => '', 'full_name' => 'R. Alpha']), 'the name as it arrived, when the halves are blank');
+    assertSame('1234567', RcfPage::memberName(['first_name' => '', 'last_name' => '', 'full_name' => '', 'member_number' => '1234567']), 'never a blank');
+
+    // The officer's own name — G4 and the sponsor list — is still First
+    // Last: it is a signature, not a lookup.
+    assertSame('Robert Alpha', RcfPage::formalName(['first_name' => 'Robert', 'last_name' => 'Alpha', 'full_name' => 'Robert Alpha']));
+});
+
 test('a typed name picks one person off the offered list, and never two', function (): void {
     $list = [
-        ['member_number' => '1000001', 'form_name' => 'Robert Alpha', 'known_as' => 'Bob Alpha', 'title' => 'Committee Member'],
-        ['member_number' => '1000002', 'form_name' => 'Carol Bravo',  'known_as' => 'Carol Bravo', 'title' => 'Committee Member'],
-        ['member_number' => '1000003', 'form_name' => 'Carol Bravo',  'known_as' => 'Carol Bravo', 'title' => 'Committee Member'],
+        ['member_number' => '1000001', 'form_name' => 'Alpha, Robert', 'full_name' => 'Robert Alpha', 'known_as' => 'Bob Alpha', 'title' => 'Committee Member'],
+        ['member_number' => '1000002', 'form_name' => 'Bravo, Carol',  'full_name' => 'Carol Bravo', 'known_as' => 'Carol Bravo', 'title' => 'Committee Member'],
+        ['member_number' => '1000003', 'form_name' => 'Bravo, Carol',  'full_name' => 'Carol Bravo', 'known_as' => 'Carol Bravo', 'title' => 'Committee Member'],
     ];
 
-    assertSame('1000001', RcfPage::matchMember($list, 'Robert Alpha')['member_number']);
+    assertSame('1000001', RcfPage::matchMember($list, 'Alpha, Robert')['member_number'], 'the list\'s own spelling, last name first');
+    assertSame('1000001', RcfPage::matchMember($list, 'Robert Alpha')['member_number'], 'the name as Rodeo Houston spells it');
     assertSame('1000001', RcfPage::matchMember($list, '  robert   ALPHA ')['member_number'], 'case and spacing are not the person');
     assertSame('1000001', RcfPage::matchMember($list, 'Bob Alpha')['member_number'], 'the name he is known by finds him too');
-    assertSame('Robert Alpha', RcfPage::matchMember($list, 'Bob Alpha')['form_name'], 'and what goes on the form is the roster\'s spelling');
+    assertSame('Alpha, Robert', RcfPage::matchMember($list, 'Bob Alpha')['form_name'], 'and what goes on the form is the roster\'s spelling, last name first');
 
     // Two Carol Bravos: a name cannot decide, so nobody is picked. The
     // number is the key (CLAUDE.md), and a guess here is a form about the
     // wrong person.
     assertSame(null, RcfPage::matchMember($list, 'Carol Bravo'));
+    assertSame(null, RcfPage::matchMember($list, 'Bravo, Carol'));
     assertSame(null, RcfPage::matchMember($list, 'Robert'), 'a first name alone is not a match');
     assertSame(null, RcfPage::matchMember($list, ''));
     assertSame(null, RcfPage::matchMember([], 'Robert Alpha'), 'no list, no pick');
@@ -980,8 +999,8 @@ test('the lookup that fills a row in cannot reach outside the caller\'s scope', 
 
     $own = $page->memberInScope(rcf_captain(), $f['members']['m1']['number']);
     assertTrue($own !== null, 'their own team member is found');
-    assertSame('Robert Alpha', $own['form_name'],
-        'and by the name Rodeo Houston spells, not the preferred one');
+    assertSame('Alpha, Robert', $own['form_name'],
+        'last name first, from the roster, not the preferred name');
     assertSame('Committee Member', $own['title']);
 
     assertSame(null, $page->memberInScope(rcf_captain(), $f['members']['m4']['number']),
@@ -1097,7 +1116,7 @@ test('a submitted form is resolved against the lists, never taken as typed', fun
     // Row one: the name and the previous title were filled in from the roster.
     assertSame('T', $form['entries'][0]['type']);
     assertSame($f['members']['m1']['number'], $form['entries'][0]['member_number']);
-    assertSame('Robert Alpha', $form['entries'][0]['member_name'], 'the name came from the roster');
+    assertSame('Alpha, Robert', $form['entries'][0]['member_name'], 'the name came from the roster');
     assertSame('Committee Member', $form['entries'][0]['previous_title'], 'and so did the previous title');
     assertSame('Assistant Captain', $form['entries'][0]['new_title']);
     assertSame('RC Bus Ops Team B', $form['entries'][0]['new_subcommittee'], 'the destination, unprefixed');
@@ -1161,15 +1180,15 @@ test('the number decides: a known number carries the roster name, a picked name 
     ]);
 
     assertSame($f['members']['m1']['number'], $form['entries'][0]['member_number']);
-    assertSame('Robert Alpha', $form['entries'][0]['member_name'], 'the roster\'s name, not the typed one');
+    assertSame('Alpha, Robert', $form['entries'][0]['member_name'], 'the roster\'s name, not the typed one');
     assertSame('Committee Member', $form['entries'][0]['previous_title'], 'and the previous title still fills in');
 
     assertSame($f['members']['m2']['number'], $form['entries'][1]['member_number'], 'the picked name resolved to the number');
-    assertSame('Carol Bravo', $form['entries'][1]['member_name']);
+    assertSame('Bravo, Carol', $form['entries'][1]['member_name']);
     assertSame('Committee Member', $form['entries'][1]['previous_title']);
 
     assertSame($f['members']['m1']['number'], $form['entries'][2]['member_number'], 'known-as finds him');
-    assertSame('Robert Alpha', $form['entries'][2]['member_name'], 'and the form says Robert');
+    assertSame('Alpha, Robert', $form['entries'][2]['member_name'], 'and the form says Robert');
 
     assertSame('7654321', $form['entries'][3]['member_number']);
     assertSame('Newcomer Sample', $form['entries'][3]['member_name']);
@@ -1192,7 +1211,7 @@ test('the number decides: a known number carries the roster name, a picked name 
             1 => ['member_name' => 'Frank Echo'],
         ],
     ]);
-    assertSame('Frank Echo', $other['entries'][0]['member_name'], 'by number, from anywhere in scope');
+    assertSame('Echo, Frank', $other['entries'][0]['member_name'], 'by number, from anywhere in scope');
     assertSame('', $other['entries'][1]['member_number'], 'by name, only from the list the screen offered');
     assertSame('Frank Echo', $other['entries'][1]['member_name'], 'kept as typed');
 
@@ -1266,8 +1285,8 @@ test('the screen renders, escapes what it shows and shares its four long lists',
     // VALUE is the number, because the number is the key, and its label is
     // the name; the name list offers the same people by the name the roster
     // spells.
-    assertTrue(str_contains($html, '<option value="RC000002" label="Robert Alpha (Bob Alpha)">'), 'a member, ready to be picked by number');
-    assertTrue(str_contains($html, '<option value="Robert Alpha">'), 'and by name');
+    assertTrue(str_contains($html, '<option value="RC000002" label="Alpha, Robert (Bob Alpha)">'), 'a member, ready to be picked by number');
+    assertTrue(str_contains($html, '<option value="Alpha, Robert">'), 'and by name');
     assertSame(0, substr_count($html, 'RC000002 - Robert Alpha'), 'the one-cell format is gone');
     assertTrue(
         str_contains($html, 'RC Member Services &amp; Support Division'),

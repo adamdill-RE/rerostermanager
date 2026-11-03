@@ -23,11 +23,13 @@ use Rerm\Auth\Level;
 use Rerm\Auth\Scope;
 use Rerm\Auth\User;
 use Rerm\Forms\ApprovalFlow;
+use Rerm\Forms\ApprovalNotice;
 use Rerm\Forms\RcfEntries;
 use Rerm\Forms\RcfPage;
 use Rerm\Forms\RcfStore;
 use Rerm\Forms\RcfTracking;
 use Rerm\Forms\RosterChangeForm;
+use Rerm\Mail\Mailer;
 use Rerm\Routes;
 
 function af_app(): App
@@ -110,7 +112,7 @@ test('every hand an entry passes through is its own audit verb', function (): vo
 });
 
 test('nothing in the flow or the entries deletes a record or writes the roster', function (): void {
-    foreach (['app/src/Forms/ApprovalFlow.php', 'app/src/Forms/RcfEntries.php'] as $file) {
+    foreach (['app/src/Forms/ApprovalFlow.php', 'app/src/Forms/RcfEntries.php', 'app/src/Forms/ApprovalNotice.php'] as $file) {
         $source = af_source($file);
         foreach (['rcf_entry', 'rcf_entry_step', 'rcf_approver', 'rcf', 'rcf_row', 'member', 'contact_log', 'audit_log', 'import_change'] as $table) {
             assertSame(0, preg_match('/\bDELETE\s+FROM\s+`?' . $table . '`?\b/i', $source), "{$file} must never DELETE FROM {$table}");
@@ -596,7 +598,7 @@ test('submitting makes one entry per filled row, resolved like a line of a form,
     assertSame('Erin Delta', $add['sponsor']);
     assertSame('T', $title['type']);
     assertSame($f['members']['m3']['id'], $title['member_id'], 'the number resolved to the member');
-    assertSame('Frank Echo <b>', $title['member_name'], 'the name as the roster spells it, unescaped in the record');
+    assertSame('Echo <b>, Frank', $title['member_name'], 'the roster\'s name, last name first, unescaped in the record');
     assertSame('Committee Member', $title['previous_title'], 'filled in from the roster, as on the form');
     assertSame('Assistant Captain', $title['new_title']);
     assertSame('AF Logistics Division - AF Bus Ops Team B', $title['subcommittee']);
@@ -637,9 +639,9 @@ test('approving moves an entry up the chain and the last approver approves it ou
     assertSame([], $entries->waitingFor(af_user('dc')), 'nothing has reached the Division Chairman yet');
 
     // dc cannot approve what is not waiting on them.
-    assertSame(['advanced' => 0, 'approved' => 0], $entries->approve(af_user('dc'), $ids));
+    assertSame(['advanced' => 0, 'approved' => 0, 'notices' => []], $entries->approve(af_user('dc'), $ids));
 
-    assertSame(['advanced' => 2, 'approved' => 0], $entries->approve(af_user('dvc'), $ids));
+    assertSame(['advanced' => 2, 'approved' => 0, 'notices' => []], $entries->approve(af_user('dvc'), $ids));
     assertSame([], $entries->waitingFor(af_user('dvc')));
     $atDc = $entries->waitingFor(af_user('dc'));
     assertSame(2, count($atDc));
@@ -650,9 +652,9 @@ test('approving moves an entry up the chain and the last approver approves it ou
     assertSame('Bob Approver', $atDc[0]['steps'][1]['actor_name']);
 
     // Approving again as dvc writes nothing: it is not waiting on them now.
-    assertSame(['advanced' => 0, 'approved' => 0], $entries->approve(af_user('dvc'), $ids));
+    assertSame(['advanced' => 0, 'approved' => 0, 'notices' => []], $entries->approve(af_user('dvc'), $ids));
 
-    assertSame(['advanced' => 0, 'approved' => 2], $entries->approve(af_user('dc'), $ids));
+    assertSame(['advanced' => 0, 'approved' => 2, 'notices' => []], $entries->approve(af_user('dc'), $ids));
     $ready = $entries->readyFor(af_user('dc'));
     assertSame(2, count($ready));
     assertSame('approved', $ready[0]['status']);
@@ -801,7 +803,7 @@ test('generating keeps one consolidated form per division from the ticked entrie
     $rows->execute([':id' => $rcfId]);
     $lines = $rows->fetchAll();
     assertSame([1, 2, 3], array_map(static fn (array $l): int => (int) $l['position'], $lines));
-    assertSame(['Robert Alpha', 'Frank Echo <b>', 'Newcomer Sample'], array_map(static fn (array $l): string => $l['member_name'], $lines));
+    assertSame(['Alpha, Robert', 'Echo <b>, Frank', 'Newcomer Sample'], array_map(static fn (array $l): string => $l['member_name'], $lines));
     assertSame(['T', 'T', 'A'], array_map(static fn (array $l): string => $l['type'], $lines));
     assertSame(1, (int) $lines[2]['rookie']);
     assertSame(1, (int) $lines[2]['wait_list']);
@@ -841,7 +843,7 @@ test('generating keeps one consolidated form per division from the ticked entrie
     assertSame(1, count(array_filter($tracking->mine(af_user('dc')), static fn (array $frm): bool => (int) $frm['id'] === $rcfId)));
     $built = $store->form($rcfId);
     assertSame('AF Logistics Division', $built['subcommittee']);
-    assertSame('Frank Echo <b>', $built['entries'][1]['member_name']);
+    assertSame('Echo <b>, Frank', $built['entries'][1]['member_name']);
     assertSame(RosterChangeForm::TICKED, $built['entries'][2]['rookie']);
     assertSame(RosterChangeForm::UNTICKED, $built['entries'][5]['rookie'], 'a blank row carries an unticked box');
 
@@ -940,7 +942,7 @@ test('the four screens render, escape what they show, carry the strip and stay i
     assertTrue(str_contains($html, 'waits on <strong>Bob Approver</strong>'), 'the route in a sentence');
     assertSame(1, substr_count($html, '<datalist id="rcf-members">'), 'the shared grid, once');
     assertTrue(str_contains($html, 'value="submit"'), 'the submit button');
-    assertTrue(str_contains($html, 'Frank Echo &lt;b&gt;'), 'a member name with markup is escaped');
+    assertTrue(str_contains($html, 'Echo &lt;b&gt;, Frank'), 'a member name with markup is escaped');
     assertSame(0, substr_count($html, 'Echo <b>'), 'and never raw');
     assertTrue(str_contains($html, 'Returned by Bob Approver'), 'the returned one carries its note');
     assertTrue(str_contains($html, 'value="withdraw"'), 'a pending one can be withdrawn');
@@ -986,7 +988,7 @@ test('the four screens render, escape what they show, carry the strip and stay i
     assertTrue(str_contains($html, 'then to Carl Chair'), 'where it goes next');
     assertTrue(str_contains($html, 'name="note"'), 'the return note');
     assertTrue(str_contains($html, 'Decided by you'));
-    assertTrue(str_contains($html, 'Frank Echo &lt;b&gt;'));
+    assertTrue(str_contains($html, 'Echo &lt;b&gt;, Frank'));
     assertSame(0, substr_count($html, '<script'));
     assertTrue(strlen($html) < 100 * 1024, 'Approve RCF Entries is ' . strlen($html) . ' bytes');
 
@@ -1125,7 +1127,7 @@ test('a generated entry says when the roster showed the change — read from the
     foreach ($entries->onForm(af_user('dc'), (int) $first['id']) as $e) {
         $byMember[(string) $e['member_name']] = $e;
     }
-    $m3 = $byMember['Frank Echo <b>'];
+    $m3 = $byMember['Echo <b>, Frank'];
     assertSame($batch, $m3['landed']['batch'], 'the import that fulfilled it');
     assertSame($at, $m3['landed']['at']);
     assertSame('title', $m3['landed']['field']);
@@ -1139,7 +1141,7 @@ test('a generated entry says when the roster showed the change — read from the
     );
     // The other title change on the form is m1's, which the import did not
     // touch; the addition has no number to watch for.
-    assertSame(null, $byMember['Robert Alpha']['landed']);
+    assertSame(null, $byMember['Alpha, Robert']['landed']);
     assertSame(null, $byMember['Newcomer Sample']['landed']);
 
     // The same answer wherever the entry is listed: the requester's list,
@@ -1150,7 +1152,7 @@ test('a generated entry says when the roster showed the change — read from the
     $decided = array_values(array_filter($entries->decidedBy(af_user('dvc')), static fn (array $e): bool => $e['id'] === $m3['id']));
     assertSame($batch, $decided[0]['landed']['batch']);
     $line = (new RcfTracking($pdo))->one(af_user('dc'), (int) $first['id'])['rows'][1];
-    assertSame('Frank Echo <b>', $line['member_name']);
+    assertSame('Echo <b>, Frank', $line['member_name']);
     assertSame($batch, $line['landed']['batch'], 'the form\'s page derives it the same way');
 
     // And the screen says so: the chip reads In the roster, with the import.
@@ -1290,6 +1292,166 @@ test('voiding a consolidated form takes it and its entries out of view for every
         'mayVoid' => RcfEntries::mayVoid($dc, $rcf['form']),
     ]);
     assertSame(0, substr_count($html, 'value="void"'), 'a Create Forms form cannot be voided');
+});
+
+// ---------------------------------------------------------------------------
+// The one email (Phase 14.6, spec-v2 §20.2)
+// ---------------------------------------------------------------------------
+
+/**
+ * A notifier whose wire is a recorder, with every Mailer interlock OPEN —
+ * so a message that does not arrive was stopped by the notice's own rules
+ * and nothing else. The recovery tests' pattern (mail_test.php).
+ *
+ * @param array<int, array{0:string,1:string,2:string}> $wire
+ */
+function af_notice(array &$wire, bool $enabled = true, bool $mailerEnabled = true): ApprovalNotice
+{
+    $mailer = new Mailer(
+        $mailerEnabled,
+        Mailer::TRANSPORT_SEND,
+        [],
+        5,
+        'noreply@example.com',
+        'Test Mailer',
+        false,
+        sys_get_temp_dir() . '/rerm-af-mail-' . getmypid(),
+        function (string $to, string $subject, string $body) use (&$wire): bool {
+            $wire[] = [$to, $subject, $body];
+
+            return true;
+        }
+    );
+
+    return new ApprovalNotice(af_pdo(), $mailer, 'https://host.example.com/rerm/rcf-approvals', $enabled);
+}
+
+test('the account requests are routed to is emailed once — on submission and on approval — and nobody else, ever', function (): void {
+    $f = af_fixture();
+    af_reset_entries();
+    af_flow()->save(af_user('adm'), ['approver' => [
+        (string) $f['users']['vc']  => (string) $f['users']['dvc'],
+        (string) $f['users']['dvc'] => (string) $f['users']['dc'],
+        (string) $f['users']['dc']  => ApprovalFlow::TOP,
+    ]]);
+
+    $wire    = [];
+    $entries = new RcfEntries(af_pdo(), af_flow(), af_app()->displayTimezone(), af_notice($wire));
+
+    // Submission: two rows, ONE message, to the requester's approver.
+    $result = $entries->submit(af_user('vc'), $f['year'], af_vc_form());
+    assertSame(null, $result['refused']);
+    assertSame(['outcome' => ApprovalNotice::SENT, 'name' => 'Bob Approver', 'count' => 2], $result['notice']);
+    assertSame(1, count($wire), 'one message however many rows');
+    [$to, $subject, $body] = $wire[0];
+    assertSame('bob@example.com', $to, 'the Division Vice Chairman, at the address on the roster');
+    assertSame('Rodeo Express Roster: 2 RCF requests are waiting for your approval', $subject);
+    assertTrue(str_contains($body, 'Hi Bob Approver,'));
+    // Who asked, as the signed-in account is named — the fixture's User
+    // objects carry their key as displayName, so "vc" here is "Erin Delta"
+    // on the real thing.
+    assertTrue(str_contains($body, 'vc submitted them.'), 'who asked');
+    assertTrue(str_contains($body, 'https://host.example.com/rerm/rcf-approvals'), 'and where to go');
+
+    // No member in it: not the name, not the number, not the change.
+    foreach (['Frank', 'Echo', 'Newcomer', 'Assistant Captain', $f['members']['m3']['number'], 'AF Bus Ops'] as $leak) {
+        assertSame(0, substr_count($body . $subject, $leak), "the email must not carry '{$leak}'");
+    }
+
+    // Approval that passes them on: one message to the NEXT approver,
+    // saying who passed them.
+    $ids    = array_map(static fn (array $e): int => (int) $e['id'], $entries->mine(af_user('vc')));
+    $result = $entries->approve(af_user('dvc'), $ids);
+    assertSame(2, $result['advanced']);
+    assertSame([['outcome' => ApprovalNotice::SENT, 'name' => 'Carl Chair', 'count' => 2]], $result['notices']);
+    assertSame(2, count($wire));
+    assertSame('carl@example.com', $wire[1][0]);
+    assertTrue(str_contains($wire[1][2], 'dvc approved them and passed them on to you.'), 'who passed them on');
+
+    // The approval that ENDS the chain emails nobody: the approver is the
+    // one who generates, and they are standing at the screen.
+    $result = $entries->approve(af_user('dc'), $ids);
+    assertSame(2, $result['approved']);
+    assertSame([], $result['notices']);
+    assertSame(2, count($wire));
+
+    // A return goes to the requester's list, not their inbox.
+    $entries->submit(af_user('vc'), $f['year'], af_vc_form());
+    assertSame(3, count($wire), 'the new submission told the approver');
+    $pending = array_map(static fn (array $e): int => (int) $e['id'], $entries->waitingFor(af_user('dvc')));
+    assertSame(2, $entries->sendBack(af_user('dvc'), $pending, 'Not this year.'));
+    assertSame(3, count($wire), 'a return emails nobody');
+
+    // Nor does a withdrawal.
+    $entries->submit(af_user('vc'), $f['year'], af_vc_form());
+    assertSame(4, count($wire));
+    $pending = array_map(static fn (array $e): int => (int) $e['id'], $entries->waitingFor(af_user('dvc')));
+    assertTrue($entries->withdraw(af_user('vc'), $pending[0]));
+    assertSame(4, count($wire), 'a withdrawal emails nobody');
+
+    // The top of the chain is approved on submission, so nobody is routed
+    // to and nobody is told.
+    $top = $entries->submit(af_user('dc'), $f['year'], (new RcfPage(af_pdo()))->formFromInput(af_user('dc'), [
+        'subcommittee' => 't:' . $f['teams']['a'],
+        'row'          => [0 => ['type' => 'T', 'member_number' => $f['members']['m1']['number'], 'new_title' => 'Captain']],
+    ]));
+    assertSame('top', $top['state']);
+    assertSame(null, $top['notice']);
+    assertSame(4, count($wire));
+
+    af_reset_entries();
+});
+
+test('the notice goes only to a Vice Chairman or above, only to an address on the roster, and only when switched on', function (): void {
+    $f   = af_fixture();
+    $pdo = af_pdo();
+
+    // Below the floor: a Captain is never emailed, whatever the flow says.
+    // The flow cannot draw one today; this holds when it can.
+    $wire = [];
+    assertSame(ApprovalNotice::INELIGIBLE, af_notice($wire)->waiting($f['users']['cap'], 1, 'Erin Delta', ApprovalNotice::SUBMITTED)['outcome']);
+    assertSame([], $wire);
+
+    // Nor an account that does not exist.
+    assertSame(ApprovalNotice::INELIGIBLE, af_notice($wire)->waiting(0, 1, 'Erin Delta', ApprovalNotice::SUBMITTED)['outcome']);
+
+    // A Division Vice Chairman whose effective level has since dropped
+    // below a Vice Chairman's — a grant withdrawn, a title lost on import.
+    $pdo->prepare("UPDATE app_user SET granted_level = 'officer' WHERE id = :id")->execute([':id' => $f['users']['dvc']]);
+    try {
+        assertSame(ApprovalNotice::INELIGIBLE, af_notice($wire)->waiting($f['users']['dvc'], 1, 'Erin Delta', ApprovalNotice::SUBMITTED)['outcome']);
+    } finally {
+        $pdo->prepare('UPDATE app_user SET granted_level = NULL WHERE id = :id')->execute([':id' => $f['users']['dvc']]);
+    }
+    assertSame([], $wire);
+
+    // No address on the roster: said so, and nothing sent.
+    $pdo->prepare('UPDATE member SET email = NULL WHERE id = :id')->execute([':id' => $f['members']['dvc']['id']]);
+    try {
+        $notice = af_notice($wire)->waiting($f['users']['dvc'], 2, 'Erin Delta', ApprovalNotice::SUBMITTED);
+        assertSame(['outcome' => ApprovalNotice::NO_EMAIL, 'name' => 'Bob Approver', 'count' => 2], $notice);
+        assertSame('Bob Approver has no email address on the roster, so let them know yourself.', ApprovalNotice::sentence($notice));
+    } finally {
+        $pdo->prepare('UPDATE member SET email = :email WHERE id = :id')->execute([':email' => 'bob@example.com', ':id' => $f['members']['dvc']['id']]);
+    }
+    assertSame([], $wire);
+
+    // Its own switch off: nothing reaches the Mailer at all.
+    assertSame(ApprovalNotice::OFF, af_notice($wire, false)->waiting($f['users']['dvc'], 1, 'Erin Delta', ApprovalNotice::SUBMITTED)['outcome']);
+    assertSame([], $wire);
+
+    // The switch on but a Mailer interlock shut (mail.enabled false, as a
+    // fresh deploy ships): blocked, nothing on the wire, and the officer
+    // is told to pass the word themselves.
+    $notice = af_notice($wire, true, false)->waiting($f['users']['dvc'], 1, 'Erin Delta', ApprovalNotice::SUBMITTED);
+    assertSame(ApprovalNotice::BLOCKED, $notice['outcome']);
+    assertSame('Email notices are switched off here, so let Bob Approver know yourself.', ApprovalNotice::sentence($notice));
+    assertSame([], $wire);
+
+    // Every interlock open and the switch on: sent, once.
+    assertSame(ApprovalNotice::SENT, af_notice($wire)->waiting($f['users']['dvc'], 1, 'Erin Delta', ApprovalNotice::SUBMITTED)['outcome']);
+    assertSame(1, count($wire));
+    assertSame('bob@example.com', $wire[0][0]);
 });
 
 test('rcf entries fixtures are cleaned up', function (): void {

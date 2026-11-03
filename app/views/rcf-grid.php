@@ -49,11 +49,12 @@ $visibleRows = (int) $rcf['visible_rows'];
     ?>
     <datalist id="rcf-members"><?php foreach ($members as $member) {
         // The NUMBER is the value, because the number is the key; the
-        // label is the name as the roster spells it, with the name officers
-        // actually use beside it when that differs — "Bud" is how they will
-        // look him up and "Robert Alpha" is what goes on the form. Browsers
-        // match what is typed against the label as well as the value, so
-        // typing a name into the number cell finds the number.
+        // label is the name as the form prints it — "Alpha, Robert", last
+        // name first (Phase 14.6, spec-v2 §20.3) — with the name officers
+        // actually use beside it when that differs: "Bud Alpha" is how they
+        // will look him up. Browsers match what is typed against the label
+        // as well as the value, so typing either name into the number cell
+        // finds the number.
         $knownAs = (string) $member['known_as'] === (string) $member['form_name']
             ? '' : ' (' . (string) $member['known_as'] . ')';
         ?><option value="<?= e((string) $member['member_number']) ?>" label="<?=
@@ -61,11 +62,12 @@ $visibleRows = (int) $rcf['visible_rows'];
     } ?></datalist>
 
     <datalist id="rcf-member-names"><?php foreach ($members as $member) {
-        // The same people by name, for the name cell: picking one here with
-        // the number cell blank resolves to their number on the server
-        // (RcfPage::matchMember()). Values only — this list is paid for
-        // once more per person, and the number list already carries the
-        // known-as names.
+        // The same people by name, for the name cell, last name first and
+        // in last-name order, so typing "Alpha" offers the Alphas: picking
+        // one here with the number cell blank resolves to their number on
+        // the server (RcfPage::matchMember()). Values only — this list is
+        // paid for once more per person, and the number list already
+        // carries the known-as names.
         ?><option value="<?= e((string) $member['form_name']) ?>"></option><?php
     } ?></datalist>
 
