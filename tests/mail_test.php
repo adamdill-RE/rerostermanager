@@ -243,7 +243,7 @@ test('the approval notice is switched on in the committed configuration, behind 
     $link   = (new ReflectionProperty($notice, 'approvalsLink'))->getValue($notice);
     assertSame(rtrim((string) $config->get('app.canonical_url'), '/') . $app->url('rcf-approvals'), $link,
         'absolute, from configuration, never from the Host header');
-    assertTrue(str_ends_with($link, '/rerm/rcf-approvals'));
+    assertTrue(str_starts_with($link, 'https://'), 'and on the canonical scheme and host');
 
     // Never below a Vice Chairman: the floor is the flow's floor.
     assertSame(Level::SeniorOfficer, ApprovalNotice::FLOOR);
