@@ -5,11 +5,11 @@ declare(strict_types=1);
 use Rerm\Menu;
 
 /**
- * The menu (spec 7.0) — its own route since Phase 5 moved the landing page
- * to My Roster Status. It still lands here for a signed-in user whose level
- * has no dashboard (a future Member-level Allowed User), and it is the one
- * place every screen carries a line on what it is FOR; the drop-down in the
- * bar (Phase 14.4) lists the same screens by name alone.
+ * The menu (spec 7.0) — the landing page again since Phase 14.6 (spec-v2
+ * §20.1): a sign-in lands here, for every level, and /menu is the same
+ * screen by name. It is the one place every screen carries a line on what
+ * it is FOR; the drop-down in the bar (Phase 14.4) lists the same screens
+ * by name alone.
  *
  * The tiles and their groups are Rerm\Menu, written down once for both.
  * They are FILTERED by capability, and that is presentation only: every

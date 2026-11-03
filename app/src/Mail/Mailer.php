@@ -10,8 +10,13 @@ use RuntimeException;
 /**
  * The only way this application sends email, and it ships unable to.
  *
- * Password recovery is the one message v1 sends, and there is no bulk path —
- * deliberately. The risk here is not deliverability (the account has a
+ * Two messages exist, and there is no bulk path — deliberately: password
+ * recovery (spec-v1 3.3), and since Phase 14.6 the note to a Vice Chairman
+ * or above that RCF requests have been routed to them
+ * (Rerm\Forms\ApprovalNotice, spec-v2 §20.2; behind its own switch,
+ * mail.rcf_approval_notices, as well as everything below). Each is one
+ * message to one person with a reason to expect it. The risk here is not
+ * deliverability (the account has a
  * dedicated IP, docs/hosting.md); it is sending BY MISTAKE while building:
  * the live database holds 1,953 real committee members' real addresses, and
  * a stray loop against that table reaches actual people, cannot be recalled,
@@ -34,10 +39,11 @@ use RuntimeException;
  * writes a readable .eml into var/mail/ — outside the document root and
  * gitignored — precisely so the whole recovery flow is testable end to end
  * while nothing exists that could leave the box. Interlock 4 gates
- * everything: recovery sends exactly one message, so a second is already
- * suspicious and a sixth is a loop that should not exist, whatever transport
- * it would have used. It throws rather than trims, because a silent cap
- * would hide the very bug the ceiling exists to catch.
+ * everything: recovery sends exactly one message and an approval notice is
+ * one per recipient however many requests moved, so a sixth in one request
+ * is a loop that should not exist, whatever transport it would have used.
+ * It throws rather than trims, because a silent cap would hide the very bug
+ * the ceiling exists to catch.
  *
  * .github/check-mail-safety.php fails the build if the committed defaults
  * could ever deliver.
@@ -122,7 +128,7 @@ final class Mailer
         if ($this->sent > $this->maxPerRequest) {
             throw new RuntimeException(sprintf(
                 'Refusing to send message %d of a request: mail.max_per_request is %d. '
-                . 'Password recovery sends exactly one message, so this is a loop that '
+                . 'Nothing here sends more than one message per recipient, so this is a loop that '
                 . 'should not exist — see docs/spec-v1.md 3.3a.',
                 $this->sent,
                 $this->maxPerRequest

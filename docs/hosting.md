@@ -167,7 +167,10 @@ selector/verifier token — see `docs/spec-v1.md` §3.4.
 ## Mail
 
 `/usr/sbin/sendmail` is present and `exim` 4.99.5 is running, so PHP `mail()`
-works. Password recovery is the only message this app sends.
+works. This app sends two messages and no other: password recovery, and since
+Phase 14.6 one note to the Vice Chairman or above that RCF requests have just
+been routed to (spec-v2 §20.2). Each is one message to one person who has a
+reason to expect it.
 
 **This account has a dedicated, exclusive IP**, which changes the calculus. The
 usual shared-hosting problem is inheriting a reputation earned by whoever else
@@ -203,6 +206,70 @@ is `docs/spec-v1.md` §3.3a.
 The `file` transport writes a readable `.eml` into `var/mail/` — outside the
 document root, `0700` — so recovery is fully testable locally with nothing
 capable of leaving the machine. (OI-9, closed.)
+
+### Turning delivery on, in cPanel — the order that matters
+
+Everything below is done once, on the production account, and nowhere else.
+`config.local.php` lives at `/home/reshiftmanager/rerm-app/config/` — outside
+`public_html`, edited through cPanel's File Manager since the account has no
+shell — and is never committed.
+
+1. **Make the sender real.** cPanel → *Email Accounts* → create
+   `noreply@reshiftmanager.com` (any strong password; nobody signs in to it).
+   Exim on cPanel will send from an address that does not exist, but
+   receivers score a sender that bounces, and a mailbox is where a bounce
+   lands when a Vice Chairman's roster address is stale. Optionally forward
+   it to a person who will read bounces (*Forwarders*).
+2. **Authenticate the domain.** cPanel → *Email Deliverability* →
+   `reshiftmanager.com` → **Manage**. Install the SPF and DKIM records it
+   suggests (one click each when DNS is on this account; otherwise copy them
+   into the DNS host). Add a DMARC TXT record at `_dmarc.reshiftmanager.com`
+   — `v=DMARC1; p=none; rua=mailto:<an address you read>` is the right first
+   value; tighten to `quarantine` once a month of reports is clean. Wait for
+   the page to show every record **Valid**. On a dedicated IP (above) an
+   unauthenticated message is filed as spam *and* teaches every receiver that
+   this IP sends unauthenticated mail; do not skip this step to test sooner.
+3. **Check nothing on the account blocks `mail()`.** cPanel → *Track
+   Delivery* should be reachable (it is where step 5 is verified), and the
+   PHP version selector should show `mail()` available — it is, on this
+   host (`docs/hosting.md` above). A reseller's WHM *Tweak Settings* →
+   "Prevent 'nobody' from sending mail" is irrelevant under LSAPI, which
+   runs PHP as the account user.
+4. **Arm the mailer for yourself only.** In `config.local.php` add, or
+   change, the `mail` block:
+
+   ```php
+   'mail' => [
+       'enabled'              => true,
+       'transport'            => 'send',
+       // YOUR address, and only yours, until step 5 is clean.
+       'allowed_recipients'   => ['you@example.com'],
+       'max_per_request'      => 5,
+       'rcf_approval_notices' => true,
+   ],
+   ```
+
+   `app.debug` must be `false` (it forces the file transport) and
+   `app.canonical_url` must be `https://www.reshiftmanager.com`, which is
+   the link in every message. `/status?key=…` shows the effective transport.
+5. **Send both messages to yourself and read the headers.** Password
+   recovery: sign out, *Forgot password*, your own member number. The
+   notice: on Create Approval Flow draw an approver whose roster email is
+   yours (your own account, or one you are signed in as), then through Sign
+   In As submit a request as somebody who routes to that approver. Open each
+   message, *Show original*, and confirm `spf=pass`, `dkim=pass` and
+   `dmarc=pass`. *Track Delivery* in cPanel shows each attempt and any
+   deferral. Fix anything that is not a pass before going on.
+6. **Open the allowlist.** Set `'allowed_recipients' => []`. Production runs
+   with it empty, because an allowlist there would break recovery for the
+   committee. This is the edit that lets real people receive mail; make it
+   last, and make it alone.
+7. **Tell the Division Chairmen** what the message says and that it never
+   carries a member's details — the link is the content. The From name is
+   `Rodeo Express Roster`.
+
+To turn only the notice off again, set `'rcf_approval_notices' => false` and
+leave the rest; to stop all mail, set `'enabled' => false`.
 
 ## Time
 

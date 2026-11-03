@@ -463,7 +463,8 @@ final class RcfPage
         foreach ($rows as $row) {
             $members[] = [
                 'member_number' => (string) $row['member_number'],
-                'form_name'     => self::formalName($row),
+                'form_name'     => self::memberName($row),
+                'full_name'     => self::formalName($row),
                 'known_as'      => RosterPage::displayName(
                     (string) $row['preferred_name'],
                     (string) $row['first_name'],
@@ -508,7 +509,8 @@ final class RcfPage
 
         return [
             'member_number' => (string) $row['member_number'],
-            'form_name'     => self::formalName($row),
+            'form_name'     => self::memberName($row),
+            'full_name'     => self::formalName($row),
             'title'         => (string) $row['title'],
         ];
     }
@@ -557,9 +559,11 @@ final class RcfPage
     /**
      * The one person on the offered list a typed name picks out, or null.
      *
-     * Exact, case- and space-insensitive, against the name as the roster
-     * spells it and the name they are known by — the two things the list
-     * showed. Two people with that name is nobody: the number is the key,
+     * Exact, case- and space-insensitive, against the name as the form
+     * prints it (`Last, First`), the name as Rodeo Houston spells it
+     * (`First Last`) and the name they are known by — the things the list
+     * showed, and the one way round a person types a name when they are not
+     * copying the list. Two people with that name is nobody: the number is the key,
      * and a name that cannot decide is left as typed with the number blank
      * rather than guessed (CLAUDE.md: never key on a name). A list the
      * screen did not offer (over PICKER_LIMIT) matches nothing, which is
@@ -579,6 +583,7 @@ final class RcfPage
         foreach ($members as $member) {
             if (mb_strtolower((string) $member['form_name']) !== $wanted
                 && mb_strtolower((string) $member['known_as']) !== $wanted
+                && mb_strtolower((string) ($member['full_name'] ?? '')) !== $wanted
             ) {
                 continue;
             }
@@ -629,9 +634,42 @@ final class RcfPage
     }
 
     /**
+     * The MEMBER NAME cell: `Last, First` (Phase 14.6, spec-v2 §20.3) — the
+     * way a roster is read and the way Rodeo Houston's own `Name` column
+     * spells it — from the roster's first and last names, NEVER the
+     * preferred name: "Bud" is what an officer calls him and not what is on
+     * the membership record this form asks them to change. Whichever half is
+     * blank is left out, and a row with neither falls back to the name as
+     * Rodeo Houston spells it (formalName()).
+     *
+     * The grid fills the cell from this, the name list offers it, and so a
+     * kept line and an entry carry it. The officer's own name on the form's
+     * G4 and in the sponsor list stays `First Last, Title` — that cell is
+     * read as a signature, not looked up in a list.
+     *
+     * @param array<string, mixed> $row
+     */
+    public static function memberName(array $row): string
+    {
+        $first = trim((string) ($row['first_name'] ?? ''));
+        $last  = trim((string) ($row['last_name'] ?? ''));
+
+        if ($first !== '' && $last !== '') {
+            return $last . ', ' . $first;
+        }
+        if ($first !== '' || $last !== '') {
+            return $last . $first;
+        }
+
+        return self::formalName($row);
+    }
+
+    /**
      * The name Rodeo Houston spells: `full_name` as it arrived, else first
      * and last. NOT the preferred name — "Bud" is what an officer calls him
      * and not what is on the membership record this form asks them to change.
+     * The submitter's G4 cell and the sponsor list print this; the MEMBER
+     * NAME cell prints memberName().
      *
      * @param array<string, mixed> $row
      */

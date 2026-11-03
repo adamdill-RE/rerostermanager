@@ -43,12 +43,13 @@ final class Routes
      * @var array<string, string>
      */
     public const GUARDS = [
-        // The signed-in landing page. Since Phase 5 the handler renders My
-        // Roster Status for anyone who may use it — an officer signing in to
-        // chase people should already be looking at who to chase (spec 7.0)
-        // — and the menu for anyone who may not (a future Member-level
-        // Allowed User has no dashboard). Anonymous requests are redirected
-        // to /login rather than shown anything.
+        // The signed-in landing page: the menu, for everybody, since Phase
+        // 14.6 (spec-v2 §20.1). Phase 5 had the handler render My Roster
+        // Status for anyone who might use it; now that an account signing in
+        // is as likely to be here to approve an RCF request as to chase
+        // dues, the one screen that names everything there is to do is the
+        // one to land on. Anonymous requests are redirected to /login
+        // rather than shown anything.
         ''         => self::SIGNED_IN,
 
         // My Roster Status (spec 7.1), by its own name. NOT 'status' — that
@@ -57,8 +58,8 @@ final class Routes
         // re-checks Access::allows() with a Subject per member.
         'dashboard' => Capability::ViewStatusDashboard->value,
 
-        // The 7.0 menu, moved off the landing path by Phase 5. Linked from
-        // the dashboard; every redirect($app) back to '' keeps working.
+        // The 7.0 menu by its own name as well: the landing path renders the
+        // same screen, and every link that said /menu keeps working.
         'menu'     => self::SIGNED_IN,
 
         // The dashboard's write: a contact_log insert plus optional metric

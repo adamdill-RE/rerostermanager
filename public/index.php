@@ -240,7 +240,9 @@ function login_act(Rerm\App $app, Rerm\Auth\Auth $auth): array
 
     // The forced first change (spec 3.2). The redirect is a convenience; the
     // guard that actually pins every route to /password is in the dispatch
-    // below, so a typed URL changes nothing.
+    // below, so a typed URL changes nothing. Otherwise the landing page,
+    // which is the menu (Phase 14.6, spec-v2 §20.1): a sign-in lands on the
+    // one screen that names every screen the account may use.
     redirect($app, (int) $account['must_change_password'] === 1 ? 'password' : '');
 }
 
@@ -2490,14 +2492,17 @@ function rcf_entries_act(Rerm\App $app, Rerm\Auth\User $user): void
     }
 
     $n = count($result['created']);
-    flash_set('ok', sprintf(
-        '%d %s submitted and logged with your name. %s',
+    flash_set('ok', trim(sprintf(
+        '%d %s submitted and logged with your name. %s %s',
         $n,
         $n === 1 ? 'request' : 'requests',
         $result['state'] === 'top'
             ? 'You are at the top of the chain, so they are approved: put them on a form on Export Approved Requests to RCF Forms.'
-            : 'They are waiting on ' . (string) ($result['approver']['name'] ?? 'your approver') . '.'
-    ));
+            : 'They are waiting on ' . (string) ($result['approver']['name'] ?? 'your approver') . '.',
+        // What the approver was told (Phase 14.6): emailed, or why not, in
+        // the one sentence per outcome ApprovalNotice spells.
+        $result['notice'] === null ? '' : Rerm\Forms\ApprovalNotice::sentence($result['notice'])
+    )));
     redirect($app, 'rcf-entries#mine');
 }
 
@@ -2550,7 +2555,9 @@ function rcf_approvals_act(Rerm\App $app, Rerm\Auth\User $user): never
             if ($result['approved'] > 0) {
                 $parts[] = $result['approved'] . ' approved outright and ready for you to generate';
             }
-            flash_set('ok', 'Approved: ' . implode('; ', $parts) . '. Logged with your name.');
+            // And whether the next approver was emailed (Phase 14.6).
+            $told = array_filter(array_map([Rerm\Forms\ApprovalNotice::class, 'sentence'], $result['notices']));
+            flash_set('ok', trim('Approved: ' . implode('; ', $parts) . '. Logged with your name. ' . implode(' ', $told)));
         }
         redirect($app, 'rcf-approvals');
     }
@@ -3627,15 +3634,15 @@ if ($guard !== Rerm\Routes::PUBLIC
 
 switch ($path) {
     case '':
-        // The landing swap (Phase 5 decided 1): My Roster Status for anyone
-        // who may use it, the menu for anyone who may not. mayUse is the
-        // LEVEL question — no member is being acted on by rendering a screen;
-        // everything on the screen re-checks per member.
-        if (Rerm\Auth\Access::mayUse($user, Rerm\Auth\Capability::ViewStatusDashboard)) {
-            dashboard_screen($app, $user);
-        } else {
-            render($app, 'menu', 'Menu', ['user' => $user, 'notices' => flash_take()]);
-        }
+        // The landing page is the MENU (Phase 14.6, spec-v2 §20.1), for
+        // everybody. Phase 5 had swapped My Roster Status in here for anyone
+        // who might use it, when chasing dues was the whole product; since
+        // Phase 14 the account signing in is as likely to be here to approve
+        // an RCF request, and the menu — grouped by the owner's four
+        // headings, with the counts strip a tap away — is the one screen that
+        // says what there is to do. /dashboard is unchanged and one tap away.
+        // Reads the flash like /menu, because a sign-in's 303 lands here.
+        render($app, 'menu', 'Menu', ['user' => $user, 'notices' => flash_take()]);
         break;
 
     case 'dashboard':

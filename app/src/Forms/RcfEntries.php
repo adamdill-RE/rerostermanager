@@ -64,6 +64,15 @@ use Rerm\Roster\RosterPage;
  *
  * Every state change is one `rcf_entry_step` row and one audit row, in the
  * same transaction as the change.
+ *
+ * THE ONE EMAIL (Phase 14.6, spec-v2 §20). When entries are routed to an
+ * account — on submission, and on an approval that passes them up the
+ * chain — that account is told by `ApprovalNotice`, AFTER the commit, one
+ * message per recipient per request, and only ever an account at a Vice
+ * Chairman's level or above. A return, a withdrawal and a generation email
+ * nobody. The notifier is optional here so a test can build the class
+ * without one, and every outcome comes back in the result as a word for
+ * the flash to spell.
  */
 final class RcfEntries
 {
@@ -86,12 +95,13 @@ final class RcfEntries
         private readonly PDO $pdo,
         private readonly ApprovalFlow $flow,
         private readonly DateTimeZone $zone = new DateTimeZone('UTC'),
+        private readonly ?ApprovalNotice $notice = null,
     ) {
     }
 
     public static function fromApp(App $app): self
     {
-        return new self($app->db(), ApprovalFlow::fromApp($app), $app->displayTimezone());
+        return new self($app->db(), ApprovalFlow::fromApp($app), $app->displayTimezone(), ApprovalNotice::fromApp($app));
     }
 
     // -----------------------------------------------------------------------
@@ -217,8 +227,13 @@ final class RcfEntries
      * account at the top of the chain has its entries approved on
      * submission, with themselves as final approver, and a step saying so.
      *
+     * `notice` is what the approver was told, once the write was committed
+     * (`ApprovalNotice::waiting()`), or null when nobody was routed to —
+     * the top of the chain emails nobody, because the requester is the
+     * approver.
+     *
      * @param array<string, mixed> $form
-     * @return array{created: array<int, int>, state: string, approver: ?array{id: int, name: string}, refused: ?string}
+     * @return array{created: array<int, int>, state: string, approver: ?array{id: int, name: string}, refused: ?string, notice: ?array{outcome: string, name: string, count: int}}
      */
     public function submit(User $requester, int $showYearId, array $form): array
     {
@@ -230,24 +245,24 @@ final class RcfEntries
         }
 
         if ((string) ($form['subcommittee'] ?? '') === '') {
-            return ['created' => [], 'state' => '', 'approver' => null,
+            return ['created' => [], 'state' => '', 'approver' => null, 'notice' => null,
                 'refused' => 'Choose the sub-committee these requests are about before submitting them.'];
         }
         if ($filled === []) {
-            return ['created' => [], 'state' => '', 'approver' => null,
+            return ['created' => [], 'state' => '', 'approver' => null, 'notice' => null,
                 'refused' => 'Nothing is filled in yet, so there is no change to ask for. Add at least one row.'];
         }
 
         $route = $this->flow->routeFor($requester);
         if ($route['state'] === 'unset') {
-            return ['created' => [], 'state' => 'unset', 'approver' => null,
+            return ['created' => [], 'state' => 'unset', 'approver' => null, 'notice' => null,
                 'refused' => 'Nobody is set as your approver yet, so your requests cannot be submitted. '
                     . 'An Admin draws who approves whom on Create Approval Flow.'];
         }
 
         $approver = $route['approver'] === null ? null : $this->account($route['approver']);
         if ($route['state'] === 'approver' && $approver === null) {
-            return ['created' => [], 'state' => 'unset', 'approver' => null,
+            return ['created' => [], 'state' => 'unset', 'approver' => null, 'notice' => null,
                 'refused' => 'The account set as your approver no longer exists or is inactive, so your requests '
                     . 'cannot be submitted. An Admin redraws it on Create Approval Flow.'];
         }
@@ -334,7 +349,20 @@ final class RcfEntries
             throw $e;
         }
 
-        return ['created' => $created, 'state' => $route['state'], 'approver' => $approver, 'refused' => null];
+        // After the commit, never inside it: the record stands whatever the
+        // mail does. One message, however many rows were filled in.
+        $notice = null;
+        if (!$top && $this->notice !== null && $route['approver'] !== null) {
+            $notice = $this->notice->waiting(
+                (int) $route['approver'],
+                count($created),
+                $requester->displayName,
+                ApprovalNotice::SUBMITTED
+            );
+        }
+
+        return ['created' => $created, 'state' => $route['state'], 'approver' => $approver, 'refused' => null,
+            'notice' => $notice];
     }
 
     // -----------------------------------------------------------------------
@@ -499,11 +527,12 @@ final class RcfEntries
     {
         $rows = $this->forWrite($ids, "e.current_approver_id = :me AND e.status = 'pending'", [':me' => $approver->id]);
         if ($rows === []) {
-            return ['advanced' => 0, 'approved' => 0];
+            return ['advanced' => 0, 'approved' => 0, 'notices' => []];
         }
 
         $advanced = 0;
         $approved = 0;
+        $onwardTo = [];
         $this->pdo->beginTransaction();
 
         try {
@@ -526,6 +555,7 @@ final class RcfEntries
                 } else {
                     $onward->execute([':next' => $next, ':id' => $id, ':me' => $approver->id]);
                     $advanced++;
+                    $onwardTo[$next] = ($onwardTo[$next] ?? 0) + 1;
                 }
 
                 $this->step($id, (int) $row['steps'] + 1, $approver->id, 'approved', '');
@@ -550,7 +580,18 @@ final class RcfEntries
             throw $e;
         }
 
-        return ['advanced' => $advanced, 'approved' => $approved];
+        // Whoever the entries moved on to is told, after the commit, once
+        // per recipient however many entries went their way. An approval
+        // that ended the chain tells nobody: the approver is the one who
+        // generates, and they are the one standing at the screen.
+        $notices = [];
+        if ($this->notice !== null) {
+            foreach ($onwardTo as $next => $count) {
+                $notices[] = $this->notice->waiting((int) $next, $count, $approver->displayName, ApprovalNotice::PASSED_ON);
+            }
+        }
+
+        return ['advanced' => $advanced, 'approved' => $approved, 'notices' => $notices];
     }
 
     /**

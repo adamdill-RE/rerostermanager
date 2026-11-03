@@ -53,4 +53,19 @@ return [
         'user' => 'reshiftmanager_rerm',
         'pass' => '',
     ],
+
+    // Mail ships OFF (docs/spec-v1.md 3.3a) and is turned on here, on the
+    // production box only, in the order docs/hosting.md gives: sender
+    // mailbox, SPF/DKIM/DMARC valid, then this block with YOUR address on
+    // the allowlist, both messages to yourself with the headers read, and
+    // only then an empty allowlist. The two messages are password recovery
+    // and the note to the approver that RCF requests are waiting (spec-v2
+    // 20.2); 'rcf_approval_notices' is the latter's own switch.
+    // 'mail' => [
+    //     'enabled'              => true,
+    //     'transport'            => 'send',
+    //     'allowed_recipients'   => ['you@example.com'],
+    //     'max_per_request'      => 5,
+    //     'rcf_approval_notices' => true,
+    // ],
 ];

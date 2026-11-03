@@ -359,7 +359,7 @@ already know, which is the one thing this file may not be.
 | `G5:L5` | the sub-committee, **`Division - Team`** — six columns wide, and the heading names what the whole form is about |
 | `B` | `*TYPE` — the code |
 | `C` | `ROOKIE` — a **checkbox**: a boolean (`t="b"`), ticked or not, on every row |
-| `D` | `MEMBER NAME` — `full_name` as Rodeo Houston spells it, never the preferred name: "Bud" is what an officer calls him and not what is on the membership record this form asks them to change |
+| `D` | `MEMBER NAME` — **`Last, First`** from the roster's two name columns since Phase 14.6 (§20.3; `full_name` as Rodeo Houston spells it before that), never the preferred name: "Bud" is what an officer calls him and not what is on the membership record this form asks them to change |
 | `E` | `HLS&R NO` |
 | `F` | `CHANGE/ADD TITLE` |
 | `G` | `PREVIOUS TITLE` |
@@ -2491,3 +2491,128 @@ every table is.
 | V2-32 | Should an account that is somebody's approver, with nothing drawn above it, be **treated as the top** for its own requests, so the Admin draws one row fewer? | No (§19.2): the flow is drawn, never inferred, and the half-drawn table is the case the inference gets wrong. The screens name the missing row instead. |
 | V2-33 | Should a known number with a **different name typed** beside it be flagged on the screen, rather than silently carrying the roster's name? | Not yet. The roster's name is the right answer and the row shows it as soon as the grid comes back; a notice per row is a second thing to read on a screen whose job is twenty-five names. Revisit if an officer reports surprise. |
 | V2-34 | Should the picker resolve a name typed with **first name only**, or `Smith, Jane`? | No. A name picks only when it is the list's own spelling, because anything looser is a guess about a person; the number cell is where a person is found by part of a name, since the browser matches labels. |
+
+## 20. The menu on sign-in, the approver's email, and the name on the form
+
+Phase 14.6. Three requests from the owner after walking the flow end to
+end, each small on its own and each a rule worth writing down.
+
+### 20.1 A sign-in lands on the menu
+
+*"On login have the user land on the main menu page."*
+
+Phase 5 had swapped My Roster Status onto the landing path for anyone who
+could use it, on the reasoning that an officer signing in to chase people
+should already be looking at who to chase (spec-v1 §7.0). That was right
+when chasing dues was the whole product. Since Phase 14 the account signing
+in is as likely to be a Vice Chairman with a request to make, a Division
+Chairman with three to approve, or an Admin here to draw the flow, and the
+dashboard is the wrong first screen for all of them — and for the Captain
+it was built for, it is one tap away under *Dues & Compliance* and in the
+bar's drop-down.
+
+So the landing arm renders the menu for every level, and a successful login
+303s there (or to `/password`, for the forced first change, as before).
+`/dashboard` is unchanged. The menu already reads the flash, since Sign In
+As lands on it, so nothing a 303 carries is lost. A test reads the arm.
+
+### 20.2 The approver is emailed, and nobody else
+
+*"Wire in email alerts ONLY for assigned RCFs and ONLY for VCs and above —
+people get email when they have an RCF request to approve."*
+
+This is the application's second email ever, and the first the owner has
+asked for; password recovery (spec-v1 §3.3) was the only message for
+fourteen phases, and the interlocks in §3.3a were written on the assumption
+that it would stay that way. They all still stand. What changed:
+
+* **One message, to one kind of person, for one reason.** `Rerm\Forms\
+  ApprovalNotice` is told by `RcfEntries` when requests have just been
+  **routed to** an account — on submission, the requester's approver; on an
+  approval that passes them up the chain, the next approver — and it emails
+  that account. Nothing else in the flow emails anybody: an approval that
+  ends the chain tells nobody (the approver is the one who generates, and
+  they are standing at the screen); a return goes to the requester's list,
+  not their inbox; a withdrawal and a generation are silent; and HLSR's
+  answer is read off the screen as before. The person pressing the button
+  already knows what they did. The person who has to act next is the one
+  who does not.
+* **Vice Chairman and above, re-checked.** The flow only ever draws
+  accounts at `ApprovalFlow::FLOOR` — Senior Officer, the level a Vice
+  Chairman holds (`TitleMap`) — and above, so an approver is a Vice
+  Chairman or above by construction. The notice re-reads the recipient's
+  **effective level** against the same floor anyway, so widening who may be
+  drawn, or a grant withdrawn while an entry is in flight, never widens who
+  is emailed by accident. A Captain is `ineligible`, and so is an account
+  that no longer exists.
+* **One message per recipient per request**, however many entries moved.
+  "3 requests are waiting" and not three emails; it is also what keeps a
+  fifty-entry approval under `mail.max_per_request`, whose comment and
+  exception now say so.
+* **No member's details are in it.** The body carries a count, who sent
+  them on, and a link to Approve RCF Requests; the names, numbers and
+  titles are on the screen, behind the recipient's sign-in. An email is PII
+  leaving the building exactly as an export is (`CLAUDE.md`), and an inbox
+  is forwarded, searched and synced to places the roster is not. A test
+  reads the class for `rcf_entry` and `member_name` and the body's
+  signature for a parameter an entry could travel in, and the end-to-end
+  test reads the message for the member's name, number, team and change.
+* **It never blocks the write.** The entries are committed first, a thrown
+  mail error is logged and swallowed, and every outcome comes back to the
+  handler as one word — `sent`, `no_email`, `blocked`, `off`, `ineligible`
+  — which the flash spells in one sentence: *Bob Approver has been
+  emailed*; *Bob Approver has no email address on the roster, so let them
+  know yourself*; *Email notices are switched off here, so let Bob Approver
+  know yourself*. The screen never says "emailed" when it was not.
+* **Behind the interlocks, and behind its own switch.** Delivery is
+  `Rerm\Mail\Mailer`'s, and §3.3a's four interlocks and the `app.debug`
+  override all apply; on top of them `mail.rcf_approval_notices` is this
+  message's own switch, shipped `true` so a production box that arms mail
+  gets the notice without a second edit, and there so it can be turned off
+  without turning off password recovery. The committed configuration still
+  cannot send (CI's check is unchanged), and a test holds that line with
+  the switch on.
+* **The link is absolute, from `app.canonical_url`**, never from the Host
+  header — the recovery email's rule, for the recovery email's reason.
+
+Going live is the §3.3a procedure, with one more thing to verify: send
+yourself a notice through Sign In As before telling a Division Chairman the
+feature exists. `docs/hosting.md` carries the cPanel steps.
+
+### 20.3 The member's name on the form is `Last, First`
+
+*"On the RCF display the member name as lastname, firstname."*
+
+`RcfPage::memberName()` builds the MEMBER NAME cell from the roster's
+`last_name` and `first_name` — `Alpha, Robert` — never the preferred name,
+for §2.6's reason. It is what the grid fills in for a known number, what
+the name list offers (in last-name order, so typing `Alpha` offers the
+Alphas), what a picked name resolves through, and therefore what a kept
+line and an entry carry and what column `D` prints. The number list's
+label reads the same way, with the known-as name beside it when it
+differs: `Alpha, Robert (Bob Alpha)`.
+
+Three edges, each decided:
+
+* **A name typed either way round still picks.** `matchMember()` matches
+  the list's own spelling (`Alpha, Robert`), the name as Rodeo Houston
+  spells it (`Robert Alpha`) and the known-as name (`Bob Alpha`), exactly
+  and case- and space-insensitively, and still refuses two people with one
+  name. A person who is not copying the list types a name forwards; the
+  form should not punish that.
+* **The officer's own name stays `First Last, Title`** — `G4` and the
+  sponsor list. That cell is read as a signature and never looked up in a
+  list, and `Alpha, Robert, Captain` reads as two people.
+* **What was printed stays printed.** A form kept before this phase keeps
+  `Robert Alpha` on its lines (§12.1), and an uploaded form keeps whatever
+  the person typed. Tracking joins on the number (§19.1), so the two
+  spellings sit in one table without anything failing to match; the member
+  search ANDs its words, so *Robert Alpha* finds both.
+
+### 20.4 Open items raised
+
+| # | Question | Assumption today |
+| --- | --- | --- |
+| V2-35 | Should the **requester** be emailed when an entry is **returned** or when it lands **in the roster**? | Not now. The owner's rule was "only for assigned RCFs", and the requester's list carries both with the note. Revisit if a Vice Chairman asks. |
+| V2-36 | Should the notice **digest** — one email a day — rather than one per routing? | No. Routing is a handful of events a week, each one is one message, and a Division Chairman who approves in one sitting gets one email for the sitting. If volume ever says otherwise, the per-recipient grouping is the seam. |
+| V2-37 | Should `Last, First` carry the **middle initial** Rodeo Houston's `Name` column holds? | Not yet: `Name` is not imported (`docs/data-findings.md` §1 calls it redundant), and importing one column for one cell is a roster change for a form change. Revisit if Rodeo Houston questions a form. |

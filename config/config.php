@@ -36,7 +36,7 @@ return [
         // Phases 8.5 to 8.7 already used. Bump it in the commit that closes
         // the phase, and nowhere else: a version that moves on every commit
         // tells a user nothing they can repeat back.
-        'version' => '1.14.5',
+        'version' => '1.14.6',
 
         // The app is served from https://www.reshiftmanager.com/rerm/, never
         // the domain root — that is the landing page in site/index.html, and
@@ -48,11 +48,12 @@ return [
         // Everything is stored and compared in UTC; this is display only.
         'display_timezone' => 'America/Chicago',
 
-        // Scheme and host for the one place a link leaves the browser: the
-        // password recovery email. Configured rather than read from the Host
-        // header, because a header-derived link is a link an attacker can
-        // point at their own host. No trailing slash; app.base_path is
-        // appended by $app->url().
+        // Scheme and host for the two places a link leaves the browser: the
+        // password recovery email, and the "requests are waiting for your
+        // approval" email (mail.rcf_approval_notices). Configured rather
+        // than read from the Host header, because a header-derived link is
+        // a link an attacker can point at their own host. No trailing slash;
+        // app.base_path is appended by $app->url().
         'canonical_url' => 'https://www.reshiftmanager.com',
 
         // Verbose errors on screen. Never true on the server.
@@ -163,8 +164,11 @@ return [
     ],
 
     'mail' => [
-        // Password recovery is the only mail this app sends. There is no bulk
-        // send path in v1, deliberately.
+        // This app sends two kinds of message and no other: password
+        // recovery (spec-v1 3.3), and — since Phase 14.6 — one note to the
+        // Vice Chairman or above that RCF requests have just been routed to
+        // (spec-v2 20.2). There is no bulk send path, deliberately: each is
+        // one message to one person who has a reason to expect it.
         //
         // The account has a DEDICATED IP, so reputation is ours to build
         // rather than inherit — see docs/hosting.md. That solves
@@ -197,14 +201,26 @@ return [
         //    is not production.
         'allowed_recipients' => [],
 
-        // 4. Per-request ceiling. Password recovery sends exactly one message,
-        //    so anything above a handful means a loop that should not exist.
-        //    Exceeding it throws rather than trimming: a silent cap would hide
-        //    the bug it exists to catch.
+        // 4. Per-request ceiling. Password recovery sends exactly one message
+        //    and an approval notice is one per recipient however many
+        //    requests moved, so anything above a handful means a loop that
+        //    should not exist. Exceeding it throws rather than trimming: a
+        //    silent cap would hide the bug it exists to catch.
         'max_per_request' => 5,
 
         'from_address' => 'noreply@reshiftmanager.com',
         'from_name'    => 'Rodeo Express Roster',
+
+        // The approval notice's own switch (Phase 14.6, spec-v2 20.2): an
+        // email to the account RCF requests have just been routed to — the
+        // requester's approver on submission, the next approver on approval
+        // — and to nobody else, never below a Vice Chairman's level, one
+        // message per recipient per request, with no member's details in
+        // it. It sits BEHIND the four interlocks above, so true here sends
+        // nothing until mail.enabled is true and the transport is 'send';
+        // it exists so the notice can be turned off without turning off
+        // password recovery.
+        'rcf_approval_notices' => true,
     ],
 
     'import' => [
