@@ -208,6 +208,10 @@ return [
         //    silent cap would hide the bug it exists to catch.
         'max_per_request' => 5,
 
+        // The From: header AND the envelope sender (Return-Path), which
+        // mail() is handed as -f. One plain address at this domain, so SPF
+        // is checked against this domain's record and bounces land in this
+        // mailbox — docs/hosting.md, "What the first real send measured".
         'from_address' => 'noreply@reshiftmanager.com',
         'from_name'    => 'Rodeo Express Roster',
 
