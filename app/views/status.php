@@ -138,6 +138,14 @@ $chip = static function (string $state, string $word): string {
         </dd>
         <dt>Transport</dt>
         <dd class="mono"><?= e($checks['mail_transport']) ?></dd>
+        <dt>Sends as</dt>
+        <dd>
+            <?php if ($checks['mail_envelope'] !== '') { ?>
+                <span class="mono"><?= e($checks['mail_envelope']) ?></span> &mdash; the envelope sender, so SPF is checked against its domain
+            <?php } else { ?>
+                <?= $chip('warn', 'Not set') ?> <code>mail.from_address</code> is not one plain address, so the server's default would be used
+            <?php } ?>
+        </dd>
         <dt>Allowlist</dt>
         <dd><?= $checks['mail_allowlist'] === 0 ? 'empty — every recipient permitted' : e((string) $checks['mail_allowlist']) . ' address(es) permitted' ?></dd>
     </dl>

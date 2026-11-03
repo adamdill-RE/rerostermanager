@@ -271,6 +271,36 @@ shell — and is never committed.
 To turn only the notice off again, set `'rcf_approval_notices' => false` and
 leave the rest; to stop all mail, set `'enabled' => false`.
 
+### What the first real send measured
+
+The first recovery email sent from the live account (Phase 14.6, step 5
+above) came back from Gmail with `dkim=pass` and `dmarc=pass` but
+**`spf=none`**, and a `Return-Path` of the cPanel account's user name at the
+server hostname (`reshiftmanager@` the `sh193` host) — the account's default
+address, not ours. The `From:`
+header was right; the **envelope** sender was not. PHP's `mail()` sets the
+envelope sender from the system user unless its fifth argument says
+otherwise, so Exim stamped the account's default, SPF was evaluated against
+`sh193.sameservers.com` (which publishes no SPF record), and a bounce would
+have landed in the account's default mailbox rather than the `noreply` one.
+DMARC still passed because DKIM aligned, which is why the message was
+delivered at all.
+
+`Rerm\Mail\Mailer` therefore passes `-f<mail.from_address>` as `mail()`'s
+fifth argument, after refusing anything that is not one plain address
+(`envelopeFrom()`; a test holds both). cPanel's Exim lets an account set the
+envelope sender to an address at its own domain, so the Return-Path is now
+`noreply@reshiftmanager.com`, SPF is checked against this domain's record,
+and bounces reach the mailbox step 1 created. Re-check the headers after
+deploying: all three of `spf`, `dkim` and `dmarc` should read `pass`.
+
+Two addresses are involved, and both are in the SPF record (`+a` and
+`+ip4:`): `152.160.193.193` is the server, `sh193.sameservers.com`, with
+reverse DNS set; `152.160.208.75` is the account's dedicated IP, with none.
+Which one outbound mail leaves from is Exim's configuration, which a
+reseller cannot see; the `Received:` line nearest the top of a delivered
+message says. If it is the dedicated IP, the PTR is a ticket to Ahosting.
+
 ## Time
 
 `date.timezone` is **UTC**. Store and compare in UTC; convert to

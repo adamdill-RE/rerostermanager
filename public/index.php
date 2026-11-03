@@ -522,6 +522,11 @@ function status_checks(Rerm\App $app): array
                                      && $config->get('mail.transport') === 'send',
         'mail_transport'          => (string) $config->get('mail.transport'),
         'mail_allowlist'          => count((array) $config->get('mail.allowed_recipients', [])),
+        // The envelope sender a real send is handed (the Return-Path), or
+        // blank when mail.from_address is not one plain address and mail()
+        // would fall back to the account's default — the state the first
+        // live send was found in (docs/hosting.md).
+        'mail_envelope'           => Rerm\Mail\Mailer::fromApp($app)->envelopeFrom(),
         'writable'                => [],
     ];
 

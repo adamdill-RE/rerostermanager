@@ -149,6 +149,7 @@ test('the Status page: mail disabled is fine, the migration hint names /setup fi
         'mail_can_deliver'       => false,
         'mail_transport'         => 'file',
         'mail_allowlist'         => 0,
+        'mail_envelope'          => 'noreply@example.com',
         'writable'               => ['var' => true],
     ];
 

@@ -188,6 +188,44 @@ test('a fresh checkout cannot send email', function (): void {
 });
 
 // ---------------------------------------------------------------------------
+// The envelope sender
+// ---------------------------------------------------------------------------
+
+test('a real send hands mail() the from address as the envelope sender, and nothing else', function (): void {
+    // Measured on the first real send from cPanel (docs/hosting.md, Mail):
+    // with no fifth argument, mail() goes out as the account's default
+    // address at the server hostname, SPF is checked against that hostname
+    // and reads "none", and bounces miss the noreply mailbox. The envelope
+    // sender has to be set on the wire, by -f, and it has to be ONE plain
+    // address — PHP escapes the argument for the shell, and this refuses
+    // anything that is not an address before it gets that far.
+    $given = [];
+    $wire  = function (string $to, string $subject, string $body, string $headers, string $envelopeFrom) use (&$given): bool {
+        $given[] = $envelopeFrom;
+
+        return true;
+    };
+
+    $mailer = new Mailer(true, Mailer::TRANSPORT_SEND, [], 5, 'noreply@example.com', 'Test', false, mail_scratch(), $wire);
+    assertSame('noreply@example.com', $mailer->envelopeFrom());
+    $mailer->send('member@example.com', 's', 'b');
+    assertSame(['noreply@example.com'], $given, 'the wire is handed the address; the closure adds -f');
+
+    // Not an address: nothing is handed over, and mail() keeps its default.
+    foreach (['', 'noreply', 'noreply@example.com -X /tmp/x', "noreply@example.com\n", 'Rodeo <noreply@example.com>'] as $bad) {
+        $given  = [];
+        $mailer = new Mailer(true, Mailer::TRANSPORT_SEND, [], 5, $bad, 'Test', false, mail_scratch(), $wire);
+        assertSame('', $mailer->envelopeFrom(), var_export($bad, true) . ' is not one plain address');
+        $mailer->send('member@example.com', 's', 'b');
+        assertSame([''], $given);
+    }
+
+    // And the committed from address is one plain address, so production
+    // sends with it.
+    assertSame('noreply@reshiftmanager.com', Mailer::fromApp(App::boot(dirname(__DIR__)))->envelopeFrom());
+});
+
+// ---------------------------------------------------------------------------
 // The approval notice (Phase 14.6, spec-v2 §20.2) — the second message
 // ---------------------------------------------------------------------------
 

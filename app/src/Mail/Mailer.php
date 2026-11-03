@@ -162,11 +162,40 @@ final class Mailer
             return false;
         }
 
-        $deliver = $this->deliver ?? static function (string $to, string $subject, string $body, string $headers): bool {
-            return mail($to, $subject, $body, $headers);
+        $deliver = $this->deliver ?? static function (
+            string $to,
+            string $subject,
+            string $body,
+            string $headers,
+            string $envelopeFrom
+        ): bool {
+            // The fifth argument is what sets the ENVELOPE sender — the
+            // Return-Path — which the From: header does not. Without it,
+            // mail() under cPanel sends as the account's default address at
+            // the server hostname (reshiftmanager@sh193…), so SPF is
+            // evaluated against a hostname with no SPF record and reads
+            // "none", and a bounce lands in the account's catch-all rather
+            // than the noreply mailbox. Measured on the first real send
+            // (docs/hosting.md, Mail). PHP escapes this argument for the
+            // shell itself; envelopeFrom() has already refused anything
+            // that is not one plain address.
+            return mail($to, $subject, $body, $headers, $envelopeFrom === '' ? '' : '-f' . $envelopeFrom);
         };
 
-        return (bool) $deliver($to, $subject, $body, $this->headers());
+        return (bool) $deliver($to, $subject, $body, $this->headers(), $this->envelopeFrom());
+    }
+
+    /**
+     * The envelope sender: mail.from_address when it is one plain address,
+     * else nothing — in which case mail() falls back to the system default
+     * rather than being handed anything that is not an address. Public so
+     * /status and a test can read what the wire would be given.
+     */
+    public function envelopeFrom(): string
+    {
+        // Not trimmed: a configured address carrying whitespace or a line
+        // break is wrong, and wrong is refused rather than tidied.
+        return filter_var($this->fromAddress, FILTER_VALIDATE_EMAIL) !== false ? $this->fromAddress : '';
     }
 
     private function sendToLog(string $to, string $subject): bool
