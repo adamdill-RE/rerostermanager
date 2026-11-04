@@ -596,9 +596,11 @@ final class RcfTracking
         $reason = RosterChangeForm::REMOVE_REASONS[$code] ?? $code;
 
         return match ($type) {
+            // An addition's team is its NEW SUB-COMMITTEE since Phase 14.7
+            // (spec-v2 §21.2); a line kept before that still has the heading's.
             'A' => [
                 'Not on the roster',
-                'Added' . ($new !== '' ? ' as ' . $new : '') . ($team !== '' ? ' to ' . $team : ''),
+                'Added' . ($new !== '' ? ' as ' . $new : '') . ($dest !== '' ? ' to ' . $dest : ($team !== '' ? ' to ' . $team : '')),
             ],
             'R' => [
                 'On the roster' . ($prev !== '' ? ' as ' . $prev : '') . ($team !== '' ? ', ' . $team : ''),
@@ -663,7 +665,13 @@ final class RcfTracking
             . ' gm.preferred_name AS g_preferred, gm.first_name AS g_first, gm.last_name AS g_last,'
             . ' gm.member_number AS g_number,'
             . ' tm.preferred_name AS t_preferred, tm.first_name AS t_first, tm.last_name AS t_last,'
-            . ' tm.member_number AS t_number'
+            . ' tm.member_number AS t_number,'
+            // The team on the form — the one its heading named, when it
+            // named one — and the team the roster has the member on today
+            // (Phase 14.7, spec-v2 §21.1). teamFor() decides which the line
+            // shows; the second is read live, never kept, because it is the
+            // roster's answer and not the form's.
+            . ' ft.name AS form_team, rt.name AS roster_team'
             . ' FROM rcf_row r'
             // A voided form's lines are nobody's to see (Phase 14.2): the
             // join is where every line read goes through, so it is the one
@@ -672,7 +680,50 @@ final class RcfTracking
             . ' INNER JOIN app_user gu ON gu.id = f.generated_by'
             . ' INNER JOIN member gm ON gm.id = gu.member_id'
             . ' LEFT JOIN app_user tu ON tu.id = r.tracked_by'
-            . ' LEFT JOIN member tm ON tm.id = tu.member_id';
+            . ' LEFT JOIN member tm ON tm.id = tu.member_id'
+            . ' LEFT JOIN team ft ON ft.id = f.team_id'
+            . ' LEFT JOIN member rm ON rm.id = r.member_id'
+            . ' LEFT JOIN team rt ON rt.id = rm.team_id';
+    }
+
+    /**
+     * The team a line is about, and where that came from (Phase 14.7,
+     * spec-v2 §21.1) — the one answer every list of forms and entries
+     * prints beside the member, so "which team is this person on" is never
+     * read off a division heading.
+     *
+     * What is ON THE FORM wins: an addition's NEW SUB-COMMITTEE, which
+     * since this phase is the team they are added to; otherwise the team
+     * the heading named, when it named one. A form headed with a division
+     * says nothing about the team, so the ROSTER's is shown instead, marked
+     * as the roster's — it is what the roster says today, not what the
+     * form said then, and the two can differ precisely when the form
+     * worked. Nothing, from nowhere, for a newcomer on a division-headed
+     * form kept before this phase.
+     *
+     * PLAIN; `View::rcfTeam()` draws it, with the note.
+     *
+     * @param array<string, mixed> $line type, new_subcommittee, form_team (the
+     *        heading's team, '' for a division), roster_team (the member's, '' for nobody)
+     * @return array{name: string, source: string} source is 'rcf', 'roster' or ''
+     */
+    public static function teamFor(array $line): array
+    {
+        $destination = trim((string) ($line['new_subcommittee'] ?? ''));
+        $heading     = trim((string) ($line['form_team'] ?? ''));
+        $roster      = trim((string) ($line['roster_team'] ?? ''));
+
+        if ((string) ($line['type'] ?? '') === 'A' && $destination !== '') {
+            return ['name' => $destination, 'source' => 'rcf'];
+        }
+        if ($heading !== '') {
+            return ['name' => $heading, 'source' => 'rcf'];
+        }
+        if ($roster !== '') {
+            return ['name' => $roster, 'source' => 'roster'];
+        }
+
+        return ['name' => '', 'source' => ''];
     }
 
     /**
@@ -838,6 +889,14 @@ final class RcfTracking
                 'subcommittee'       => (string) $row['subcommittee'],
                 'year_label'         => (string) $row['year_label'],
                 'viewable'           => self::mayView($user, (int) $row['generated_by']),
+                // The team the line is about, and whether the form or the
+                // roster said so (Phase 14.7, spec-v2 §21.1).
+                'team'               => self::teamFor([
+                    'type'             => $type,
+                    'new_subcommittee' => (string) $row['new_subcommittee'],
+                    'form_team'        => (string) ($row['form_team'] ?? ''),
+                    'roster_team'      => (string) ($row['roster_team'] ?? ''),
+                ]),
             ];
 
             // What they were and what the line asks for (Phase 13, §14.5),

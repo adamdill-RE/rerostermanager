@@ -160,7 +160,8 @@ $entryHtml = static function (array $entry) use ($app, $contactTypes): string {
                 &middot; <?= e((string) $line['change']) ?>
                 &middot; by <?= e((string) $line['generator_name']) ?>
                 <span class="why">
-                    RCF # <?= (string) $line['serial'] === '' ? 'not yet' : e((string) $line['serial']) ?>
+                    team <?= View::rcfTeam((array) $line['team']) ?>
+                    &middot; RCF # <?= (string) $line['serial'] === '' ? 'not yet' : e((string) $line['serial']) ?>
                     &middot; to the DC <?= e($day($line['sent_to_dc_on'])) ?>
                     &middot; to Rosters <?= e($day($line['sent_to_rosters_on'])) ?>
                     &middot; in the roster <?= $line['landed'] === null ? 'not yet' : View::time($app, (string) $line['landed']['at']) ?>

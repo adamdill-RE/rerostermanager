@@ -289,6 +289,29 @@ final class View
     }
 
     /**
+     * The team a form line or an RCF request is about (Phase 14.7, spec-v2
+     * §21.1), as `RcfTracking::teamFor()` decided it: the team's name, and
+     * — when the form itself did not say and the roster did — the note that
+     * says so, because what the roster says today and what the form said
+     * then are two different facts. Nobody on the roster, and no team on
+     * the form, reads as words rather than a blank cell. One function, so
+     * every list prints it the same way. Returns escaped HTML, safe to echo.
+     *
+     * @param array{name: string, source: string} $team
+     */
+    public static function rcfTeam(array $team): string
+    {
+        $name = trim((string) ($team['name'] ?? ''));
+        if ($name === '') {
+            return '<span class="why">no team on the form, and not on the roster</span>';
+        }
+
+        return e($name) . ((string) ($team['source'] ?? '') === 'roster'
+            ? ' <span class="why">from the roster &mdash; not on the form</span>'
+            : '');
+    }
+
+    /**
      * The three screens of the RCF entry workflow (Phase 14, spec-v2 §15)
      * as one strip — Your entries · Waiting for you · Ready to generate —
      * with the live count on each, filtered by capability exactly as the

@@ -661,6 +661,23 @@ name list offers, and a kept line carries; a name typed forwards still
 picks. The officer's own name on `G4` stays `First Last, Title`, and a form
 kept before the change keeps what it printed.
 
+**A line says which team it is about** (Phase 14.7, spec-v2 §21). Four
+rules hang off the grid's cells, and `RcfPage::formFromInput()` returns
+them with the entries as `problems` (refused, by row) and `confirm` (held
+for a second look, with a key): an **addition** carries the team it joins
+in NEW SUB-COMMITTEE — filled from a team heading, required under a
+division one, and a team rather than a division; CHANGE/ADD TITLE is one
+of `RcfPage::titles()` (the roster's titles and `TitleMap`'s spellings) or
+nothing, required on an addition and a title change; INTERVIEW REQUIRED OR
+SPONSORED BY is kept only when `maySponsor()` says so — a Division Vice
+Chairman or above, read off the title's *breadth* through `User::$title`,
+the one rule that reads a title — and drawn disabled otherwise; and a row
+that names no team anywhere, or a team change with no destination, is
+shown back with what the roster says before either grid screen goes on
+(`rcf_held()`, `app/views/rcf-confirm.php`). Every list then prints the
+team through `View::rcfTeam()` — the form's first, the roster's second
+with a note — and a test reads all seven views for it.
+
 ### Every form is kept, and every line of it is tracked
 
 Phase 11 (spec-v2 §12) answers the first request to come from a real user:
@@ -832,6 +849,7 @@ Each phase ends shippable. `docs/spec-v1.md` carries the detail through 8.7,
 | **14.4 · The menu by the owner's groups, and the shell** | The menu reordered into RCFs, Dues & Compliance, Team Functions and Administer, three RCF screens retitled on the menu and the page, written once in `Rerm\Menu`; a `<details>` drop-down of every screen the caller may use in the bar of every signed-in screen, the bar one line on a phone; the brand a link home; and the audit's four fixes — the desktop toggle sizing, one control-height token, the bar on narrow columns, the member card's select | A Captain on a 360px phone sees 56px of bar instead of 130, reaches any screen in two taps, and an Admin reads all twenty-two in two columns without scrolling |
 | **14.5 · Two cells for one person, and the top of the chain** | The RCF grid's member control split into `HLS&R no.` and `Member name`, the number deciding: a known number carries the roster's name, a picked name takes its number, a newcomer is typed in both; tracking held to the number by a test; Create RCF Requests and Create Approval Flow name *top of the chain* as the missing row for a final approver whose own row was never drawn | A Division Chairman learns from the screen which one row an Admin has to draw, and a newcomer typed as "Bob" cannot stand beside a number the roster spells "Robert" |
 | **14.6 · The menu on sign-in, the approver's email, and `Last, First`** | A sign-in lands on the menu for every level, `/dashboard` one tap away; the application's second email — `Rerm\Forms\ApprovalNotice`, to the Vice Chairman or above that RCF requests have just been routed to, on submission and on an approval that passes them on, one message per recipient, no member's details in it, after the commit, behind the interlocks and `mail.rcf_approval_notices`; the flash says emailed or why not; the MEMBER NAME cell is `Last, First` from the roster, matched either way round | A Division Chairman learns from their inbox that three requests are waiting, opens the link, and reads every name last name first |
+| **14.7 · The team on every line, and four rules the form implied** | Every list of RCF lines and requests carries a **Team** column — the form's (an addition's destination, or the heading's team) first, the roster's second with a note saying so, from one `RcfTracking::teamFor()`; an addition's NEW SUB-COMMITTEE is the team they will join, filled from a team heading and required under a division one; a row naming no team is held for a **second look** that shows what the roster says and takes a key for exactly those rows (no script: a server round trip); INTERVIEW REQUIRED OR SPONSORED BY is a Division Vice Chairman's cell and above, disabled and dropped for everybody else, read off the title's breadth (`User::$title`); CHANGE/ADD TITLE is a `<select>` of the roster's titles and the export's spellings, required on an addition and a title change | A Division Chairman reads which team every request is about without opening a card, a request cannot carry a misspelled title or an addition with nowhere to go, and a forgotten team change is caught before it is a request |
 | **10.x · v2** | Recruiting and retention automation; multi-year contact history (OI-12) | see `docs/spec-v2.md` |
 
 Phases 4 and 5 are the product. Everything before them is plumbing and

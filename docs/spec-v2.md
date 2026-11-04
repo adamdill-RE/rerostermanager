@@ -2616,3 +2616,162 @@ Three edges, each decided:
 | V2-35 | Should the **requester** be emailed when an entry is **returned** or when it lands **in the roster**? | Not now. The owner's rule was "only for assigned RCFs", and the requester's list carries both with the note. Revisit if a Vice Chairman asks. |
 | V2-36 | Should the notice **digest** — one email a day — rather than one per routing? | No. Routing is a handful of events a week, each one is one message, and a Division Chairman who approves in one sitting gets one email for the sitting. If volume ever says otherwise, the per-recipient grouping is the seam. |
 | V2-37 | Should `Last, First` carry the **middle initial** Rodeo Houston's `Name` column holds? | Not yet: `Name` is not imported (`docs/data-findings.md` §1 calls it redundant), and importing one column for one cell is a roster change for a form change. Revisit if Rodeo Houston questions a form. |
+
+## 21. The team on every line, and four rules the paper form only implied
+
+Phase 14.7. Five requests from the owner after a round of real RCF
+requests, each about the same thing from a different side: a line of a
+Roster Change Form has to say which **team** it is about, and the cells
+that decide that were free text.
+
+### 21.1 Every list says the team, and says where it got it
+
+*"Anywhere we show RCFs — in progress, approved, tracking — display a team
+for the member impacted by the RCF; start with what is on the RCF and if
+nothing then use the roster team with a note that you got that info
+there."*
+
+A form headed with a division — the Division Chairman's bundle, which is
+what consolidation produces by default (§15.5) — names no team on its
+lines: a removal or a title change on it reads *Alpha, Robert — Committee
+Member → Captain* and nothing more, and the first question anybody reading
+it asks is "which team is that". So every list that shows a kept line or a
+request carries a **Team** column, decided by one pure function,
+`RcfTracking::teamFor()`, from four facts the two shapers already read or
+now join:
+
+* **What is on the form wins.** An addition's NEW SUB-COMMITTEE (§21.2: the
+  team they are added to); otherwise the team the heading named, when it
+  named one (`rcf.team_id`, `rcf_entry.team_id`).
+* **Otherwise the roster's, marked.** The member's `team_id` today, joined
+  live through `member_id` and never kept — *AF Bus Ops Team A — from the
+  roster, not on the form*. The note is load-bearing: what the roster says
+  today and what the form said then are two facts, and they differ exactly
+  when the form worked. A test moves the member and reads both.
+* **Nothing, in words.** A newcomer on a division-headed form kept before
+  this phase has no team anywhere: *no team on the form, and not on the
+  roster*, never a blank cell.
+
+`View::rcfTeam()` draws it, with the note, on Create RCF Requests, Approve
+RCF Requests, Export Approved Requests, Track RCFs (the search, the
+requests not yet on a form, every change line by line), one form's page,
+the member card and Look Up Members — a test reads all seven views for it.
+An addition's *Becomes* now reads *Added as Committee Member to AF Bus Ops
+Team A* for the same reason.
+
+### 21.2 An addition names the team they will join
+
+*"When processing an addition, force the user to select a Team the user
+will be added to."*
+
+On the paper form an addition's team is the heading, which works until the
+heading is a division. So an `A` row's NEW SUB-COMMITTEE is **the team they
+will be added to**, and it is required: on a form headed with a team it is
+filled in from the heading when left blank — the courtesy the previous
+title already gets — and on a form headed with a division it has to be
+picked. `RcfPage::problems()` refuses, by row number and in a sentence, an
+addition with no team, with a division as its team, or with a team that is
+not on the roster (`matchOption()` says which of the three). A refusal
+re-renders with everything still typed in, on both grid screens, and
+`RcfEntries::submit()` refuses the same problems again — after the route,
+so an account with nothing drawn still learns that first — because a
+request is a record and the rule is the record's.
+
+### 21.3 The second look
+
+*"When the user is submitting an RCF and didn't specify a team, give them a
+popup that shows them what's on the roster (if anything) and asks them to
+confirm that is correct — this is to catch people thinking they are
+submitting a team change RCF and then omitting that detail."*
+
+There is no JavaScript in this application (spec-v1 §10; the CSP forbids
+it), so the popup is a **server round trip**: the POST comes back with the
+grid intact and a card above it — `app/views/rcf-confirm.php`, drawn inside
+both screens' forms, `role="alertdialog"`, the confirming button focused —
+listing each row that needs the look with what the roster says their team
+is, *on the roster as AF Bus Ops Team A*, *not on the roster you can see*,
+or *on the roster with no team*. Two buttons: the screen's own action
+again, carrying a key, or **Go back and change the rows**, which is the
+Load button.
+
+`RcfPage::needsConfirming()` is the rule, and it is two shapes of the one
+mistake: a filled row about somebody that names **no team anywhere** — the
+heading is a division and NEW SUB-COMMITTEE is blank — and a **team change
+with no destination** (`S`, `S & T`), whatever the heading. An addition is
+never here (§21.2 refuses it); a team heading answers the first shape for
+every other row, so a Vice Chairman on their own team is not asked.
+
+The key (`confirmKey()`) is a hash of exactly the rows asked about, on
+exactly this heading. Edit a row after answering and the key no longer
+fits, so the question is asked again about the row as it now is; an answer
+never travels to a different set of rows; `confirmed()` compares it in
+constant time. The hold is the handler's (`rcf_held()` in `public/
+index.php`, one function for both screens), not `submit()`'s: the screen
+asked, and a request is what was confirmed.
+
+### 21.4 The sponsor's cell is a Division Vice Chairman's
+
+*"Disable the interviewer input for now except for DVC and above
+originating a request."*
+
+INTERVIEW REQUIRED OR SPONSORED BY is filled in by a **Division Vice
+Chairman or above**. The level cannot say that alone — a Vice Chairman and
+a Division Vice Chairman are both Senior Officers — so `User` now carries
+the member's **title**, read by the same loader as everything else, and
+`RcfPage::maySponsor()` reads the title's *breadth* (`TitleMap::BREADTH`):
+an Admin, an Executive Officer, and a Senior Officer whose title's breadth
+is the division — which is every Senior Officer title but `Vice Chairman`.
+A granted Senior Officer with a member's title has the division's breadth
+and may. The title is never a level and never a scope; this is the one rule
+that reads it.
+
+For everybody else the cell is drawn **disabled**, with the reason in its
+label and tooltip and *DVC or above* as its placeholder — greyed, never
+absent, so the column still lines up with the paper form — and whatever
+arrives in it is dropped when the row is resolved, because a control hidden
+on a screen hides nothing. The rule is read on the signed-in user on both
+grid screens: Create Forms too, since it is one partial and one resolver,
+and "for now" was the owner's word.
+
+### 21.5 The title is a list
+
+*"Add a title drop-down list and force its use. Use all the titles on our
+roster currently to populate that drop-down."*
+
+CHANGE/ADD TITLE is a `<select>` of `RcfPage::titles()` — every distinct
+title on the roster today, and every title the export is known to spell
+(`TitleMap::MAP`), sorted, once each. The map is there so a committee with
+no Officer in Charge this week can still appoint one, in the spelling the
+next import will carry. A typed value not on the list is dropped and
+**named** (*"Asst Captain" is not a title on the roster*), never written;
+a title is **required** for an addition, a title change and a team-and-title
+change, and a removal or a team change needs none.
+
+It is a `<select>` and not a datalist — the opposite of the sub-committee
+decision in §2.4 — because a datalist is a text box wearing a list and the
+point here is that the cell cannot hold a spelling Rodeo Houston does not
+use. The cost was measured: seventeen short options on each of twenty-five
+rows, written once per option (`<option>Captain</option>`, no value
+attribute), is 138KB fully expanded against 122KB before, 81KB against 76KB
+on first paint, and 20.9KB against 20.2KB on the wire. The first-paint and
+wire budgets hold unchanged; the ceiling on the deliberate full expansion
+moves from 128KB to 160KB, recorded in the test.
+
+### 21.6 What it never does
+
+* A form still never writes the roster, and neither does a request: the
+  team on a line is read for display and compared for a question, and
+  nothing here changes `member.team_id`.
+* The roster's team is never kept on a line or an entry. A kept form is
+  what was printed (§12.1); the roster's answer is read live every time.
+* Nothing is deleted and no migration is needed: the two joins, the title
+  on `User`, and one new partial.
+
+### 21.7 Open items raised
+
+| # | Question | Assumption today |
+| --- | --- | --- |
+| V2-38 | Should the second look also ask on a **team-headed** form when the type is a title change — "did you mean a team change?" | No. A team heading names the team on every row, and asking on every title change on every team form is the question nobody reads. The two shapes in §21.3 are the ones that lose information. |
+| V2-39 | Should **Coordinator** and **Ambassador** sponsor? They are Senior Officers with the division's breadth, so today they may. | Yes, until the owner says otherwise: "DVC and above" was read as the level above a Vice Chairman, and those two titles sit there (`TitleMap`). One line in `maySponsor()` narrows it to the title. |
+| V2-40 | Should the title list be **narrowed by type** — only officer titles on a title change, say? | Not now. The roster's own list is short, and Rodeo Houston accepts any of them on any line. |
+| V2-41 | Should an **uploaded** form's additions be read for a team the same way? | They are shown the same way (§21.1) — `RcfReader` already keeps NEW SUB-COMMITTEE — and nothing is required of a form somebody else filled in. |

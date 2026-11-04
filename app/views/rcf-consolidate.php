@@ -100,7 +100,7 @@ use Rerm\View;
                             <?php if ($entry['wait_list']) { ?><span class="why">wait list</span><?php } ?></td>
                         <td data-label="Change"><?= e((string) $entry['was']) ?> &rarr; <?= e((string) $entry['becomes']) ?><?php
                             if ((string) $entry['sponsor'] !== '') { ?> <span class="why">sponsor <?= e((string) $entry['sponsor']) ?></span><?php } ?></td>
-                        <td data-label="Team"><?= e((string) ($entry['team_name'] !== '' ? $entry['team_name'] : $entry['subcommittee'])) ?></td>
+                        <td data-label="Team"><?= View::rcfTeam((array) $entry['team']) ?></td>
                         <td data-label="Asked by"><?= e((string) $entry['requester_name']) ?>
                             <span class="why"><?= View::time($app, (string) $entry['requested_at']) ?></span></td>
                         <td data-label="Approved"><?= $entry['approved_at'] === null ? '' : View::time($app, (string) $entry['approved_at']) ?>

@@ -158,6 +158,7 @@ $others = $tracking['others'];
             <thead><tr>
                 <th scope="col">Form</th>
                 <th scope="col">Member</th>
+                <th scope="col">Team</th>
                 <th scope="col">Change</th>
                 <th scope="col">RCF #</th>
                 <th scope="col">To the DC</th>
@@ -171,6 +172,7 @@ $others = $tracking['others'];
                         <span class="why"><?= e((string) $line['subcommittee']) ?> &middot; by <?= e((string) $line['generator_name']) ?></span></td>
                     <td data-label="Member"><?= e((string) $line['member_name']) ?>
                         <?php if ((string) $line['member_number'] !== '') { ?><span class="why mono"><?= e((string) $line['member_number']) ?></span><?php } ?></td>
+                    <td data-label="Team"><?= View::rcfTeam((array) $line['team']) ?></td>
                     <td data-label="Change"><?= e((string) $line['change']) ?></td>
                     <td data-label="RCF #"><?= (string) $line['serial'] === '' ? '<span class="chip chip-muted">not yet</span>' : '<span class="mono">' . e((string) $line['serial']) . '</span>' ?></td>
                     <td data-label="To the DC"><?= $line['sent_to_dc_on'] === null ? '<span class="chip chip-muted">not yet</span>' : e($day($line['sent_to_dc_on'])) ?></td>
@@ -206,6 +208,7 @@ $others = $tracking['others'];
                 <th scope="col">Asked</th>
                 <th scope="col">Sub-committee</th>
                 <th scope="col">Member</th>
+                <th scope="col">Team</th>
                 <th scope="col">Change</th>
                 <th scope="col">Where it is</th>
             </tr></thead>
@@ -219,6 +222,7 @@ $others = $tracking['others'];
                             <a href="<?= e($app->url('member?id=' . (int) $entry['member_id'] . '&from=rcfs')) ?>"><?= e((string) $entry['member_name']) ?></a>
                         <?php } else { ?><?= e((string) $entry['member_name']) ?><?php } ?>
                         <?php if ((string) $entry['member_number'] !== '') { ?><span class="why mono"><?= e((string) $entry['member_number']) ?></span><?php } ?></td>
+                    <td data-label="Team"><?= View::rcfTeam((array) $entry['team']) ?></td>
                     <td data-label="Change"><?= e((string) $entry['was']) ?> &rarr; <?= e((string) $entry['becomes']) ?></td>
                     <td data-label="Where it is"><span class="chip <?= $entry['status'] === 'approved' ? 'chip-info' : 'chip-warn' ?>"><?= e((string) $entry['status_label']) ?></span>
                         <span class="why"><?= e((string) $entry['where']) ?></span></td>
@@ -269,6 +273,7 @@ $others = $tracking['others'];
             <thead><tr>
                 <th scope="col">RCF date</th>
                 <th scope="col">Member</th>
+                <th scope="col">Team</th>
                 <th scope="col">Was</th>
                 <th scope="col">Becomes</th>
                 <th scope="col">RCF #</th>
@@ -291,6 +296,7 @@ $others = $tracking['others'];
                         <?php if ($line['rookie']) { ?><span class="why">rookie</span><?php } ?>
                         <?php if ($line['wait_list']) { ?><span class="why">wait list</span><?php } ?>
                     </td>
+                    <td data-label="Team"><?= View::rcfTeam((array) $line['team']) ?></td>
                     <td data-label="Was"><?= e((string) $line['was']) ?></td>
                     <td data-label="Becomes"><?= e((string) $line['becomes']) ?><?php
                         if ((string) $line['sponsor'] !== '') { ?> <span class="why">sponsor <?= e((string) $line['sponsor']) ?></span><?php } ?></td>

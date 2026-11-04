@@ -109,7 +109,12 @@ $visibleRows = (int) $rcf['visible_rows'];
     $options = static function (array $choices, string $selected): string {
         $html = '<option value="">&mdash;</option>';
         foreach ($choices as $value => $label) {
-            $html .= '<option value="' . e((string) $value) . '"'
+            // An option whose value IS its label carries no value attribute:
+            // the browser submits the text, byte for byte. It is how the
+            // title list (Phase 14.7) stays inside the budget twenty-five
+            // rows deep — the same text written once, not twice.
+            $html .= '<option'
+                . ((string) $value === (string) $label ? '' : ' value="' . e((string) $value) . '"')
                 . ((string) $value === $selected ? ' selected' : '') . '>'
                 . e((string) $label) . '</option>';
         }
@@ -126,6 +131,24 @@ $visibleRows = (int) $rcf['visible_rows'];
     foreach ($rcf['reasons'] as $number => $reason) {
         $reasonChoices[$number] = $number . ') ' . $reason;
     }
+
+    // The titles, as one list (Phase 14.7, spec-v2 §21.5): every title on
+    // the roster and every one the export is known to spell, and nothing
+    // typed. A <select> rather than a datalist, deliberately — a datalist is
+    // a text box wearing a list, and the point is that the cell cannot hold
+    // a spelling Rodeo Houston does not use. Twenty-five rows of fourteen
+    // short options is ~12KB, inside the budget the sub-committee list was
+    // kept out of a <select> for.
+    $titleChoices = [];
+    foreach ((array) $rcf['titles'] as $title) {
+        $titleChoices[(string) $title] = (string) $title;
+    }
+
+    // INTERVIEW REQUIRED OR SPONSORED BY is a Division Vice Chairman's cell
+    // and above (Phase 14.7, spec-v2 §21.4). For everybody else it is drawn
+    // DISABLED, with the reason in its label: a disabled control submits
+    // nothing, and RcfPage::entry() drops the cell for them anyway.
+    $maySponsor = (bool) ($rcf['may_sponsor'] ?? false);
 
     /** A text field in a grid cell. Never given an id: nothing points at one. */
     $field = static function (
@@ -149,8 +172,11 @@ $visibleRows = (int) $rcf['visible_rows'];
         <caption>
             One row per person. A number that is on the roster carries the
             roster&rsquo;s name, so the name can be left blank; type both only for
-            somebody who is not on the roster yet. Leave the rest blank &mdash;
-            blank rows print blank, exactly as they do on the paper form.
+            somebody who is not on the roster yet. A title is picked from the
+            list, never typed. An <strong>addition</strong> names the team they
+            will join under New sub-committee &mdash; filled in for you when this
+            form is headed with a team. Leave the rest blank &mdash; blank rows
+            print blank, exactly as they do on the paper form.
         </caption>
         <?php /* The column widths live in the stylesheet, under the 720px
                  breakpoint, and not here: an inline width on a <col> still
@@ -186,8 +212,8 @@ $visibleRows = (int) $rcf['visible_rows'];
     'rcf-members', '1234567') ?></td>
 <td data-label="Member name"><?= $field($i, $n, 'member_name', 'Member name', (string) $entry['member_name'],
     'rcf-member-names', 'from the roster') ?></td>
-<td data-label="Change/add title"><?= $field($i, $n, 'new_title', 'New title',
-    (string) $entry['new_title']) ?></td>
+<td data-label="Change/add title"><select name="row[<?= $i ?>][new_title]" aria-label="New title, row <?= $n ?>"><?=
+    $options($titleChoices, (string) $entry['new_title']) ?></select></td>
 <td data-label="Previous title"><?= $field($i, $n, 'previous_title', 'Previous title',
     (string) $entry['previous_title'], '', 'from the roster') ?></td>
 <td class="tick" data-label="Wait list"><input type="checkbox" name="row[<?= $i ?>][wait_list]"
@@ -198,8 +224,10 @@ $visibleRows = (int) $rcf['visible_rows'];
     $options($reasonChoices, (string) $entry['remove_reason']) ?></select></td>
 <td data-label="New sub-committee"><?= $field($i, $n, 'new_subcommittee', 'New sub-committee',
     (string) $entry['new_subcommittee'], 'rcf-subcommittees') ?></td>
-<td data-label="Interview or sponsor"><?= $field($i, $n, 'sponsor', 'Interview or sponsor',
-    (string) $entry['sponsor'], 'rcf-officers', 'date, or an officer') ?></td>
+<td data-label="Interview or sponsor"><?php if ($maySponsor) { ?><?= $field($i, $n, 'sponsor', 'Interview or sponsor',
+    (string) $entry['sponsor'], 'rcf-officers', 'date, or an officer') ?><?php } else { ?><input type="text" disabled
+    aria-label="Interview or sponsor, row <?= $n ?> — filled in by a Division Vice Chairman or above"
+    title="Filled in by a Division Vice Chairman or above" placeholder="DVC or above"><?php } ?></td>
 </tr>
 <?php } ?>
         </tbody>

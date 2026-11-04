@@ -65,6 +65,7 @@ $member = static function (array $entry) use ($app): string {
                 <th scope="col">Asked</th>
                 <th scope="col">Sub-committee</th>
                 <th scope="col">Member</th>
+                <th scope="col">Team</th>
                 <th scope="col">Change</th>
                 <th scope="col">If approved</th>
             </tr></thead>
@@ -79,6 +80,7 @@ $member = static function (array $entry) use ($app): string {
                     <td data-label="Member"><?= $member($entry) ?><?php
                         if ($entry['rookie']) { ?> <span class="why">rookie</span><?php }
                         if ($entry['wait_list']) { ?> <span class="why">wait list</span><?php } ?></td>
+                    <td data-label="Team"><?= View::rcfTeam((array) $entry['team']) ?></td>
                     <td data-label="Change"><?= e((string) $entry['was']) ?> &rarr; <?= e((string) $entry['becomes']) ?><?php
                         if ((string) $entry['sponsor'] !== '') { ?> <span class="why">sponsor <?= e((string) $entry['sponsor']) ?></span><?php } ?></td>
                     <td data-label="If approved"><?php if (($entry['next_approver'] ?? null) !== null) { ?>
@@ -126,6 +128,7 @@ $member = static function (array $entry) use ($app): string {
             <th scope="col">Asked</th>
             <th scope="col">Sub-committee</th>
             <th scope="col">Member</th>
+            <th scope="col">Team</th>
             <th scope="col">Change</th>
             <th scope="col">Where it is</th>
         </tr></thead>
@@ -136,6 +139,7 @@ $member = static function (array $entry) use ($app): string {
                     <span class="why">by <?= e((string) $entry['requester_name']) ?></span></td>
                 <td data-label="Sub-committee"><?= e((string) $entry['subcommittee']) ?></td>
                 <td data-label="Member"><?= $member($entry) ?></td>
+                <td data-label="Team"><?= View::rcfTeam((array) $entry['team']) ?></td>
                 <td data-label="Change"><?= e((string) $entry['was']) ?> &rarr; <?= e((string) $entry['becomes']) ?></td>
                 <td data-label="Where it is"><span class="chip <?= e(match ((string) $entry['status']) {
                     'pending' => 'chip-warn', 'approved' => 'chip-info', 'generated' => $entry['landed'] === null ? 'chip-info' : 'chip-ok',

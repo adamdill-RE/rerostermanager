@@ -39,6 +39,8 @@ declare(strict_types=1);
  * @var Rerm\Auth\User        $user
  * @var array<int, array{0:string,1:string}> $notices
  * @var array<string, mixed>  $rcf everything RcfPage::page() decided
+ * @var array<string, mixed>|null $confirm RcfPage::formFromInput()'s answer, when a
+ *      download was held for the second look (Phase 14.7, spec-v2 §21.3)
  */
 
 use Rerm\Csrf;
@@ -160,6 +162,17 @@ foreach ($subcommittees as $option) {
     </div>
 <?php } else { ?>
 
+    <?php /* The second look (Phase 14.7, spec-v2 §21.3): the download was
+             held because a row names no team; the card asks, and the
+             confirming button downloads with the key for these rows. */ ?>
+    <?php if (($confirm ?? null) !== null) {
+        $confirmRows   = (array) $confirm['confirm'];
+        $confirmKey    = (string) $confirm['confirm_key'];
+        $confirmAction = 'download';
+        $confirmLabel  = 'The roster is right — download the form';
+        require __DIR__ . '/rcf-confirm.php';
+    } ?>
+
     <?php /* The grid — datalists, the member-list card, the rows and the
              Add-rows button — is one partial shared with Create RCF
              Entries (Phase 14, spec-v2 §15.4). */ ?>
@@ -215,7 +228,20 @@ foreach ($subcommittees as $option) {
     <p class="hint">
         One of the two, for every new recruit: the date the interview was
         conducted, or the name of the officer sponsoring them, who must be a
-        Vice Chairman or higher.
+        Vice Chairman or higher. Filled in by a Division Vice Chairman or
+        above; for anybody else the cell is greyed out.
+    </p>
+    <h3>Change/add title</h3>
+    <p class="hint">
+        Picked from the titles on the roster, so the form spells a title the
+        way Rodeo Houston does. Required for an addition, a title change and a
+        team-and-title change.
+    </p>
+    <h3>New sub-committee</h3>
+    <p class="hint">
+        The team a member is moving to &mdash; and, for an addition, the team
+        they will be added to. When this form is headed with a team, an
+        addition&rsquo;s is filled in from the heading.
     </p>
     <h3>RE rookie</h3>
     <p class="hint">

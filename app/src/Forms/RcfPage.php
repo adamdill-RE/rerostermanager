@@ -7,6 +7,8 @@ namespace Rerm\Forms;
 use DateTimeImmutable;
 use PDO;
 use Rerm\App;
+use Rerm\Auth\Level;
+use Rerm\Auth\TitleMap;
 use Rerm\Auth\User;
 use Rerm\Roster\EligibleOfficers;
 use Rerm\Roster\RosterPage;
@@ -149,10 +151,74 @@ final class RcfPage
             'members'       => $selected === null ? [] : $this->membersFor($user, $selected),
             'types'         => RosterChangeForm::TYPES,
             'reasons'       => RosterChangeForm::REMOVE_REASONS,
+            'titles'        => $this->titles(),
+            'may_sponsor'   => self::maySponsor($user),
             'rows'          => RosterChangeForm::ROWS,
             'visible_rows'  => self::visibleRows($input, $entries),
             'entries'       => $entries,
         ];
+    }
+
+    /**
+     * The titles the CHANGE/ADD TITLE cell may hold (Phase 14.7, spec-v2
+     * §21.5): every title on the roster today, and every title the export
+     * is known to spell (`TitleMap::MAP`), as one sorted list.
+     *
+     * A list rather than a text box because the cell is read by Rodeo
+     * Houston against their own vocabulary, and "Asst Captain", "Assistant
+     * Capt." and "assistant captain" are three forms that question instead
+     * of being processed. The roster's titles are the spellings the export
+     * actually uses; the map's are the same spellings for a title nobody
+     * happens to hold this week — a committee with no Officer in Charge
+     * today can still appoint one. Read through the visibility predicate,
+     * so a purged member's title is not offered on their account alone.
+     *
+     * @return array<int, string>
+     */
+    public function titles(): array
+    {
+        $titles = [];
+        foreach (array_keys(TitleMap::MAP) as $title) {
+            $titles[$title] = $title;
+        }
+
+        $read = $this->pdo->query(
+            'SELECT DISTINCT m.title FROM member m WHERE ' . ScopedQuery::visible('m') . " AND m.title <> ''"
+        );
+        foreach ($read->fetchAll() as $row) {
+            $title = trim((string) $row['title']);
+            if ($title !== '') {
+                $titles[$title] = $title;
+            }
+        }
+
+        $titles = array_values($titles);
+        usort($titles, static fn (string $a, string $b): int => strcasecmp($a, $b));
+
+        return $titles;
+    }
+
+    /**
+     * May this user fill in INTERVIEW REQUIRED OR SPONSORED BY (Phase 14.7,
+     * spec-v2 §21.4)? A Division Vice Chairman and above: an Admin, an
+     * Executive Officer, or a Senior Officer whose title's breadth is the
+     * division — which is every Senior Officer title except `Vice
+     * Chairman`, the one Senior Officer who sees a single team
+     * (`TitleMap::BREADTH`). A granted Senior Officer with a member's title
+     * has the division's breadth and may.
+     *
+     * Read on the signed-in user, whichever of the two grid screens they
+     * are on, and asked again on the server when the row is resolved: for
+     * anybody else the cell is drawn disabled and whatever arrives in it is
+     * dropped, because a control hidden on the screen hides nothing.
+     */
+    public static function maySponsor(User $user): bool
+    {
+        return match ($user->level) {
+            Level::Admin, Level::ExecutiveOfficer => true,
+            Level::SeniorOfficer => TitleMap::breadth($user->title) !== TitleMap::BREADTH_TEAM,
+            default => false,
+        };
     }
 
     /**
@@ -175,12 +241,28 @@ final class RcfPage
         /** @var array<string, mixed>|null $subcommittee */
         $subcommittee = $page['subcommittee'];
 
-        $entries = [];
-        foreach ($page['entries'] as $entry) {
-            $entries[] = $this->entry($user, $entry, $page['subcommittees'], $page['members']);
+        $entries  = [];
+        $problems = [];
+        $confirm  = [];
+        foreach ($page['entries'] as $i => $entry) {
+            $resolved   = $this->entry($user, $entry, $page['subcommittees'], $page['members'], $subcommittee, $page['titles']);
+            $entries[]  = $resolved['entry'];
+            $problems   = [...$problems, ...self::problems($i + 1, $resolved['entry'], $entry, $page['subcommittees'])];
+            if ($resolved['confirm'] !== null) {
+                $confirm[] = $resolved['confirm'];
+            }
         }
 
         return [
+            // What is WRONG with the rows, one sentence each naming the row
+            // (Phase 14.7, spec-v2 §21.2, §21.5), and what needs a second
+            // look before the form goes anywhere (§21.3). Neither screen
+            // builds a file or writes an entry while `problems` holds
+            // anything; `confirm` holds until the caller says so, through
+            // confirmed(). The key is what they say it to.
+            'problems'    => $problems,
+            'confirm'     => $confirm,
+            'confirm_key' => self::confirmKey($confirm, $subcommittee),
             'year'         => (string) $page['year'],
             'submitter'    => $page['submitter'] === null
                 ? ''
@@ -221,12 +303,35 @@ final class RcfPage
      * The lookup is through the caller's own scope, so it can only ever
      * fill in a member they could already read.
      *
+     * Three more things since Phase 14.7 (spec-v2 §21), each a rule the
+     * paper form only implied:
+     *
+     *   * CHANGE/ADD TITLE is one of titles() or nothing. A title typed
+     *     that is not on the list is dropped here and named by problems(),
+     *     never written: the cell is read against Rodeo Houston's own
+     *     vocabulary (§21.5).
+     *   * An ADDITION carries the team they will be added to in NEW
+     *     SUB-COMMITTEE. Left blank on a form headed with a team, it is
+     *     filled from the heading — the same courtesy the previous title
+     *     gets; on a form headed with a division it has to be picked, and
+     *     problems() says so (§21.2).
+     *   * INTERVIEW REQUIRED OR SPONSORED BY is kept only for a caller
+     *     maySponsor() allows, whatever arrived in the cell (§21.4).
+     *
+     * And the row says whether it needs a SECOND LOOK (§21.3): a filled
+     * row about somebody on the roster that names no team anywhere — the
+     * heading is a division and NEW SUB-COMMITTEE is blank — or a team
+     * change with no destination, comes back with `confirm` carrying what
+     * the roster says their team is, for the screen to ask about.
+     *
      * @param array<string, string> $entry
      * @param array<int, array<string, mixed>> $subcommittees
      * @param array<int, array<string, string>> $members the list the screen offered
-     * @return array<string, string>
+     * @param array<string, mixed>|null $chosen the sub-committee the form is headed with
+     * @param array<int, string> $titles titles()
+     * @return array{entry: array<string, string>, confirm: ?array<string, string>}
      */
-    private function entry(User $user, array $entry, array $subcommittees, array $members): array
+    private function entry(User $user, array $entry, array $subcommittees, array $members, ?array $chosen, array $titles): array
     {
         $resolved = RosterChangeForm::emptyEntry();
 
@@ -242,7 +347,7 @@ final class RcfPage
         $resolved['type']          = self::oneOf((string) ($entry['type'] ?? ''), array_keys(RosterChangeForm::TYPES));
         $resolved['member_number'] = $known !== null ? (string) $known['member_number'] : $number;
         $resolved['member_name']   = $known !== null ? (string) $known['form_name'] : $typed;
-        $resolved['new_title']     = self::text((string) ($entry['new_title'] ?? ''));
+        $resolved['new_title']     = self::oneOf(self::text((string) ($entry['new_title'] ?? '')), $titles);
         $resolved['previous_title'] = self::text((string) ($entry['previous_title'] ?? ''));
         $resolved['remove_reason'] = self::oneOf(
             (string) ($entry['remove_reason'] ?? ''),
@@ -273,7 +378,16 @@ final class RcfPage
             (string) ($entry['new_subcommittee'] ?? '')
         );
 
-        $resolved['sponsor'] = self::text((string) ($entry['sponsor'] ?? ''));
+        // An addition's team is the heading's, when the heading is a team
+        // and the cell was left blank (the class comment). A heading that is
+        // a division fills nothing: the officer picks, and problems() asks.
+        if ($resolved['type'] === 'A' && $resolved['new_subcommittee'] === ''
+            && $chosen !== null && ($chosen['team_id'] ?? null) !== null
+        ) {
+            $resolved['new_subcommittee'] = (string) $chosen['name'];
+        }
+
+        $resolved['sponsor'] = self::maySponsor($user) ? self::text((string) ($entry['sponsor'] ?? '')) : '';
 
         // ROOKIE and WAIT LIST are CHECKBOX cells on the paper form, not text
         // (RosterChangeForm's class comment has how that was established), so
@@ -290,7 +404,142 @@ final class RcfPage
                 : RosterChangeForm::UNTICKED;
         }
 
-        return $resolved;
+        return [
+            'entry'   => $resolved,
+            'confirm' => self::needsConfirming($resolved, $chosen)
+                ? [
+                    'member_number' => $resolved['member_number'],
+                    'member_name'   => $resolved['member_name'],
+                    'type'          => $resolved['type'],
+                    'type_label'    => RosterChangeForm::TYPES[$resolved['type']] ?? ($resolved['type'] === '' ? 'No type' : $resolved['type']),
+                    // What the roster says, for the question. Blank when the
+                    // row is about nobody the caller can see — which the
+                    // screen says in words, because "nothing" is an answer.
+                    'roster_team'   => $known !== null ? (string) ($known['team_name'] ?? '') : '',
+                    'on_roster'     => $known !== null ? '1' : '',
+                ]
+                : null,
+        ];
+    }
+
+    /**
+     * Does this resolved row need the officer to look at the member's team
+     * before the form goes anywhere (Phase 14.7, spec-v2 §21.3)?
+     *
+     * Two shapes, both the shape of a team change that was meant and not
+     * written: a filled row that names NO team anywhere — the heading is a
+     * division and NEW SUB-COMMITTEE is blank — and a team change (S, or S
+     * & T) whose destination is blank whatever the heading. An addition is
+     * never here: problems() already refuses one with no team. A blank row
+     * is nothing.
+     *
+     * @param array<string, string>     $resolved
+     * @param array<string, mixed>|null $chosen
+     */
+    public static function needsConfirming(array $resolved, ?array $chosen): bool
+    {
+        if (RosterChangeForm::entryIsBlank($resolved) || $resolved['type'] === 'A') {
+            return false;
+        }
+        if ($resolved['new_subcommittee'] !== '') {
+            return false;
+        }
+        if (in_array($resolved['type'], ['S', 'S & T'], true)) {
+            return true;
+        }
+
+        return $chosen === null || ($chosen['team_id'] ?? null) === null;
+    }
+
+    /**
+     * What is wrong with one resolved row, as sentences naming it (Phase
+     * 14.7). Nothing for a blank row. The RAW row is read too, so a title
+     * that was typed and dropped is named rather than reported as missing.
+     *
+     * @param array<string, string> $resolved
+     * @param array<string, string> $raw as submitted
+     * @param array<int, array<string, mixed>> $subcommittees
+     * @return array<int, string>
+     */
+    public static function problems(int $row, array $resolved, array $raw, array $subcommittees): array
+    {
+        if (RosterChangeForm::entryIsBlank($resolved)) {
+            return [];
+        }
+
+        $problems = [];
+        $type     = $resolved['type'];
+
+        // A title is required where the form's own instructions put one: an
+        // addition, a title change, and a team-and-title change (§21.5).
+        if (in_array($type, ['A', 'T', 'S & T'], true) && $resolved['new_title'] === '') {
+            $typed = self::text((string) ($raw['new_title'] ?? ''));
+            $problems[] = $typed === ''
+                ? "Row {$row}: pick the title under Change/add title — it is required for "
+                    . mb_strtolower((string) RosterChangeForm::TYPES[$type]) . '.'
+                : "Row {$row}: \"{$typed}\" is not a title on the roster. Pick one from the list under Change/add title.";
+        }
+
+        // An addition names the team they will be added to, and it is a
+        // team: a division is a heading, not somewhere a person is placed
+        // (§21.2).
+        if ($type === 'A') {
+            $option = self::matchOption($subcommittees, $resolved['new_subcommittee']);
+            if ($resolved['new_subcommittee'] === '') {
+                $problems[] = "Row {$row}: an addition needs the team they will be added to. Pick it under New sub-committee.";
+            } elseif ($option === null) {
+                $problems[] = "Row {$row}: \"{$resolved['new_subcommittee']}\" is not a team on the roster. "
+                    . 'Pick the team they will be added to from the list under New sub-committee.';
+            } elseif (($option['team_id'] ?? null) === null) {
+                $problems[] = "Row {$row}: \"{$resolved['new_subcommittee']}\" is a division. "
+                    . 'Pick the team they will be added to from the list under New sub-committee.';
+            }
+        }
+
+        return $problems;
+    }
+
+    /**
+     * The one thing a confirmation is good for: these rows, on this form.
+     * A hash of what was asked about, so a row changed after the question
+     * was answered is asked about again, and an answer never travels to a
+     * different set of rows. Empty when nothing needs confirming.
+     *
+     * @param array<int, array<string, string>> $confirm
+     * @param array<string, mixed>|null         $chosen
+     */
+    public static function confirmKey(array $confirm, ?array $chosen): string
+    {
+        if ($confirm === []) {
+            return '';
+        }
+
+        return hash('sha256', json_encode([
+            'subcommittee' => $chosen === null ? '' : (string) $chosen['key'],
+            'rows'         => array_map(
+                static fn (array $c): array => [$c['member_number'], $c['member_name'], $c['type']],
+                $confirm
+            ),
+        ], JSON_THROW_ON_ERROR));
+    }
+
+    /**
+     * Has the caller confirmed what formFromInput() asked about? True when
+     * nothing needed it, or when the input carries the key for exactly these
+     * rows. Compared in constant time, like a token, because it is one.
+     *
+     * @param array<string, mixed> $form  formFromInput()'s answer
+     * @param array<string, mixed> $input the raw POST
+     */
+    public static function confirmed(array $form, array $input): bool
+    {
+        if (($form['confirm'] ?? []) === []) {
+            return true;
+        }
+
+        $key = (string) ($form['confirm_key'] ?? '');
+
+        return $key !== '' && hash_equals($key, (string) ($input['confirm_teams'] ?? ''));
     }
 
     /**
@@ -444,8 +693,9 @@ final class RcfPage
 
         $read = $this->pdo->prepare(
             'SELECT m.member_number, m.first_name, m.last_name, m.preferred_name,'
-            . ' m.full_name, m.title'
-            . " FROM member m WHERE {$where}"
+            . ' m.full_name, m.title, t.name AS team_name'
+            . ' FROM member m LEFT JOIN team t ON t.id = m.team_id'
+            . " WHERE {$where}"
             . ' ORDER BY m.last_name, m.first_name, m.member_number'
             . ' LIMIT ' . (self::PICKER_LIMIT + 1)
         );
@@ -472,6 +722,9 @@ final class RcfPage
                     (string) $row['member_number']
                 ),
                 'title'         => (string) $row['title'],
+                // Their team as the roster has it, for the second look
+                // (Phase 14.7, spec-v2 §21.3). Not drawn on the screen.
+                'team_name'     => (string) ($row['team_name'] ?? ''),
             ];
         }
 
@@ -495,8 +748,9 @@ final class RcfPage
 
         $read = $this->pdo->prepare(
             'SELECT m.member_number, m.first_name, m.last_name, m.preferred_name,'
-            . ' m.full_name, m.title'
-            . ' FROM member m WHERE ' . $scoped->predicate()
+            . ' m.full_name, m.title, t.name AS team_name'
+            . ' FROM member m LEFT JOIN team t ON t.id = m.team_id'
+            . ' WHERE ' . $scoped->predicate()
             . ' AND m.member_number = :rcf_number LIMIT 1'
         );
         $read->execute($scoped->bindings() + [':rcf_number' => $number]);
@@ -512,6 +766,7 @@ final class RcfPage
             'form_name'     => self::memberName($row),
             'full_name'     => self::formalName($row),
             'title'         => (string) $row['title'],
+            'team_name'     => (string) ($row['team_name'] ?? ''),
         ];
     }
 
@@ -712,10 +967,26 @@ final class RcfPage
      */
     public static function matchLabel(array $options, string $typed): string
     {
+        $typed  = self::text($typed);
+        $option = self::matchOption($options, $typed);
+
+        return $option === null ? $typed : (string) $option['name'];
+    }
+
+    /**
+     * The option whose label or name was typed, or null — matchLabel() with
+     * the whole option, for a caller that needs to know whether what was
+     * typed is a team or a division (Phase 14.7, spec-v2 §21.2).
+     *
+     * @param array<int, array<string, mixed>> $options
+     * @return array<string, mixed>|null
+     */
+    public static function matchOption(array $options, string $typed): ?array
+    {
         $typed = self::text($typed);
 
         if ($typed === '') {
-            return '';
+            return null;
         }
 
         $wanted = mb_strtolower($typed);
@@ -724,11 +995,11 @@ final class RcfPage
             if (mb_strtolower((string) $option['label']) === $wanted
                 || mb_strtolower((string) $option['name']) === $wanted
             ) {
-                return (string) $option['name'];
+                return $option;
             }
         }
 
-        return $typed;
+        return null;
     }
 
     /**

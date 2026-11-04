@@ -272,6 +272,7 @@ function tk_user(string $key): User
         mustChangePassword: false,
         displayName: $key,
         scopeTeamIds: $level === Level::SeniorOfficer ? [$team] : [],
+        title: match ($key) { 'cap' => 'Captain', 'vc' => 'Vice Chairman', default => 'Division Chairman' },
     );
 }
 
@@ -286,7 +287,9 @@ function tk_captain_form(): array
         'row'          => [
             0 => ['type' => 'T', 'member_number' => $f['members']['m1']['number'], 'new_title' => 'Assistant Captain'],
             // Row three, not two: a gap the regeneration has to print blank.
-            2 => ['type' => 'A', 'member_name' => 'Newcomer Sample', 'sponsor' => 'Erin Delta', 'rookie' => '1', 'wait_list' => '1'],
+            // A title since Phase 14.7 (spec-v2 §21.5); the sponsor is typed and,
+            // for a Captain, dropped (§21.4).
+            2 => ['type' => 'A', 'member_name' => 'Newcomer Sample', 'new_title' => 'Committee Member', 'sponsor' => 'Erin Delta', 'rookie' => '1', 'wait_list' => '1'],
         ],
     ]);
 }
@@ -346,7 +349,9 @@ test('a produced form is kept as printed: header, filled rows only, at their pos
     assertSame('Newcomer Sample', $rows[1]['member_name']);
     assertSame(1, (int) $rows[1]['rookie']);
     assertSame(1, (int) $rows[1]['wait_list']);
-    assertSame('Erin Delta', $rows[1]['sponsor']);
+    assertSame('', $rows[1]['sponsor'], 'a Captain may not sponsor (Phase 14.7, spec-v2 §21.4): the cell is dropped before the form is kept');
+    assertSame('Committee Member', $rows[1]['new_title']);
+    assertSame('TK Bus Ops Team A', $rows[1]['new_subcommittee'], 'an addition joins the team the form is headed with (§21.2)');
 
     // Tracking starts empty: nothing is assumed about where a form went.
     foreach ($rows as $row) {
@@ -767,6 +772,54 @@ test('the form\'s page renders every line with its three controls, the every-lin
     assertTrue(str_contains($html, 'from=rcf'), 'a member on the form links to their card, with the way back');
     assertSame(0, substr_count($html, '<script'));
     assertTrue(strlen($html) < 100 * 1024, 'first paint is ' . strlen($html) . ' bytes');
+});
+
+test('every kept line carries the team it is about — the form\'s, or the roster\'s with a note — on the form\'s page and the member card', function (): void {
+    $f        = tk_fixture();
+    tk_reset_forms();
+    $tracking = new RcfTracking(tk_pdo());
+    $page     = new RcfPage(tk_pdo());
+
+    // A team-headed form: the heading's team on the title change, the
+    // addition's destination on the addition (Phase 14.7, spec-v2 §21.1).
+    $teamForm = tk_keep('cap');
+    $rows     = $tracking->one(tk_user('cap'), $teamForm)['rows'];
+    assertSame(['name' => 'TK Bus Ops Team A', 'source' => 'rcf'], $rows[0]['team']);
+    assertSame(['name' => 'TK Bus Ops Team A', 'source' => 'rcf'], $rows[1]['team'], 'the addition joined the heading\'s team');
+
+    // A division-headed form kept by the Division Chairman: the roster's
+    // team, marked as the roster's, read live.
+    $divisionForm = tk_keep('dc', $page->formFromInput(tk_user('dc'), [
+        'subcommittee' => 'd:' . $f['division'],
+        'row'          => [
+            0 => ['type' => 'T', 'member_number' => $f['members']['m1']['number'], 'new_title' => 'Captain'],
+            1 => ['type' => 'A', 'member_name' => 'Newcomer Sample', 'new_title' => 'Committee Member', 'new_subcommittee' => 'TK Bus Ops Team B'],
+        ],
+    ]));
+    $rows = $tracking->one(tk_user('dc'), $divisionForm)['rows'];
+    assertSame(['name' => 'TK Bus Ops Team A', 'source' => 'roster'], $rows[0]['team']);
+    assertSame(['name' => 'TK Bus Ops Team B', 'source' => 'rcf'], $rows[1]['team'], 'the destination is on the form');
+
+    // The roster moves; the form's own team stays, the roster's follows.
+    tk_pdo()->prepare('UPDATE member SET team_id = :team WHERE id = :id')->execute([':team' => $f['teams']['b'], ':id' => $f['members']['m1']['id']]);
+    try {
+        assertSame('roster', $tracking->one(tk_user('dc'), $divisionForm)['rows'][0]['team']['source']);
+        assertSame('TK Bus Ops Team B', $tracking->one(tk_user('dc'), $divisionForm)['rows'][0]['team']['name'], 'what the roster says today');
+        assertSame('TK Bus Ops Team A', $tracking->one(tk_user('cap'), $teamForm)['rows'][0]['team']['name'], 'what the form said then');
+    } finally {
+        tk_pdo()->prepare('UPDATE member SET team_id = :team WHERE id = :id')->execute([':team' => $f['teams']['a'], ':id' => $f['members']['m1']['id']]);
+    }
+
+    // The same answer on the member card's lines, the search and the
+    // change table, because they are one shaper.
+    foreach ($tracking->forMember(tk_user('dc'), $f['members']['m1']['id'], $f['members']['m1']['number']) as $line) {
+        assertTrue(isset($line['team']['name'], $line['team']['source']));
+    }
+    assertSame('rcf', $tracking->search(tk_user('cap'), 'Alpha')['matches'][0]['team']['source']);
+    $html = tk_render('rcf', 'One form', ['user' => tk_user('dc'), 'rcf' => $tracking->one(tk_user('dc'), $divisionForm), 'entries' => [], 'mayVoid' => false]);
+    assertTrue(str_contains($html, '<th scope="col">Team</th>'));
+    assertTrue(str_contains($html, 'TK Bus Ops Team A <span class="why">from the roster &mdash; not on the form</span>'));
+    assertTrue(str_contains($html, '<td data-label="Team">TK Bus Ops Team B</td>'));
 });
 
 test('rcf tracking fixtures are cleaned up', function (): void {
