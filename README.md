@@ -20,9 +20,11 @@ file copy.
 
 ### For the next session
 
-This branch is **1.14.7**: Phase 14.7, the team on every line and four
-rules the paper form only implied (`docs/spec-v2.md` §21) — five requests
-from the owner after a round of real RCF requests. Every list of RCF lines
+`main` is **1.14.7**, merged as
+[#39](https://github.com/adamdill-RE/rerostermanager/pull/39): Phase 14.7,
+the team on every line and four rules the paper form only implied
+(`docs/spec-v2.md` §21) — five requests from the owner after a round of
+real RCF requests. Every list of RCF lines
 and requests now carries a **Team** column: what is on the form first (an
 addition's destination, or the heading's team), the roster's team second
 with *from the roster — not on the form* beside it, from one
@@ -38,7 +40,17 @@ else, decided off the title's breadth (`User` now carries the title). And
 CHANGE/ADD TITLE is a **`<select>`** of every title on the roster plus the
 export's known spellings, required on an addition and a title change,
 refusing anything typed off the list by row. No migration; the byte-budget
-test re-measured and its full-expansion ceiling moved (§21.5). Before it,
+test re-measured and its full-expansion ceiling moved (§21.5). **It was
+merged, not deployed**: the next session's first act is cPanel's Deploy
+HEAD Commit, the footer reading 1.14.7, and then — through Sign In As — a
+division-headed request from a Division Vice Chairman, to see the second
+look come back, confirm it, and read the Team column with its *from the
+roster* note on the Division Chairman's Approve screen. Two judgment calls
+in it are the owner's to overturn (§21.7): Coordinator and Ambassador may
+sponsor, because "DVC and above" was read as the level above a Vice
+Chairman (V2-39, one line in `RcfPage::maySponsor()`); and the title list
+carries `TitleMap`'s spellings as well as the roster's current titles, so a
+title nobody holds this week can still be appointed. Before it,
 `main` was **1.14.6**: Phase 14.6, the menu on sign-in, the approver's
 email and `Last, First` on the form (§20), and **1.14.5**: Phase 14.5, two
 cells for one person and the top of the chain (§19). Before those, `main`
@@ -105,30 +117,48 @@ can use it**: on *Create Approval Flow*, draw who approves whom — until an
 account has an approver or is marked top of the chain, its entries are
 refused with a sentence, deliberately.
 
-**What Phase 14 left for Phase 14.1**, in the order the owner is likely to
-feel them (the reasoning is `docs/spec-v2.md` §15.7):
+**What the eight RCF phases have left open**, in the order the owner is
+likely to feel them (the reasoning is in each section's open-items table,
+`docs/spec-v2.md` §15.7 through §21.7). Phases 14.1–14.7 were each one or
+more requests from the owner after using the previous one, so the next is
+most likely to arrive the same way; these are the ones already named:
 
 - **V2-16, re-routing.** An entry waiting on an account that is later
   deactivated by an import, or removed from the flow, waits forever. The
   natural next write on *Create Approval Flow* is "move everything waiting
   on X to Y", audited; a list of stuck entries beside it.
+- **V2-18 and V2-20, amend and resubmit.** An approver cannot fix a line
+  before approving it, and a returned entry is retyped rather than copied
+  back into the grid. The second is a GET with the row prefilled; the
+  first needs a decision about keeping both versions. Phase 14.7's
+  problems and second look make a returned-for-a-typo entry likelier, not
+  rarer, so V2-20 has moved up.
 - **V2-15, Captains.** The request said Vice Chairmen and above; widening
   `create_rcf_entries` to Officer is one line in `minimumLevel()` and the
   transcribed row, and the flow screen then lists Captains too (its floor
-  is `ApprovalFlow::FLOOR`).
-- **V2-18 and V2-20, amend and resubmit.** An approver cannot fix a typo
-  in a line before approving it, and a returned entry is retyped rather
-  than copied back into the grid. Both are small: a GET with the row
-  prefilled covers the second; the first needs a decision about keeping
-  both versions.
-- **V2-17, telling an approver something is waiting.** Mail is off by
-  design; the count on the menu tile is what exists. If the owner wants
-  mail, it is designed through spec-v1 §3.3a's interlocks.
+  is `ApprovalFlow::FLOOR`). The sponsor cell (§21.4) already excludes
+  them, so nothing else changes.
+- **V2-26, re-cutting.** Voiding a consolidated form does not restore its
+  entries to approved, so a form generated with the wrong grouping is
+  retyped. A *Regenerate* that voids and re-cuts in one transaction is
+  the shape if it is asked for.
+- **V2-39 and V2-38, the two 14.7 calls above** — who sponsors, and
+  whether a title change on a team-headed form should also be asked "did
+  you mean a team change?" (no, today: the question would land on nearly
+  every request).
+- **V2-35, telling the requester.** 14.6's email goes to the approver
+  only; a returned entry and *In the roster* are read off the list. If a
+  Vice Chairman asks, it is the same `ApprovalNotice` with a second
+  message, behind the same interlocks.
 - **A search over entries on Track RCFs**, so the member box there finds
   a request before it is a form. (The entries' "in the roster" once they
   are on one is Phase 14.2's, §17.1.)
 - **A CSS tick counter** on the approvals and consolidate screens (the
   Assign pattern), so "Approve 11 ticked" reads the live count.
+
+Done since they were first listed: V2-17 (an approver is told —
+Phase 14.6's email), V2-28 (*request* everywhere a person reads — 14.4),
+and the top-of-the-chain trap (14.5).
 
 **How each phase was worked, and what to keep doing:** one branch per phase
 restarted from `origin/main`; `php tests/run.php --strict` against a
@@ -137,7 +167,14 @@ reachable database (`RERM_DB_HOST`, `RERM_DB_NAME`, `RERM_DB_USER`,
 migrations applied); the three CI scripts locally before a commit
 (`.github/check-no-pii.py`, `.github/check-deployment.py`,
 `.github/check-mail-safety.php`); a PR against `main`; CI green on **both**
-MySQL 8.0 and MariaDB 10.11; then the merge. Every phase bumps `app.version`
+MySQL 8.0 and MariaDB 10.11; then the merge. In a cloud session with no
+Docker daemon, `apt-get install mariadb-server`, `mysqld_safe --user=root &`,
+create database `rerm` and user `rerm`/`rerm_dev`, export the four
+`RERM_DB_*` variables (host `127.0.0.1`), run `php bin/migrate.php` twice,
+and the whole suite runs in about two minutes — that is how 14.7 was
+tested. A scratch script that calls a test file's fixture builder leaves
+its rows behind unless it calls the teardown too, and every other file's
+tests then fail on the count of divisions. Every phase bumps `app.version`
 in `config/config.php` in the commit that closes it, adds a paragraph below
 this one, a section to `docs/spec-v2.md`, and a row to `CLAUDE.md`'s phase
 table. Tests are transcribed beside a generated fixture, never computed from
@@ -148,14 +185,15 @@ build on anything else.
 **What is next is a decision, not a backlog.** The candidates, all
 documented and none started:
 
-- **`docs/spec-v2.md` §11**, the open items. The nearest to ready are
-  V2-11 (the Division Chairman's numbered form, generated from tracked
-  lines — the second half of the feedback that produced Phase 11, and the
-  tracking it needs now exists), V2-10 (a Vice Chairman seeing their
-  Officers' forms), V2-3 (which form follows the Roster Change Form —
-  `/forms` is shaped for it), V2-7 and V2-8 (the team default and the
-  Result column on View My Roster), and V2-6 (whether `import_change` is
-  retained forever).
+- **`docs/spec-v2.md` §11**, the open items. V2-11 (the Division
+  Chairman's numbered form, generated from tracked lines) is half
+  answered by Phase 14 — a consolidated form *is* the Division Chairman's
+  one form, for requests made here — and what is left of it is the same
+  cut over lines that arrived by upload (§14). The nearest to ready
+  otherwise are V2-10 (a Vice Chairman seeing their Officers' forms), V2-3
+  (which form follows the Roster Change Form — `/forms` is shaped for
+  it), V2-7 and V2-8 (the team default and the Result column on View My
+  Roster), and V2-6 (whether `import_change` is retained forever).
 - **OI-12, multi-year contact history reporting.** The member card already
   shows every show year's contacts for one person (§9.1); what remains is the
   report across people, and `import_change` is the shape it should take.
