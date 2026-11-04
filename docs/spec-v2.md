@@ -2616,3 +2616,76 @@ Three edges, each decided:
 | V2-35 | Should the **requester** be emailed when an entry is **returned** or when it lands **in the roster**? | Not now. The owner's rule was "only for assigned RCFs", and the requester's list carries both with the note. Revisit if a Vice Chairman asks. |
 | V2-36 | Should the notice **digest** — one email a day — rather than one per routing? | No. Routing is a handful of events a week, each one is one message, and a Division Chairman who approves in one sitting gets one email for the sitting. If volume ever says otherwise, the per-recipient grouping is the seam. |
 | V2-37 | Should `Last, First` carry the **middle initial** Rodeo Houston's `Name` column holds? | Not yet: `Name` is not imported (`docs/data-findings.md` §1 calls it redundant), and importing one column for one cell is a roster change for a form change. Revisit if Rodeo Houston questions a form. |
+
+### 20.5 Handoff — where things stand, and the next phase
+
+Written after the first week of real mail. Everything above is on `main`
+(#37, #38) and deployed; version 1.14.6 in the footer.
+
+**Live and verified on the production account**
+
+* Delivery is **on**: `mail.enabled` true, transport `send`, the allowlist
+  **empty** (step 6 of `docs/hosting.md`), `rcf_approval_notices` true,
+  `app.debug` false. `/status` reads *Enabled · send · Sends as
+  noreply@…*.
+* The sender mailbox exists and is forwarded to a person. SPF, DKIM and
+  DMARC are all **Valid** on Email Deliverability; DMARC is at `p=none`
+  with reports going to the owner.
+* A password-recovery email sent to the owner after #38 came back
+  **`spf=pass`, `dkim=pass`, `dmarc=pass`** with `Return-Path` of the
+  `noreply` address. The envelope-sender fix is confirmed in the field.
+* Email Routing is local without the page being exposed: the MX points at
+  the domain, which resolves to the account's dedicated IP.
+
+**Not yet done, in the order to do it**
+
+1. **The approval notice has not been sent to a real inbox yet.** Step 9
+   of the hosting guide — your own account at the top of a one-row test
+   chain, Sign In As a Vice Chairman, submit, read the flash and the
+   headers, return the request with a note, redraw the Vice Chairman's
+   real row. Until that is done, the notice is proven only by the test
+   suite and by the recovery email sharing its Mailer.
+2. **Reverse DNS on the dedicated IP.** `152.160.208.75` has no PTR;
+   `152.160.193.193` (the server) does. Which one mail leaves from is in
+   the topmost `Received:` line of any delivered message. If it is the
+   dedicated IP, one ticket to Ahosting asking for a PTR to
+   `reshiftmanager.com`.
+3. **Tell the Division Chairmen and Vice Chairmen** what the message says
+   and that the link is the content (step 7 of the guide).
+4. **Tighten DMARC** to `p=quarantine` once a month of reports is clean.
+
+**Open items carried forward** — V2-32 to V2-37 (§19.4, §20.4). None is
+blocking; each is a decision the owner can make when a real user raises it.
+
+**Candidates for the next phase.** Three come straight from this one, in
+the order the owner's own requests have tended to arrive:
+
+* **V2-35, the requester's side.** The flow now tells the approver; it
+  does not tell the Vice Chairman that their request was returned, or
+  that Rodeo Houston processed it. Both facts are already derived
+  (`return_note`, `RcfTracking::landed()`), the Mailer and the
+  no-member-details rule are already there, and the shape would be the
+  same class with a second message. The owner's rule was "only for
+  assigned RCFs"; this is the first thing to ask about when a Vice
+  Chairman says "I didn't know it came back".
+* **The RCF after Rodeo Houston.** Every list now says *In the roster* or
+  not; nothing yet says how long the lines not in the roster have been
+  waiting, or lets a Division Chairman mark one *chased*. Track RCFs
+  carries the per-line dates (§12.2) and the change table (§14.5); a
+  "waiting N days" column and a sort on it is a read, not a write.
+* **Dues season.** Phases 4 to 7 are the product the committee uses from
+  November; the RCF work has had five phases in a row. Before the first
+  import of the new show year, walk My Roster Status and the Committee
+  Dashboard as a Captain on a phone and list what has drifted — the
+  landing-page change (§20.1) means a Captain now arrives at the menu and
+  not at their call list, which is right for the committee and worth
+  watching for the Captains.
+
+**What the next person needs to know that is not in a spec.** Mail is
+live, so **a test on the production box reaches a real inbox**: use Sign
+In As and your own account, or put your address back on the allowlist for
+the duration. The master administrator has no email on purpose and never
+will from an import; it cannot be an approver that receives mail. A
+local run needs MySQL, and the DB-backed tests skip without one; CI runs
+both MySQL 8.0 and MariaDB 10.11, and the static job greps `tests/` for a
+`/rerm/` literal as well as the code.

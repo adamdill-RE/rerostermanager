@@ -291,8 +291,9 @@ fifth argument, after refusing anything that is not one plain address
 (`envelopeFrom()`; a test holds both). cPanel's Exim lets an account set the
 envelope sender to an address at its own domain, so the Return-Path is now
 `noreply@reshiftmanager.com`, SPF is checked against this domain's record,
-and bounces reach the mailbox step 1 created. Re-check the headers after
-deploying: all three of `spf`, `dkim` and `dmarc` should read `pass`.
+and bounces reach the mailbox step 1 created. **Re-checked after deploying
+#38: `spf=pass`, `dkim=pass`, `dmarc=pass`, `Return-Path` the `noreply`
+address.** Exim on this host honours `-f` for the account's own domain.
 
 Two addresses are involved, and both are in the SPF record (`+a` and
 `+ip4:`): `152.160.193.193` is the server, `sh193.sameservers.com`, with
