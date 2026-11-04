@@ -304,6 +304,7 @@ $plural = static fn (int $n, string $one, string $many): string => $number($n) .
                                     &middot; <?= e((string) $line['change']) ?>
                                     <span class="why">
                                         <?= e((string) $line['subcommittee']) ?>
+                                        &middot; team <?= View::rcfTeam((array) $line['team']) ?>
                                         &middot; RCF # <?= (string) $line['serial'] === '' ? 'not yet' : e((string) $line['serial']) ?>
                                         &middot; to the DC <?= e($day($line['sent_to_dc_on'])) ?>
                                         &middot; to Rosters <?= e($day($line['sent_to_rosters_on'])) ?>

@@ -25,6 +25,8 @@ declare(strict_types=1);
  * @var array<int, array<string, mixed>>     $mine    RcfEntries::mine()
  * @var array{mine: int, waiting: int, ready: int} $counts
  * @var array{state: string, approver: ?array{id: int, name: string}, approves?: int} $route
+ * @var array<string, mixed>|null            $confirm RcfPage::formFromInput()'s answer, when a
+ *      submission was held for the second look (Phase 14.7, spec-v2 §21.3)
  */
 
 use Rerm\Csrf;
@@ -120,6 +122,16 @@ $back      = 'rcf-entries';
 <?php if ($chosen === null) { ?>
     <div class="card"><p>Choose a sub-committee and press <strong>Load this sub-committee</strong>. Nothing you type is lost when you do.</p></div>
 <?php } else { ?>
+    <?php /* The second look (Phase 14.7, spec-v2 §21.3): the submission was
+             held because a row names no team; the card asks, and the
+             confirming button submits with the key for these rows. */ ?>
+    <?php if (($confirm ?? null) !== null) {
+        $confirmRows   = (array) $confirm['confirm'];
+        $confirmKey    = (string) $confirm['confirm_key'];
+        $confirmAction = 'submit';
+        $confirmLabel  = 'The roster is right — submit these requests';
+        require __DIR__ . '/rcf-confirm.php';
+    } ?>
     <?php require __DIR__ . '/rcf-grid.php'; ?>
 
     <div class="card">
@@ -145,6 +157,7 @@ $back      = 'rcf-entries';
             <th scope="col">Submitted</th>
             <th scope="col">Sub-committee</th>
             <th scope="col">Member</th>
+            <th scope="col">Team</th>
             <th scope="col">Change</th>
             <th scope="col">Where it is</th>
             <th scope="col"><span class="vh">Actions</span></th>
@@ -162,6 +175,7 @@ $back      = 'rcf-entries';
                     <?php } ?>
                     <?php if ((string) $entry['member_number'] !== '') { ?><span class="why mono"><?= e((string) $entry['member_number']) ?></span><?php } ?>
                 </td>
+                <td data-label="Team"><?= View::rcfTeam((array) $entry['team']) ?></td>
                 <td data-label="Change"><?= e((string) $entry['was']) ?> &rarr; <?= e((string) $entry['becomes']) ?><?php
                     if ($entry['rookie']) { ?> <span class="why">rookie</span><?php }
                     if ($entry['wait_list']) { ?> <span class="why">wait list</span><?php } ?></td>

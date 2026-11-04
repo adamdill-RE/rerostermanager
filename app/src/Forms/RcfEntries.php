@@ -267,6 +267,19 @@ final class RcfEntries
                     . 'cannot be submitted. An Admin redraws it on Create Approval Flow.'];
         }
 
+        // What RcfPage::formFromInput() found wrong with the rows (Phase
+        // 14.7, spec-v2 §21): an addition with no team, a title missing or
+        // not on the list. The screen refuses these first; this refuses them
+        // again, because a request is a record and the rule that a line
+        // carries a team and a real title is the record's, not the screen's.
+        // After the route, so an account with nothing drawn still learns
+        // that first.
+        $problems = array_values(array_filter((array) ($form['problems'] ?? []), 'is_string'));
+        if ($problems !== []) {
+            return ['created' => [], 'state' => $route['state'], 'approver' => $approver, 'notice' => null,
+                'refused' => implode(' ', $problems)];
+        }
+
         $members = $this->memberIds(array_map(
             static fn (array $e): string => (string) ($e['member_number'] ?? ''),
             $filled
@@ -1034,7 +1047,10 @@ final class RcfEntries
         // grid names the team alone (RcfPage::subcommittees()), and the cut
         // by division has to know which division that team is in. The
         // placeholder is never a division here, so its teams group alone.
-        return 'SELECT e.*, d.id AS resolved_division_id, d.name AS division_name, t.name AS team_name,'
+        // And the team the roster has the member on today, for the team the
+        // lists print when the entry's own sub-committee is a division
+        // (Phase 14.7, spec-v2 §21.1; RcfTracking::teamFor()).
+        return 'SELECT e.*, d.id AS resolved_division_id, d.name AS division_name, t.name AS team_name, et.name AS roster_team,'
             . ' rm.preferred_name AS r_preferred, rm.first_name AS r_first, rm.last_name AS r_last, rm.member_number AS r_number,'
             . ' cm.preferred_name AS c_preferred, cm.first_name AS c_first, cm.last_name AS c_last, cm.member_number AS c_number,'
             . ' fm.preferred_name AS f_preferred, fm.first_name AS f_first, fm.last_name AS f_last, fm.member_number AS f_number,'
@@ -1042,6 +1058,7 @@ final class RcfEntries
             . ' FROM rcf_entry e'
             . ' LEFT JOIN team t ON t.id = e.team_id'
             . ' LEFT JOIN division d ON d.id = COALESCE(e.division_id, t.division_id) AND d.is_placeholder = 0'
+            . ' LEFT JOIN member em ON em.id = e.member_id LEFT JOIN team et ON et.id = em.team_id'
             . ' INNER JOIN app_user ru ON ru.id = e.requested_by INNER JOIN member rm ON rm.id = ru.member_id'
             . ' LEFT JOIN app_user cu ON cu.id = e.current_approver_id LEFT JOIN member cm ON cm.id = cu.member_id'
             . ' LEFT JOIN app_user fu ON fu.id = e.final_approver_id LEFT JOIN member fm ON fm.id = fu.member_id'
@@ -1105,6 +1122,15 @@ final class RcfEntries
                 'remove_reason'         => (string) $row['remove_reason'],
                 'new_subcommittee'      => (string) $row['new_subcommittee'],
                 'sponsor'               => (string) $row['sponsor'],
+                // The team the request is about, and whether the request or
+                // the roster said so (Phase 14.7, spec-v2 §21.1): the same
+                // rule a kept line reads.
+                'team'                  => RcfTracking::teamFor([
+                    'type'             => $type,
+                    'new_subcommittee' => (string) $row['new_subcommittee'],
+                    'form_team'        => (string) ($row['team_name'] ?? ''),
+                    'roster_team'      => (string) ($row['roster_team'] ?? ''),
+                ]),
                 'change'                => RcfTracking::changeSummary($row),
                 'status'                => (string) $row['status'],
                 'status_label'          => self::STATES[(string) $row['status']] ?? (string) $row['status'],

@@ -21,6 +21,7 @@ use Rerm\Auth\Access;
 use Rerm\Auth\Capability;
 use Rerm\Auth\Level;
 use Rerm\Auth\Scope;
+use Rerm\Auth\TitleMap;
 use Rerm\Auth\User;
 use Rerm\Forms\ApprovalFlow;
 use Rerm\Forms\ApprovalNotice;
@@ -31,6 +32,7 @@ use Rerm\Forms\RcfTracking;
 use Rerm\Forms\RosterChangeForm;
 use Rerm\Mail\Mailer;
 use Rerm\Routes;
+use Rerm\View;
 
 function af_app(): App
 {
@@ -434,6 +436,15 @@ function af_user(string $key): User
         // A Vice Chairman sees one team (CLAUDE.md); the Division Vice
         // Chairman sees the division.
         scopeTeamIds: $key === 'vc' ? [$team] : [],
+        // The title, as the roster spells it (Phase 14.7): the one thing
+        // that tells a Vice Chairman from a Division Vice Chairman.
+        title: match ($key) {
+            'cap' => 'Captain',
+            'vc'  => 'Vice Chairman',
+            'dvc' => 'Division Vice Chairman',
+            'dc'  => 'Division Chairman',
+            default => 'Committee Member',
+        },
     );
 }
 
@@ -456,7 +467,9 @@ function af_vc_form(array $rows = null): array
         'subcommittee' => 't:' . $f['teams']['b'],
         'row'          => $rows ?? [
             0 => ['type' => 'T', 'member_number' => $f['members']['m3']['number'], 'new_title' => 'Assistant Captain'],
-            1 => ['type' => 'A', 'member_name' => 'Newcomer Sample', 'sponsor' => 'Erin Delta', 'rookie' => '1', 'wait_list' => '1'],
+            // A title since Phase 14.7 (spec-v2 §21.5): an addition without one
+            // is refused. The team is the heading's, filled in (§21.2).
+            1 => ['type' => 'A', 'member_name' => 'Newcomer Sample', 'new_title' => 'Committee Member', 'sponsor' => 'Erin Delta', 'rookie' => '1', 'wait_list' => '1'],
         ],
     ]);
 }
@@ -595,7 +608,12 @@ test('submitting makes one entry per filled row, resolved like a line of a form,
     assertSame('', $add['member_number']);
     assertSame(null, $add['member_id']);
     assertTrue($add['rookie'] && $add['wait_list']);
-    assertSame('Erin Delta', $add['sponsor']);
+    // A Vice Chairman may not fill in INTERVIEW REQUIRED OR SPONSORED BY
+    // (Phase 14.7, spec-v2 §21.4): what arrived in the cell is dropped.
+    assertSame('', $add['sponsor']);
+    assertSame('Committee Member', $add['new_title']);
+    assertSame('AF Bus Ops Team B', $add['new_subcommittee'], 'an addition on a team-headed form joins that team (§21.2)');
+    assertSame(['name' => 'AF Bus Ops Team B', 'source' => 'rcf'], $add['team'], 'and the list says so, from the request itself (§21.1)');
     assertSame('T', $title['type']);
     assertSame($f['members']['m3']['id'], $title['member_id'], 'the number resolved to the member');
     assertSame('Echo <b>, Frank', $title['member_name'], 'the roster\'s name, last name first, unescaped in the record');
@@ -879,8 +897,8 @@ test('by team the same entries are two forms, each headed Division - Team', func
     $entries->submit(af_user('dc'), $f['year'], $page->formFromInput(af_user('dc'), [
         'subcommittee' => 't:' . $f['teams']['b'],
         'row'          => [
-            0 => ['type' => 'A', 'member_name' => 'Second Newcomer', 'sponsor' => 'Carl Chair'],
-            1 => ['type' => 'A', 'member_name' => 'Third Newcomer', 'sponsor' => 'Carl Chair'],
+            0 => ['type' => 'A', 'member_name' => 'Second Newcomer', 'new_title' => 'Committee Member', 'sponsor' => 'Carl Chair'],
+            1 => ['type' => 'A', 'member_name' => 'Third Newcomer', 'new_title' => 'Committee Member', 'sponsor' => 'Carl Chair'],
         ],
     ]));
     $ids = array_map(static fn (array $e): int => (int) $e['id'], $entries->readyFor(af_user('dc')));
@@ -1452,6 +1470,372 @@ test('the notice goes only to a Vice Chairman or above, only to an address on th
     assertSame(ApprovalNotice::SENT, af_notice($wire)->waiting($f['users']['dvc'], 1, 'Erin Delta', ApprovalNotice::SUBMITTED)['outcome']);
     assertSame(1, count($wire));
     assertSame('bob@example.com', $wire[0][0]);
+});
+
+// ---------------------------------------------------------------------------
+// Phase 14.7 (spec-v2 §21): the team on every list, an addition's team, the
+// second look, the sponsor's cell, and the title list
+// ---------------------------------------------------------------------------
+
+test('the team a line or a request is about is the form\'s first and the roster\'s second, and the note says which', function (): void {
+    // What is ON THE FORM wins: an addition's destination, then the heading's
+    // team. A division heading says nothing about the team, so the roster's
+    // is shown — marked as the roster's. Nothing, from nowhere, otherwise.
+    assertSame(['name' => 'AF Bus Ops Team B', 'source' => 'rcf'],
+        RcfTracking::teamFor(['type' => 'A', 'new_subcommittee' => 'AF Bus Ops Team B', 'form_team' => 'AF Bus Ops Team A', 'roster_team' => '']),
+        'an addition joins the team in NEW SUB-COMMITTEE, whatever the heading');
+    assertSame(['name' => 'AF Bus Ops Team A', 'source' => 'rcf'],
+        RcfTracking::teamFor(['type' => 'T', 'new_subcommittee' => '', 'form_team' => 'AF Bus Ops Team A', 'roster_team' => 'AF Bus Ops Team B']),
+        'the heading\'s team beats the roster\'s: the form said so');
+    assertSame(['name' => 'AF Bus Ops Team A', 'source' => 'rcf'],
+        RcfTracking::teamFor(['type' => 'S', 'new_subcommittee' => 'AF Bus Ops Team B', 'form_team' => 'AF Bus Ops Team A', 'roster_team' => '']),
+        'a team change is about the team they are on; the destination is the change');
+    assertSame(['name' => 'AF Bus Ops Team B', 'source' => 'roster'],
+        RcfTracking::teamFor(['type' => 'T', 'new_subcommittee' => '', 'form_team' => '', 'roster_team' => 'AF Bus Ops Team B']),
+        'a division heading: the roster\'s team, marked');
+    assertSame(['name' => '', 'source' => ''],
+        RcfTracking::teamFor(['type' => 'A', 'new_subcommittee' => '', 'form_team' => '', 'roster_team' => '']),
+        'a newcomer on a division-headed form kept before this phase');
+
+    // One function draws it everywhere, with the note only where the roster
+    // answered.
+    assertSame('AF Bus Ops Team A', View::rcfTeam(['name' => 'AF Bus Ops Team A', 'source' => 'rcf']));
+    assertSame('AF Bus Ops Team B <span class="why">from the roster &mdash; not on the form</span>',
+        View::rcfTeam(['name' => 'AF Bus Ops Team B', 'source' => 'roster']));
+    assertSame('<span class="why">no team on the form, and not on the roster</span>', View::rcfTeam(['name' => '', 'source' => '']));
+    assertTrue(str_contains(View::rcfTeam(['name' => 'Team <b>', 'source' => 'rcf']), 'Team &lt;b&gt;'), 'escaped');
+
+    // Every list that shows an RCF line or request draws it through the one
+    // function: the three workflow screens, Track RCFs, one form, the
+    // member card and Look Up Members.
+    foreach (['rcf-entries', 'rcf-approvals', 'rcf-consolidate', 'rcfs', 'rcf', 'member', 'lookup'] as $view) {
+        assertTrue(str_contains(af_source("app/views/{$view}.php"), 'View::rcfTeam('), "{$view} shows the team");
+    }
+    // And both shapers read the one rule, with the roster's team joined
+    // live, never kept.
+    assertTrue(str_contains(af_source('app/src/Forms/RcfEntries.php'), 'RcfTracking::teamFor(['));
+    assertTrue(str_contains(af_source('app/src/Forms/RcfTracking.php'), "'team'               => self::teamFor(["));
+    assertSame(0, preg_match('/roster_team/', af_source('db/migrations/013_rcf_entries.sql')), 'the roster\'s team is not a column');
+});
+
+test('what a row needs a second look for, and what refuses it outright, are two pure rules', function (): void {
+    $team     = ['key' => 't:1', 'name' => 'AF Bus Ops Team A', 'label' => 'AF Logistics Division - AF Bus Ops Team A', 'team_id' => 1, 'division_id' => null];
+    $division = ['key' => 'd:1', 'name' => 'AF Logistics Division', 'label' => 'AF Logistics Division', 'team_id' => null, 'division_id' => 1];
+    $row      = static fn (array $cells): array => array_replace(RosterChangeForm::emptyEntry(), ['member_number' => 'AF000001', 'member_name' => 'Alpha, Robert'], $cells);
+
+    // No team anywhere on the line: a division heading and a blank NEW
+    // SUB-COMMITTEE. A team heading answers it; so does a destination.
+    assertSame(true, RcfPage::needsConfirming($row(['type' => 'T', 'new_title' => 'Captain']), $division));
+    assertSame(true, RcfPage::needsConfirming($row(['type' => 'R', 'remove_reason' => '4']), $division));
+    assertSame(true, RcfPage::needsConfirming($row(['type' => 'T', 'new_title' => 'Captain']), null), 'no heading at all');
+    assertSame(false, RcfPage::needsConfirming($row(['type' => 'T', 'new_title' => 'Captain']), $team));
+    assertSame(false, RcfPage::needsConfirming($row(['type' => 'T', 'new_title' => 'Captain', 'new_subcommittee' => 'AF Bus Ops Team B']), $division));
+    // A team change with no destination, whatever the heading: the exact
+    // mistake the look exists to catch.
+    assertSame(true, RcfPage::needsConfirming($row(['type' => 'S']), $team));
+    assertSame(true, RcfPage::needsConfirming($row(['type' => 'S & T', 'new_title' => 'Captain']), $team));
+    assertSame(false, RcfPage::needsConfirming($row(['type' => 'S', 'new_subcommittee' => 'AF Bus Ops Team B']), $division));
+    // Never an addition (refused instead), never a blank row.
+    assertSame(false, RcfPage::needsConfirming($row(['type' => 'A', 'new_title' => 'Committee Member']), $division));
+    assertSame(false, RcfPage::needsConfirming(RosterChangeForm::emptyEntry(), $division));
+
+    // What is refused: a title missing where one is required, a title typed
+    // off the list, an addition with no team, with a division, or with a
+    // team that is not on the roster.
+    $options  = [$division, $team, ['key' => 't:2', 'name' => 'AF Bus Ops Team B', 'label' => 'AF Logistics Division - AF Bus Ops Team B', 'team_id' => 2, 'division_id' => null]];
+    assertSame([], RcfPage::problems(1, $row(['type' => 'T', 'new_title' => 'Captain']), [], $options));
+    assertSame([], RcfPage::problems(1, $row(['type' => 'R', 'remove_reason' => '4']), [], $options), 'a removal needs no title');
+    assertSame([], RcfPage::problems(1, $row(['type' => 'S', 'new_subcommittee' => 'AF Bus Ops Team B']), [], $options), 'nor a team change');
+    assertSame([], RcfPage::problems(1, RosterChangeForm::emptyEntry(), ['new_title' => 'x'], $options), 'a blank row is nothing');
+    assertSame(['Row 3: pick the title under Change/add title — it is required for title change.'],
+        RcfPage::problems(3, $row(['type' => 'T']), [], $options));
+    assertSame(['Row 3: "Asst Captain" is not a title on the roster. Pick one from the list under Change/add title.'],
+        RcfPage::problems(3, $row(['type' => 'T']), ['new_title' => 'Asst Captain'], $options), 'what was typed is named, not reported missing');
+    assertSame(['Row 2: pick the title under Change/add title — it is required for sub-committee change (team change) & title change.'],
+        RcfPage::problems(2, $row(['type' => 'S & T', 'new_subcommittee' => 'AF Bus Ops Team B']), [], $options));
+    assertSame(['Row 1: an addition needs the team they will be added to. Pick it under New sub-committee.'],
+        RcfPage::problems(1, $row(['type' => 'A', 'new_title' => 'Committee Member']), [], $options));
+    assertSame(['Row 1: "AF Logistics Division" is a division. Pick the team they will be added to from the list under New sub-committee.'],
+        RcfPage::problems(1, $row(['type' => 'A', 'new_title' => 'Committee Member', 'new_subcommittee' => 'AF Logistics Division']), [], $options));
+    assertSame(['Row 1: "Nowhere Team" is not a team on the roster. Pick the team they will be added to from the list under New sub-committee.'],
+        RcfPage::problems(1, $row(['type' => 'A', 'new_title' => 'Committee Member', 'new_subcommittee' => 'Nowhere Team']), [], $options));
+    assertSame([], RcfPage::problems(1, $row(['type' => 'A', 'new_title' => 'Committee Member', 'new_subcommittee' => 'AF Bus Ops Team B']), [], $options));
+    assertSame(2, count(RcfPage::problems(1, $row(['type' => 'A']), [], $options)), 'both at once, both named');
+
+    // The key is for exactly these rows on this form, and nothing else.
+    $confirm = [['member_number' => 'AF000001', 'member_name' => 'Alpha, Robert', 'type' => 'T', 'type_label' => 'Title Change', 'roster_team' => 'AF Bus Ops Team A', 'on_roster' => '1']];
+    $key     = RcfPage::confirmKey($confirm, $division);
+    assertSame(1, preg_match('/^[0-9a-f]{64}$/', $key));
+    assertSame($key, RcfPage::confirmKey($confirm, $division), 'stable');
+    assertTrue($key !== RcfPage::confirmKey($confirm, $team), 'another heading is another question');
+    assertTrue($key !== RcfPage::confirmKey([array_replace($confirm[0], ['type' => 'R'])], $division), 'a changed row is another question');
+    assertSame('', RcfPage::confirmKey([], $division), 'nothing to confirm, no key');
+    assertSame(true, RcfPage::confirmed(['confirm' => [], 'confirm_key' => ''], []), 'nothing to confirm is confirmed');
+    assertSame(false, RcfPage::confirmed(['confirm' => $confirm, 'confirm_key' => $key], []));
+    assertSame(false, RcfPage::confirmed(['confirm' => $confirm, 'confirm_key' => $key], ['confirm_teams' => 'yes']));
+    assertSame(true, RcfPage::confirmed(['confirm' => $confirm, 'confirm_key' => $key], ['confirm_teams' => $key]));
+
+    // The sponsor's cell: a Division Vice Chairman and above. Level says
+    // Senior Officer for a Vice Chairman too; the title's breadth tells
+    // them apart. A granted Senior Officer with a member's title may.
+    $user = static fn (Level $l, string $title): User => new User(1, 1, 'AF000000', $l, null, null, false, 'T', [], $title);
+    assertSame(true, RcfPage::maySponsor($user(Level::Admin, 'Committee Member')));
+    assertSame(true, RcfPage::maySponsor($user(Level::ExecutiveOfficer, 'Division Chairman')));
+    assertSame(true, RcfPage::maySponsor($user(Level::SeniorOfficer, 'Division Vice Chairman')));
+    assertSame(true, RcfPage::maySponsor($user(Level::SeniorOfficer, 'Coordinator')));
+    assertSame(true, RcfPage::maySponsor($user(Level::SeniorOfficer, 'Committee Member')), 'granted the level: the division\'s breadth');
+    assertSame(false, RcfPage::maySponsor($user(Level::SeniorOfficer, 'Vice Chairman')), 'the one Senior Officer who sees a team');
+    assertSame(false, RcfPage::maySponsor($user(Level::SeniorOfficer, 'vice chairman ')), 'matched as the title map matches');
+    assertSame(false, RcfPage::maySponsor($user(Level::Officer, 'Captain')));
+    assertSame(false, RcfPage::maySponsor($user(Level::Member, 'Committee Member')));
+    assertSame('Vice Chairman', User::fromRow([
+        'id' => 1, 'member_id' => 1, 'member_number' => 'AF000000', 'effective_level' => 'senior_officer', 'must_change_password' => 0,
+        'scope_division_id' => null, 'scope_team_id' => null, 'division_id' => 1, 'team_id' => 2, 'title' => ' Vice Chairman ',
+        'first_name' => 'Erin', 'last_name' => 'Delta', 'preferred_name' => '',
+    ])->title, 'a real login carries the title the loader selects');
+
+    // The screens: the title is a <select> on every row, the sponsor cell
+    // is disabled for whoever may not, the second look is one partial drawn
+    // inside both forms, and both handlers hold the form through one
+    // function before anything is built or written.
+    $grid = af_source('app/views/rcf-grid.php');
+    assertTrue(str_contains($grid, '<select name="row[<?= $i ?>][new_title]"'), 'a list, not a text box');
+    assertSame(0, substr_count($grid, "'new_title', 'New title'"), 'and no text box left');
+    assertTrue(str_contains($grid, 'if ($maySponsor)'));
+    assertTrue(str_contains($grid, '<input type="text" disabled'));
+    foreach (['form-rcf', 'rcf-entries'] as $view) {
+        assertTrue(str_contains(af_source("app/views/{$view}.php"), "require __DIR__ . '/rcf-confirm.php'"), "{$view} draws the second look");
+    }
+    $confirmView = af_source('app/views/rcf-confirm.php');
+    assertTrue(str_contains($confirmView, 'name="confirm_teams"'));
+    assertTrue(str_contains($confirmView, 'role="alertdialog"'));
+    assertSame(0, substr_count($confirmView, '<script'), 'no script: the CSP forbids it');
+    $index = af_source('public/index.php');
+    assertSame(2, substr_count($index, 'rcf_held($form, $_POST,'), 'both grid screens hold the form the same way');
+    assertTrue(str_contains(af_source('app/src/Forms/RcfEntries.php'), "\$form['problems']"), 'and submit() refuses a problem again');
+});
+
+test('a title is picked from one list, an addition names its team, and the sponsor cell is dropped for whoever may not fill it', function (): void {
+    $f    = af_fixture();
+    $page = new RcfPage(af_pdo());
+
+    // The list: every title on the roster, and every one the export spells.
+    $titles = $page->titles();
+    foreach (['Captain', 'Vice Chairman', 'Division Vice Chairman', 'Division Chairman', 'Committee Member'] as $title) {
+        assertTrue(in_array($title, $titles, true), "{$title} is on the roster, so it is offered");
+    }
+    foreach (array_keys(TitleMap::MAP) as $title) {
+        assertTrue(in_array($title, $titles, true), "{$title} is a title the export spells, so it is offered");
+    }
+    assertSame(count($titles), count(array_unique($titles)), 'once each');
+    $sorted = $titles;
+    usort($sorted, 'strcasecmp');
+    assertSame($sorted, $titles, 'in order');
+    assertTrue(in_array('Committee Member', $page->page(af_user('vc'), [])['titles'], true), 'the screen is handed it');
+
+    // On a form headed with a TEAM: a title off the list is dropped and
+    // named; an addition takes the heading's team; a removal needs no title.
+    $form = $page->formFromInput(af_user('dvc'), [
+        'subcommittee' => 't:' . $f['teams']['a'],
+        'row'          => [
+            0 => ['type' => 'T', 'member_number' => $f['members']['m1']['number'], 'new_title' => 'Asst Captain'],
+            1 => ['type' => 'A', 'member_name' => 'Newcomer Sample', 'new_title' => 'Committee Member', 'sponsor' => 'Bob Approver'],
+            2 => ['type' => 'R', 'member_number' => $f['members']['m2']['number'], 'remove_reason' => '4'],
+            3 => ['type' => 'T', 'member_number' => $f['members']['m2']['number']],
+        ],
+    ]);
+    assertSame('', $form['entries'][0]['new_title'], 'a spelling the roster does not use is not written');
+    assertSame('Committee Member', $form['entries'][1]['new_title']);
+    assertSame('AF Bus Ops Team A', $form['entries'][1]['new_subcommittee'], 'the addition joins the team the form is headed with');
+    assertSame('Bob Approver', $form['entries'][1]['sponsor'], 'a Division Vice Chairman sponsors');
+    assertSame([
+        'Row 1: "Asst Captain" is not a title on the roster. Pick one from the list under Change/add title.',
+        'Row 4: pick the title under Change/add title — it is required for title change.',
+    ], $form['problems']);
+    assertSame([], $form['confirm'], 'a team heading names the team on every row');
+    assertSame('', $form['confirm_key']);
+
+    // On a form headed with a DIVISION: an addition has to say which team,
+    // and it has to be a team.
+    $form = $page->formFromInput(af_user('dvc'), [
+        'subcommittee' => 'd:' . $f['division'],
+        'row'          => [
+            0 => ['type' => 'A', 'member_name' => 'Newcomer Sample', 'new_title' => 'Committee Member'],
+            1 => ['type' => 'A', 'member_name' => 'Second Newcomer', 'new_title' => 'Committee Member', 'new_subcommittee' => 'AF Logistics Division'],
+            2 => ['type' => 'A', 'member_name' => 'Third Newcomer', 'new_title' => 'Committee Member', 'new_subcommittee' => 'af logistics division - af bus ops team b'],
+        ],
+    ]);
+    assertSame('', $form['entries'][0]['new_subcommittee']);
+    assertSame('AF Bus Ops Team B', $form['entries'][2]['new_subcommittee'], 'picked by label, written as the team\'s own name');
+    assertSame([
+        'Row 1: an addition needs the team they will be added to. Pick it under New sub-committee.',
+        'Row 2: "AF Logistics Division" is a division. Pick the team they will be added to from the list under New sub-committee.',
+    ], $form['problems']);
+
+    // The sponsor's cell is dropped for a Vice Chairman and a Captain,
+    // whatever arrived in it, and the screen draws it disabled for them.
+    $vc = $page->formFromInput(af_user('vc'), [
+        'subcommittee' => 't:' . $f['teams']['b'],
+        'row'          => [0 => ['type' => 'A', 'member_name' => 'Newcomer Sample', 'new_title' => 'Committee Member', 'sponsor' => 'Erin Delta']],
+    ]);
+    assertSame('', $vc['entries'][0]['sponsor']);
+    assertSame(false, $page->page(af_user('vc'), [])['may_sponsor']);
+    assertSame(false, $page->page(af_user('cap'), [])['may_sponsor']);
+    assertSame(true, $page->page(af_user('dvc'), [])['may_sponsor']);
+    assertSame(true, $page->page(af_user('dc'), [])['may_sponsor']);
+    assertSame(true, $page->page(af_user('adm'), [])['may_sponsor']);
+    $html = af_render('rcf-entries', 'Create RCF Requests', [
+        'user' => af_user('vc'), 'rcf' => $page->page(af_user('vc'), ['subcommittee' => 't:' . $f['teams']['b']]),
+        'mine' => [], 'counts' => ['mine' => 0, 'waiting' => 0, 'ready' => 0],
+        'route' => ['state' => 'approver', 'approver' => ['id' => 1, 'name' => 'Bob Approver'], 'approves' => 0],
+    ]);
+    assertSame(5, substr_count($html, 'placeholder="DVC or above"'), 'five rows, five disabled cells');
+    assertSame(0, substr_count($html, 'name="row[0][sponsor]"'), 'and nothing to submit in them');
+    assertSame(5, substr_count($html, '][new_title]"'), 'five title lists');
+    assertTrue(str_contains($html, '<option>Committee Member</option>'), 'the title, once per option, as its own value');
+    $html = af_render('rcf-entries', 'Create RCF Requests', [
+        'user' => af_user('dvc'), 'rcf' => $page->page(af_user('dvc'), ['subcommittee' => 't:' . $f['teams']['a']]),
+        'mine' => [], 'counts' => ['mine' => 0, 'waiting' => 0, 'ready' => 0],
+        'route' => ['state' => 'approver', 'approver' => ['id' => 1, 'name' => 'Carl Chair'], 'approves' => 0],
+    ]);
+    assertSame(0, substr_count($html, 'placeholder="DVC or above"'));
+    assertSame(5, substr_count($html, 'name="row[0][sponsor]"') + substr_count($html, 'name="row[1][sponsor]"') + substr_count($html, 'name="row[2][sponsor]"')
+        + substr_count($html, 'name="row[3][sponsor]"') + substr_count($html, 'name="row[4][sponsor]"'), 'a Division Vice Chairman gets the cell');
+
+    // submit() refuses a problem again, writing nothing — after the route,
+    // so an account with nothing drawn still learns that first.
+    af_reset_entries();
+    af_flow()->save(af_user('adm'), ['approver' => [
+        (string) $f['users']['vc']  => (string) $f['users']['dvc'],
+        (string) $f['users']['dvc'] => (string) $f['users']['dc'],
+        (string) $f['users']['dc']  => ApprovalFlow::TOP,
+    ]]);
+    $result = af_entries()->submit(af_user('vc'), $f['year'], af_vc_form([0 => ['type' => 'A', 'member_name' => 'Newcomer Sample']]));
+    assertSame([], $result['created']);
+    assertSame('approver', $result['state']);
+    assertTrue(str_starts_with((string) $result['refused'], 'Row 1: pick the title under Change/add title'), (string) $result['refused']);
+    assertSame(0, (int) af_pdo()->query("SELECT COUNT(*) FROM rcf_entry WHERE requested_by = {$f['users']['vc']}")->fetchColumn(), 'nothing written');
+    af_flow()->save(af_user('adm'), ['approver' => [(string) $f['users']['vc'] => '']]);
+    $result = af_entries()->submit(af_user('vc'), $f['year'], af_vc_form([0 => ['type' => 'A', 'member_name' => 'Newcomer Sample']]));
+    assertSame('unset', $result['state'], 'the flow is the first thing a requester is told about');
+    af_flow()->save(af_user('adm'), ['approver' => [(string) $f['users']['vc'] => (string) $f['users']['dvc']]]);
+});
+
+test('a row naming no team is held for a second look with what the roster says, and the team is on every list once it is a request', function (): void {
+    $f    = af_fixture();
+    $page = new RcfPage(af_pdo());
+    af_reset_entries();
+
+    // A DIVISION heading: a title change, a removal, a team change with no
+    // destination, somebody not on the roster, and an addition with a team.
+    // Everything but the addition is asked about; the addition is not, because
+    // it names its team.
+    $input = [
+        'subcommittee' => 'd:' . $f['division'],
+        'row'          => [
+            0 => ['type' => 'T', 'member_number' => $f['members']['m1']['number'], 'new_title' => 'Captain'],
+            1 => ['type' => 'R', 'member_number' => $f['members']['m3']['number'], 'remove_reason' => '4'],
+            2 => ['type' => 'S', 'member_number' => $f['members']['m2']['number']],
+            3 => ['type' => 'T', 'member_number' => 'AF999999', 'member_name' => 'Nobody Known', 'new_title' => 'Captain'],
+            4 => ['type' => 'A', 'member_name' => 'Newcomer Sample', 'new_title' => 'Committee Member', 'new_subcommittee' => 'AF Bus Ops Team A'],
+        ],
+    ];
+    $form = $page->formFromInput(af_user('dvc'), $input);
+    assertSame([], $form['problems']);
+    assertSame(4, count($form['confirm']));
+    assertSame(['member_number' => $f['members']['m1']['number'], 'member_name' => 'Alpha, Robert', 'type' => 'T', 'type_label' => 'Title Change',
+        'roster_team' => 'AF Bus Ops Team A', 'on_roster' => '1'], $form['confirm'][0], 'what the roster says their team is');
+    assertSame('AF Bus Ops Team B', $form['confirm'][1]['roster_team']);
+    assertSame('S', $form['confirm'][2]['type']);
+    assertSame(['roster_team' => '', 'on_roster' => ''], array_intersect_key($form['confirm'][3], ['roster_team' => 1, 'on_roster' => 1]), 'nobody the caller can see: no team to show, said so');
+    assertSame(false, RcfPage::confirmed($form, $input), 'held');
+    assertSame(true, RcfPage::confirmed($form, $input + ['confirm_teams' => $form['confirm_key']]), 'until the key comes back');
+
+    // The same rows, edited: another key, so the question is asked again.
+    $edited = $input;
+    $edited['row'][0]['type'] = 'R';
+    assertTrue($page->formFromInput(af_user('dvc'), $edited)['confirm_key'] !== $form['confirm_key']);
+
+    // The screen draws the question above the grid, inside the form, with
+    // the key and the two buttons — and a Note in the bar.
+    $html = af_render('rcf-entries', 'Create RCF Requests', [
+        'user' => af_user('dvc'), 'rcf' => $page->page(af_user('dvc'), $input), 'confirm' => $form,
+        'mine' => [], 'counts' => ['mine' => 0, 'waiting' => 0, 'ready' => 0],
+        'route' => ['state' => 'approver', 'approver' => ['id' => 1, 'name' => 'Carl Chair'], 'approves' => 0],
+    ]);
+    assertTrue(str_contains($html, 'Check the team before you go on'));
+    assertTrue(str_contains($html, '<input type="hidden" name="confirm_teams" value="' . $form['confirm_key'] . '">'));
+    assertTrue(str_contains($html, 'on the roster as <strong>AF Bus Ops Team A</strong>'));
+    assertTrue(str_contains($html, 'not on the roster you can see, so there is no team to show'));
+    assertTrue(str_contains($html, 'a team change with no new team given'));
+    assertTrue(str_contains($html, 'The roster is right — submit these requests'));
+    assertTrue(str_contains($html, 'value="load" class="quiet">Go back and change the rows'));
+    assertTrue(strpos($html, 'id="confirm"') < strpos($html, '<table class="rcf">'), 'above the grid');
+    assertTrue(strpos($html, 'id="confirm"') > strpos($html, '<form method="post"'), 'inside the form, so the rows travel with the answer');
+    assertTrue(str_contains($html, 'name="row[0][member_number]"') && str_contains($html, 'value="' . $f['members']['m1']['number'] . '"'), 'nothing typed is lost');
+    $html = af_render('form-rcf', 'Roster Change Form', ['user' => af_user('dvc'), 'rcf' => $page->page(af_user('dvc'), $input), 'confirm' => $form]);
+    assertTrue(str_contains($html, 'The roster is right — download the form'), 'the same card on Create Forms, with its own verb');
+    $html = af_render('form-rcf', 'Roster Change Form', ['user' => af_user('dvc'), 'rcf' => $page->page(af_user('dvc'), $input)]);
+    assertSame(0, substr_count($html, 'id="confirm"'), 'and not when nothing is held');
+
+    // A TEAM heading asks about nothing — except a team change with no
+    // destination, whatever the heading.
+    $team = $page->formFromInput(af_user('dvc'), ['subcommittee' => 't:' . $f['teams']['a'], 'row' => [
+        0 => ['type' => 'T', 'member_number' => $f['members']['m1']['number'], 'new_title' => 'Captain'],
+        1 => ['type' => 'S', 'member_number' => $f['members']['m2']['number']],
+        2 => ['type' => 'S', 'member_number' => $f['members']['m2']['number'], 'new_subcommittee' => 'AF Bus Ops Team B'],
+    ]]);
+    assertSame(1, count($team['confirm']));
+    assertSame($f['members']['m2']['number'], $team['confirm'][0]['member_number']);
+
+    // Once submitted, every list carries the team: the heading's for the
+    // team-headed request, the roster's — marked — for the division-headed
+    // one, the destination for the addition. submit() does not ask the
+    // question again: the screen did, and a request is what was confirmed.
+    af_flow()->save(af_user('adm'), ['approver' => [
+        (string) $f['users']['vc']  => (string) $f['users']['dvc'],
+        (string) $f['users']['dvc'] => (string) $f['users']['dc'],
+        (string) $f['users']['dc']  => ApprovalFlow::TOP,
+    ]]);
+    $entries = af_entries();
+    $result  = $entries->submit(af_user('dvc'), $f['year'], $form);
+    assertSame(5, count($result['created']));
+    $mine = array_reverse($entries->mine(af_user('dvc')));
+    assertSame(['name' => 'AF Bus Ops Team A', 'source' => 'roster'], $mine[0]['team'], 'a division heading: the roster\'s team, marked');
+    assertSame(['name' => 'AF Bus Ops Team B', 'source' => 'roster'], $mine[1]['team']);
+    assertSame(['name' => 'AF Bus Ops Team A', 'source' => 'roster'], $mine[2]['team'], 'a team change with no destination: the team they are on');
+    assertSame(['name' => '', 'source' => ''], $mine[3]['team'], 'nobody the roster knows');
+    assertSame(['name' => 'AF Bus Ops Team A', 'source' => 'rcf'], $mine[4]['team'], 'the addition\'s destination, from the request itself');
+    $result = $entries->submit(af_user('vc'), $f['year'], af_vc_form());
+    assertSame(2, count($result['created']));
+    foreach ($entries->mine(af_user('vc')) as $entry) {
+        assertSame(['name' => 'AF Bus Ops Team B', 'source' => 'rcf'], $entry['team'], 'a team heading: the form said so');
+    }
+    foreach ($entries->waitingFor(af_user('dvc')) as $entry) {
+        assertSame('rcf', $entry['team']['source']);
+    }
+    $waiting = $entries->waitingFor(af_user('dc'));
+    assertSame(5, count($waiting));
+    assertSame('roster', $waiting[0]['team']['source']);
+    foreach ($entries->pendingFor(af_user('dc')) as $entry) {
+        assertTrue(isset($entry['team']['name'], $entry['team']['source']));
+    }
+
+    // And the screens print it with the note where the roster answered.
+    $html = af_render('rcf-approvals', 'Approve RCF Requests', [
+        'user' => af_user('dc'), 'waiting' => $waiting, 'decided' => [], 'counts' => ['mine' => 0, 'waiting' => 5, 'ready' => 0],
+    ]);
+    assertTrue(str_contains($html, '<th scope="col">Team</th>'));
+    assertTrue(str_contains($html, 'AF Bus Ops Team A <span class="why">from the roster &mdash; not on the form</span>'));
+    assertTrue(str_contains($html, 'no team on the form, and not on the roster'));
+    $html = af_render('rcf-entries', 'Create RCF Requests', [
+        'user' => af_user('vc'), 'rcf' => $page->page(af_user('vc'), []), 'mine' => $entries->mine(af_user('vc')),
+        'counts' => ['mine' => 2, 'waiting' => 0, 'ready' => 0],
+        'route' => ['state' => 'approver', 'approver' => ['id' => 1, 'name' => 'Bob Approver'], 'approves' => 0],
+    ]);
+    assertSame(2, substr_count($html, '<td data-label="Team">AF Bus Ops Team B</td>'), 'from the request, no note');
+
+    af_reset_entries();
 });
 
 test('rcf entries fixtures are cleaned up', function (): void {

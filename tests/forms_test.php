@@ -1369,6 +1369,15 @@ test('the page stays inside the first-paint budget at the size it is normally us
     //                                          button presses in, and ~14KB
     //                                          over the wire once compressed
     //
+    // Re-measured at Phase 14.7 (spec-v2 §21.5), when CHANGE/ADD TITLE
+    // became a <select> of ~17 titles on every row: nothing chosen 62KB
+    // (the shell has grown since the first measurement), a team with five
+    // rows 76KB → 81KB, fully expanded 122KB → 138KB, and 20.2KB → 20.9KB on
+    // the wire — seventeen identical option lists compress to almost
+    // nothing. The ceiling on the expansion moves to 160KB to hold that
+    // number honestly; the two budgets that matter on a phone, the first
+    // paint and the wire, are unchanged.
+    //
     // The budget is asserted where it applies — the page as it arrives — and
     // the fully expanded form is held to a ceiling rather than pretended
     // about. That is why the screen draws five rows and not twenty-five.
@@ -1379,7 +1388,7 @@ test('the page stays inside the first-paint budget at the size it is normally us
     assertTrue(strlen($empty) < 100 * 1024, 'and before anything is chosen, ' . strlen($empty) . ' bytes');
 
     $expanded = rcf_render(rcf_captain(), ['subcommittee' => 't:' . $f['teams']['a'], 'visible' => '25']);
-    assertTrue(strlen($expanded) < 128 * 1024, 'fully expanded is ' . strlen($expanded) . ' bytes');
+    assertTrue(strlen($expanded) < 160 * 1024, 'fully expanded is ' . strlen($expanded) . ' bytes');
     assertTrue(
         strlen(gzencode($expanded, 6)) < 24 * 1024,
         'and ' . strlen(gzencode($expanded, 6)) . ' bytes on the wire'

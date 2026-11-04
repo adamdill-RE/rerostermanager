@@ -188,6 +188,7 @@ $steps = RcfTracking::STEPS;
         <thead><tr>
             <th scope="col"><span class="vh">Row</span>#</th>
             <th scope="col">Member</th>
+            <th scope="col">Team</th>
             <th scope="col">Change</th>
             <th scope="col">RCF #</th>
             <th scope="col">To the DC</th>
@@ -198,6 +199,7 @@ $steps = RcfTracking::STEPS;
             <tr class="all">
                 <td class="n" data-label="Row">All</td>
                 <td data-label="Member"><strong>Every line</strong></td>
+                <td data-label="Team"><span class="why">&mdash;</span></td>
                 <td data-label="Change"><span class="why">wins over the lines below</span></td>
                 <td data-label="RCF #"><input type="text" name="track[all][serial]" maxlength="<?= e((string) RcfTracking::SERIAL_MAX) ?>"
                     aria-label="RCF number, every line" autocomplete="off" placeholder="every line"></td>
@@ -220,6 +222,7 @@ $steps = RcfTracking::STEPS;
                     <?php if ($line['rookie']) { ?><span class="why">rookie</span><?php } ?>
                     <?php if ($line['wait_list']) { ?><span class="why">wait list</span><?php } ?>
                 </td>
+                <td data-label="Team"><?= View::rcfTeam((array) $line['team']) ?></td>
                 <td data-label="Change"><?= e((string) $line['change']) ?><?php
                     if ((string) $line['sponsor'] !== '') { ?> <span class="why">&middot; <?= e((string) $line['sponsor']) ?></span><?php } ?></td>
                 <td data-label="RCF #"><input type="text" name="track[<?= $id ?>][serial]" maxlength="<?= e((string) RcfTracking::SERIAL_MAX) ?>"

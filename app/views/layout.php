@@ -1027,6 +1027,22 @@ select:focus-visible { outline: 3px solid var(--rodeo-orange); outline-offset: 1
    Below 720px NOTHING changes and every target stays full size. */
 .rcf input, .rcf select { min-height: 56px; }
 .rcf td.tick { text-align: center; }
+/* A cell the caller may not fill in (Phase 14.7, spec-v2 §21.4): greyed,
+   with the reason in its label and tooltip — never simply absent, so the
+   column still lines up with the paper form. */
+.rcf input[disabled] { background: var(--page); color: var(--muted); border-style: dashed; cursor: not-allowed; }
+
+/* The second look (Phase 14.7, spec-v2 §21.3): the one card on the grid
+   screens that interrupts, drawn in the accent so it reads as a question
+   and not as another section. No script, so no overlay — it sits above the
+   grid it asks about, and the confirming button takes focus on load. */
+.card.confirm { border: 2px solid var(--rodeo-orange); }
+.card.confirm ul.rows { margin: .5rem 0 1rem; }
+.card.confirm .cards { grid-template-columns: 1fr; margin-bottom: 0; }
+.card.confirm .cards > div { margin: 0; }
+@media (min-width: 720px) {
+    .card.confirm .cards { grid-template-columns: 1fr 1fr; }
+}
 .rcf td.tick input[type="checkbox"] {
     width: 1.5rem;
     height: 1.5rem;

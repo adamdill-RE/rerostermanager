@@ -1870,8 +1870,12 @@ function forms_screen(Rerm\App $app, Rerm\Auth\User $user): void
     ]);
 }
 
-/** The Roster Change Form, as far as it has been filled in. */
-function rcf_screen(Rerm\App $app, Rerm\Auth\User $user, array $input, array $notices = []): void
+/**
+ * The Roster Change Form, as far as it has been filled in. `$confirm` is
+ * the resolved form when the download was held for the second look (Phase
+ * 14.7, spec-v2 §21.3): the view draws the question above the grid.
+ */
+function rcf_screen(Rerm\App $app, Rerm\Auth\User $user, array $input, array $notices = [], ?array $confirm = null): void
 {
     render($app, 'form-rcf', 'Roster Change Form', [
         // Twelve columns of grid: the wide container, and below 720px the
@@ -1880,7 +1884,49 @@ function rcf_screen(Rerm\App $app, Rerm\Auth\User $user, array $input, array $no
         'user'    => $user,
         'notices' => $notices === [] ? flash_take() : $notices,
         'rcf'     => Rerm\Forms\RcfPage::fromApp($app)->page($user, $input),
+        'confirm' => $confirm,
     ]);
+}
+
+/**
+ * The two checks both grid screens make before a resolved form goes
+ * anywhere (Phase 14.7, spec-v2 §21.2, §21.3, §21.5), as the notices to
+ * re-render with — or null when the form may go on.
+ *
+ * Problems — a row with no title where one is required, a title that is
+ * not on the list, an addition with no team — are refused outright, one
+ * sentence per row. A form with none that still has a row naming no team
+ * is HELD rather than refused, until the POST carries the key for exactly
+ * those rows: the caller draws the question and the key beside the grid.
+ *
+ * @param array<string, mixed> $form  RcfPage::formFromInput()'s answer
+ * @param array<string, mixed> $input the raw POST
+ * @return ?array{notices: array<int, array{0: string, 1: string}>, confirm: ?array<string, mixed>}
+ */
+function rcf_held(array $form, array $input, string $verb): ?array
+{
+    if ($form['problems'] !== []) {
+        return [
+            'notices' => array_map(static fn (string $p): array => ['danger', $p], $form['problems']),
+            'confirm' => null,
+        ];
+    }
+
+    if (!Rerm\Forms\RcfPage::confirmed($form, $input)) {
+        $n = count($form['confirm']);
+
+        return [
+            'notices' => [['warn', sprintf(
+                '%d %s no team. Check what the roster says below, then confirm or go back, before the form is %s.',
+                $n,
+                $n === 1 ? 'row names' : 'rows name',
+                $verb
+            )]],
+            'confirm' => $form,
+        ];
+    }
+
+    return null;
 }
 
 /**
@@ -1933,6 +1979,15 @@ function rcf_act(Rerm\App $app, Rerm\Auth\User $user): void
         rcf_screen($app, $user, $_POST, [['warn',
             'Nothing is filled in yet, so there is no change to ask for. '
             . 'Add at least one row.']]);
+        exit;
+    }
+
+    // A row that is wrong, or a row that needs a second look (Phase 14.7):
+    // back onto the screen with everything still typed in, like the two
+    // refusals above.
+    $held = rcf_held($form, $_POST, 'downloaded');
+    if ($held !== null) {
+        rcf_screen($app, $user, $_POST, $held['notices'], $held['confirm']);
         exit;
     }
 
@@ -2430,8 +2485,13 @@ function rcf_entries_blocked(Rerm\App $app, Rerm\Auth\User $user, string $title)
     return true;
 }
 
-/** Create RCF Requests (the Create RCF Entries screen): the grid, as far as it has been filled in, and the caller's own entries. */
-function rcf_entries_screen(Rerm\App $app, Rerm\Auth\User $user, array $input, array $notices = []): void
+/**
+ * Create RCF Requests (the Create RCF Entries screen): the grid, as far as
+ * it has been filled in, and the caller's own entries. `$confirm` is the
+ * resolved form when the submission was held for the second look (Phase
+ * 14.7, spec-v2 §21.3), exactly as rcf_screen() takes it.
+ */
+function rcf_entries_screen(Rerm\App $app, Rerm\Auth\User $user, array $input, array $notices = [], ?array $confirm = null): void
 {
     if (rcf_entries_blocked($app, $user, 'Create RCF Requests')) {
         return;
@@ -2447,6 +2507,7 @@ function rcf_entries_screen(Rerm\App $app, Rerm\Auth\User $user, array $input, a
         'mine'    => $entries->mine($user),
         'counts'  => $entries->counts($user),
         'route'   => $entries->routeFor($user),
+        'confirm' => $confirm,
     ]);
 }
 
@@ -2488,7 +2549,17 @@ function rcf_entries_act(Rerm\App $app, Rerm\Auth\User $user): void
         exit;
     }
 
-    $form   = Rerm\Forms\RcfPage::fromApp($app)->formFromInput($user, $_POST);
+    $form = Rerm\Forms\RcfPage::fromApp($app)->formFromInput($user, $_POST);
+
+    // A row that is wrong, or a row that needs a second look (Phase 14.7),
+    // before anything is written — and submit() asks about the first
+    // again, so nothing reaches the record past this by another route.
+    $held = rcf_held($form, $_POST, 'submitted');
+    if ($held !== null && $form['subcommittee'] !== '') {
+        rcf_entries_screen($app, $user, $_POST, $held['notices'], $held['confirm']);
+        exit;
+    }
+
     $result = $entries->submit($user, (int) $year['id'], $form);
 
     if ($result['refused'] !== null) {

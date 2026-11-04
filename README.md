@@ -20,7 +20,29 @@ file copy.
 
 ### For the next session
 
-This branch is **1.14.4**: Phase 14.4, the menu by the owner's groups and
+This branch is **1.14.7**: Phase 14.7, the team on every line and four
+rules the paper form only implied (`docs/spec-v2.md` §21) — five requests
+from the owner after a round of real RCF requests. Every list of RCF lines
+and requests now carries a **Team** column: what is on the form first (an
+addition's destination, or the heading's team), the roster's team second
+with *from the roster — not on the form* beside it, from one
+`RcfTracking::teamFor()` and one `View::rcfTeam()`. An **addition** names
+the team it joins in NEW SUB-COMMITTEE, filled in from a team heading and
+required under a division one. A row that names no team anywhere, or a team
+change with no destination, is held for a **second look** — a card above
+the grid showing what the roster says, with a key for exactly those rows;
+no script, a server round trip — before the form is downloaded or the
+requests are written. INTERVIEW REQUIRED OR SPONSORED BY is a **Division
+Vice Chairman's cell and above**, drawn disabled and dropped for everybody
+else, decided off the title's breadth (`User` now carries the title). And
+CHANGE/ADD TITLE is a **`<select>`** of every title on the roster plus the
+export's known spellings, required on an addition and a title change,
+refusing anything typed off the list by row. No migration; the byte-budget
+test re-measured and its full-expansion ceiling moved (§21.5). Before it,
+`main` was **1.14.6**: Phase 14.6, the menu on sign-in, the approver's
+email and `Last, First` on the form (§20), and **1.14.5**: Phase 14.5, two
+cells for one person and the top of the chain (§19). Before those, `main`
+was **1.14.4**: Phase 14.4, the menu by the owner's groups and
 the shell (`docs/spec-v2.md` §18). The menu is reordered into **RCFs, Dues
 & Compliance, Team Functions, Administer**, with *Create RCF Requests*,
 *Approve RCF Requests* and *Export Approved Requests to RCF Forms* retitled

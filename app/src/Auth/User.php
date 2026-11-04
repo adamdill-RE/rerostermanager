@@ -39,6 +39,15 @@ final class User
         public readonly bool $mustChangePassword,
         public readonly string $displayName,
         public readonly array $scopeTeamIds = [],
+        /**
+         * The member's title as the roster spells it (Phase 14.7, spec-v2
+         * §21.4). Never a level and never a scope — `level` is the effective
+         * level and the two scope fields are the scope. It is here for the
+         * one rule that reads the title's BREADTH rather than its level: a
+         * Vice Chairman and a Division Vice Chairman are both Senior
+         * Officers, and only one of them sponsors a recruit.
+         */
+        public readonly string $title = '',
     ) {
     }
 
@@ -158,6 +167,7 @@ final class User
             (int) $row['must_change_password'] === 1,
             $name !== '' ? $name : (string) $row['member_number'],
             self::resolveTeamScope($level, $row, $teamScope, $team),
+            trim((string) ($row['title'] ?? '')),
         );
     }
 }
