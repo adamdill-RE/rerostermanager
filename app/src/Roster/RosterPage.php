@@ -218,6 +218,17 @@ final class RosterPage
             ];
         }
 
+        // The people the team is waiting for (Phase 14.8, spec-v2 §22.2):
+        // additions asked for on an RCF that the roster does not list yet,
+        // drawn as ghost rows under the members whenever the screen shows a
+        // team — the teams ticked, or the team the caller's scope IS. A
+        // whole division or the whole committee is not a team view and
+        // draws none. Counted nowhere above: they are not on the roster.
+        $teamsInView = $selectedTeams !== [] ? $selectedTeams : ScopedQuery::teamIdsOf($user);
+        $pending     = $teamsInView === []
+            ? []
+            : (new PendingAdditions($this->pdo))->forTeams($user, $teamsInView, $search);
+
         return [
             'rows'             => $rows,
             'total'            => $total,
@@ -228,6 +239,7 @@ final class RosterPage
             'size_large'       => $this->pageSizeLarge,
             'from'             => $total === 0 ? 0 : $offset + 1,
             'to'               => $offset + count($rows),
+            'pending'          => $pending,
             'search'           => $searchRaw,
             'search_applied'   => $search !== '',
             'search_too_short' => $tooShort,

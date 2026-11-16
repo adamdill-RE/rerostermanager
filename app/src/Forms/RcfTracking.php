@@ -491,7 +491,7 @@ final class RcfTracking
      * before it was kept here — falling back to the keeping moment when the
      * date could not be read.
      */
-    private const LANDED_WHEN =
+    public const LANDED_WHEN =
         "AND c.occurred_at >= CASE WHEN f.source = 'uploaded' AND f.form_date IS NOT NULL"
         . ' THEN f.form_date ELSE f.generated_at END'
         . ' AND ('
@@ -503,7 +503,7 @@ final class RcfTracking
         . '   )';
 
     /** The same question as a predicate on one line, for a WHERE clause. */
-    private const LANDED_EXISTS =
+    public const LANDED_EXISTS =
         "EXISTS (SELECT 1 FROM import_change c WHERE r.member_number <> ''"
         . ' AND c.member_number = r.member_number ' . self::LANDED_WHEN . ')';
 

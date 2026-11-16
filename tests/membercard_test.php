@@ -268,8 +268,9 @@ test('the menu is four groups by job, each screen with one line on what it is fo
     // Twenty-one since Phase 14: three workflow tiles under Team Functions
     // and Create Approval Flow under Administer; twenty-two since 14.1,
     // Sign In As under Administer. Phase 14.4 moved the RCF tiles into a
-    // group of their own and added none.
-    assertSame(22, preg_match_all("/'route' => '[a-z-]+',.*'group' => '(rcfs|chase|lead|administer)', 'why' => '/", $source), 'every tile names its group and its why, on one line');
+    // group of their own and added none. Twenty-three since 14.8, the
+    // Email Log under Administer.
+    assertSame(23, preg_match_all("/'route' => '[a-z-]+',.*'group' => '(rcfs|chase|lead|administer)', 'why' => '/", $source), 'every tile names its group and its why, on one line');
 });
 
 test('the accessibility pass: a skip link, aria-sort, aria-current on every toggle, scope on every header, no disabled button', function (): void {

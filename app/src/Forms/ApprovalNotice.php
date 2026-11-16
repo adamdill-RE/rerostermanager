@@ -7,6 +7,7 @@ namespace Rerm\Forms;
 use PDO;
 use Rerm\App;
 use Rerm\Auth\Level;
+use Rerm\Mail\EmailLog;
 use Rerm\Mail\Mailer;
 use Rerm\Roster\RosterPage;
 use Throwable;
@@ -53,6 +54,14 @@ use Throwable;
  * per-request ceiling, and app.debug forcing the file transport. On top of
  * them, mail.rcf_approval_notices is this message's own switch, so it can
  * be turned off without turning off password recovery.
+ *
+ * EVERY ATTEMPT IS ON THE EMAIL LOG (Phase 14.8, spec-v2 §22). The Mailer
+ * writes the row for anything handed to it, with what became of it; the
+ * one row written here is `no_email`, the attempt that never reached the
+ * Mailer because the roster holds no address — which is exactly the case
+ * an Admin is asked about. The row carries the count, who sent the
+ * requests on and the recipient's account: no member's details, as the
+ * message itself carries none.
  */
 final class ApprovalNotice
 {
@@ -74,6 +83,7 @@ final class ApprovalNotice
         private readonly Mailer $mailer,
         private readonly string $approvalsLink,
         private readonly bool $enabled,
+        private readonly ?EmailLog $log = null,
     ) {
     }
 
@@ -87,18 +97,20 @@ final class ApprovalNotice
             $app->db(),
             Mailer::fromApp($app),
             $host . $app->url('rcf-approvals'),
-            $app->config()->get('mail.rcf_approval_notices', false) === true
+            $app->config()->get('mail.rcf_approval_notices', false) === true,
+            EmailLog::fromApp($app)
         );
     }
 
     /**
      * Tell one account that `$count` requests now wait on them.
      *
-     * @param string $by  who sent them on, as a screen names them
-     * @param string $how self::SUBMITTED or self::PASSED_ON
+     * @param string $by      who sent them on, as a screen names them
+     * @param string $how     self::SUBMITTED or self::PASSED_ON
+     * @param ?int   $actorId their account, for the email log's "prompted by"
      * @return array{outcome: string, name: string, count: int}
      */
-    public function waiting(int $approverId, int $count, string $by, string $how): array
+    public function waiting(int $approverId, int $count, string $by, string $how, ?int $actorId = null): array
     {
         $account = $this->account($approverId);
         $name    = $account['name'] ?? '';
@@ -109,7 +121,18 @@ final class ApprovalNotice
         if (!$this->enabled) {
             return ['outcome' => self::OFF, 'name' => $name, 'count' => $count];
         }
+        // The log's half of the row: why, and for whom. The Mailer adds
+        // what happened.
+        $context = [
+            'purpose'           => EmailLog::PURPOSE_APPROVAL_NOTICE,
+            'reason'            => self::reason($count, $by, $how),
+            'recipient_user_id' => $approverId,
+            'actor_user_id'     => $actorId,
+        ];
+
         if ($account['email'] === '') {
+            $this->log?->record($context, '', self::subject($count), '', EmailLog::NO_EMAIL, $name . ' has no email address on the roster');
+
             return ['outcome' => self::NO_EMAIL, 'name' => $name, 'count' => $count];
         }
 
@@ -117,7 +140,8 @@ final class ApprovalNotice
             $delivered = $this->mailer->send(
                 $account['email'],
                 self::subject($count),
-                self::body($name, $count, $by, $how, $this->approvalsLink)
+                self::body($name, $count, $by, $how, $this->approvalsLink),
+                $context
             );
         } catch (Throwable $e) {
             // The entries are already committed; a mail problem is the log's
@@ -128,6 +152,21 @@ final class ApprovalNotice
         }
 
         return ['outcome' => $delivered ? self::SENT : self::BLOCKED, 'name' => $name, 'count' => $count];
+    }
+
+    /**
+     * What prompted the message, as the email log prints it: the count and
+     * who moved the requests — never which members they are about.
+     *
+     * @param string $how self::SUBMITTED or self::PASSED_ON
+     */
+    public static function reason(int $count, string $by, string $how): string
+    {
+        $what = $count . ' RCF ' . ($count === 1 ? 'request' : 'requests');
+
+        return $how === self::PASSED_ON
+            ? $what . ' approved and passed on by ' . $by
+            : $what . ' submitted by ' . $by;
     }
 
     /** The subject line: the count, and nothing a filter would have to read twice. */

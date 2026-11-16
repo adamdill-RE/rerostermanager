@@ -2775,3 +2775,126 @@ moves from 128KB to 160KB, recorded in the test.
 | V2-39 | Should **Coordinator** and **Ambassador** sponsor? They are Senior Officers with the division's breadth, so today they may. | Yes, until the owner says otherwise: "DVC and above" was read as the level above a Vice Chairman, and those two titles sit there (`TitleMap`). One line in `maySponsor()` narrows it to the title. |
 | V2-40 | Should the title list be **narrowed by type** — only officer titles on a title change, say? | Not now. The roster's own list is short, and Rodeo Houston accepts any of them on any line. |
 | V2-41 | Should an **uploaded** form's additions be read for a team the same way? | They are shown the same way (§21.1) — `RcfReader` already keeps NEW SUB-COMMITTEE — and nothing is required of a form somebody else filled in. |
+
+## 22. The email log, and the people a team is waiting for
+
+Phase 14.8. Two requests from the owner, neither large, both of them
+questions the application could answer and did not: *did the email go*, and
+*who is on the way to this team*.
+
+### 22.1 Every email, logged
+
+Phase 14.6's approval notice was the first message anyone would ask about —
+"I never got the email" is a sentence a Division Chairman says to an Admin —
+and the only record of what became of it was `error_log`, which on shared
+hosting is not the Admin's to read. So:
+
+- **`email_log`** (`015_email_log.sql`) carries one row per attempt: when;
+  **what prompted it** — a purpose (`password_reset`, `rcf_approval_notice`)
+  and a sentence (*3 RCF requests submitted by Erin Delta*, *Password reset
+  requested for member 1234567*); **who it went to** — the account and the
+  address as handed to the Mailer, both, because an address changes with
+  every import and the question is about the person; the subject; and
+  **what became of it** — the transport in force and an outcome word, with
+  the interlock or the error beside it. The body is never kept: a recovery
+  link is a credential.
+- **The Mailer writes it**, not the caller. `Rerm\Mail\Mailer::send()`
+  takes a `$context` — the caller's half: purpose, reason, recipient's
+  account, actor — and writes the row itself after the attempt, because it
+  is the one place that knows what happened. The outcomes are its own
+  words: `sent` (handed to `mail()`, which accepted it), `failed` (it did
+  not, or threw), `filed` (the file transport; the `.eml`'s name is the
+  detail), `logged`, `blocked` (interlock 1 or 3, named), `refused`
+  (interlock 4, and then thrown as before). The one row a caller writes is
+  `no_email`, from `ApprovalNotice`: the attempt the Mailer never sees
+  because the roster holds no address — which is exactly the case the Admin
+  is asked about.
+- **It can never fail the send.** `Rerm\Mail\EmailLog::record()` swallows
+  and `error_log`s its own failure; a message that went must not come back
+  as an error page, and neither must one an interlock blocked. A Mailer
+  built without a log — a test's, the CLI's — writes none.
+- **The screen** is `/email-log`, Admin, read-only, on the **Audit Log's
+  row** (`view_audit_log`) rather than a row of its own: it is the second
+  record of what the application did, and who may read the first may read
+  it. Three columns answer the three questions; the outcome pairs a word
+  with a colour, and **only Sent is green** — filed and logged read as
+  warnings, so a development transport can never be mistaken for delivery.
+  Filters: outcome, purpose, dates, and a recipient's member number.
+- **It is a record**: on `tests/admin_test.php`'s protected list, every
+  key `RESTRICT`.
+
+Nothing about the interlocks moves. Every one of them still blocks a real
+send on its own; the log says which one did.
+
+### 22.2 The people a team is waiting for
+
+A Captain whose new recruit's RCF went in three weeks ago opens View My
+Roster and sees nobody: the roster is Rodeo Houston's, and until their
+import lists the person, the person is not on it. The owner's word was
+**ghost** — show them, say they are pending, and make it plain they are not
+on the HLSR roster yet.
+
+`Rerm\Roster\PendingAdditions` reads them, and one partial
+(`app/views/pending-rcf.php`) draws them on View My Roster and My Roster
+Status, after the list and its paging:
+
+- **Who is a ghost.** Every **addition** (type `A`) asked for on a kept
+  form's line — made here, uploaded or consolidated, not voided — that the
+  roster has not yet answered, by `RcfTracking`'s own `LANDED_EXISTS` (the
+  first `import_change` after the form saying the number was `created` or
+  `returned`); and every addition in a **request** still in the chain,
+  `pending` or `approved`. A `generated` request is a line already and is
+  not read twice; a returned or withdrawn one is nobody's. One ghost per
+  number — a line and a request about the same person are one person on
+  the way, the line first.
+- **Which team.** The line's NEW SUB-COMMITTEE first (an addition's
+  destination since §21.2, matched to a team by name), the form's own team
+  heading second — `teamFor()`'s order. A line naming no team is nobody's
+  ghost. A number the roster already shows on that team is a member, not a
+  ghost, whatever a form still says.
+- **When.** Whenever the screen is a **team view**: the teams ticked, the
+  picker's choice or default, or the team the caller's scope *is* — an
+  Officer's own, or the team set an Admin gave them or a Vice Chairman
+  (`ScopedQuery::teamIdsOf()`). A whole division or the whole committee is
+  not a team view and draws none. **Never under a drill-down** on My
+  Roster Status, for §7.3's reason: a figure's link lands on exactly the
+  people it counted, and a ghost is not one of them.
+- **Scope is the roster's.** The team ids are intersected with
+  `ScopedQuery::forUser()` before a form is read, so a team typed into the
+  URL from outside the scope yields nothing — the same rule `team[]` obeys.
+- **Counted nowhere.** No metric chips, no contact, no actions, no
+  assignment: not on the four cards, not in *Showing 1–50 of 212*, not on
+  the Committee Dashboard. The heading says so. The search box narrows
+  them as it narrows members — every word has to land on the number or
+  the name — so a search for the recruit finds them as a ghost rather than
+  as nobody.
+- **How it reads.** A dashed Rodeo Orange border and muted text, and the
+  chip **Pending RCF** beside the name — the word first, as everywhere;
+  orange is a border here and never text. The name is the form's
+  `Last, First` read the roster's way; the row carries the number (or *no
+  member number yet*), the title asked for, rookie, the team, when it was
+  asked, and where it stands in one sentence (*On an RCF #7 by Erin Delta,
+  sent to the Division Chairman 3 Sep 2026 — not yet in the roster*;
+  *RCF request by Erin Delta, waiting on Alexis Captain*), with a link to
+  the form for whoever may see it, or to the requester's or the approver's
+  own list.
+- **Nothing writes.** Two record tables read; a form still never writes the
+  roster, and a roster screen never writes a form.
+
+### 22.3 What it never does
+
+- Email anybody it did not before. The log records; it sends nothing.
+- Keep a message body. The subject, the address, the outcome — never the
+  link.
+- Put a ghost in a count, a card, an export or a form. They are not on the
+  HLSR roster, and every figure says what the HLSR roster says.
+- Read `team.area`, or widen a scope. The teams in view are the roster's
+  own, intersected with the same predicate.
+
+### 22.4 Open items raised
+
+| # | Question | Assumption today |
+| --- | --- | --- |
+| V2-42 | Should a **removal** pending on an RCF mark the member's roster row too — "leaving, RCF in"? | Not yet. The request was additions; a removal's member is still on the roster and still chased until the import drops them. The same reads would answer it. |
+| V2-43 | Should the email log carry its own capability, so a non-Admin could read it? | Not until somebody asks. It sits on `view_audit_log` so that one row governs both records; its own row is one line if that changes. |
+| V2-44 | Should ghosts appear on a **division** view for a Division Chairman? | Not now: "viewing a roster for a team" was the request, and a division's forty teams' pending additions is Track RCFs' table (§14.5), which already lists them. |

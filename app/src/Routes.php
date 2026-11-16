@@ -250,6 +250,10 @@ final class Routes
         // The Audit Log (spec 7.5) — Admin, read-only, filterable by actor,
         // action and date. No write path at all, so no POST and no CSRF.
         'audit'    => Capability::ViewAuditLog->value,
+        // The email log (Phase 14.8, spec-v2 §22): the second read-only
+        // record of what the application did, guarded by the same row as
+        // the first. Who may read the audit log may read what it emailed.
+        'email-log' => Capability::ViewAuditLog->value,
 
         // Manage Teams (spec 7.3) — Admin. team.area only: it is display
         // grouping, and a test holds Access, ScopedQuery, EligibleOfficers

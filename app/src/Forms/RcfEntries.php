@@ -370,7 +370,8 @@ final class RcfEntries
                 (int) $route['approver'],
                 count($created),
                 $requester->displayName,
-                ApprovalNotice::SUBMITTED
+                ApprovalNotice::SUBMITTED,
+                $requester->id
             );
         }
 
@@ -600,7 +601,7 @@ final class RcfEntries
         $notices = [];
         if ($this->notice !== null) {
             foreach ($onwardTo as $next => $count) {
-                $notices[] = $this->notice->waiting((int) $next, $count, $approver->displayName, ApprovalNotice::PASSED_ON);
+                $notices[] = $this->notice->waiting((int) $next, $count, $approver->displayName, ApprovalNotice::PASSED_ON, $approver->id);
             }
         }
 

@@ -20,7 +20,29 @@ file copy.
 
 ### For the next session
 
-`main` is **1.14.7**, merged as
+This branch is **1.14.8**: Phase 14.8, the email log and the people a team
+is waiting for (`docs/spec-v2.md` §22) — two requests from the owner.
+**Every email the application tries to send is now logged**: the Mailer
+writes one `email_log` row per attempt (`015_email_log.sql`, a migration to
+run) with what prompted it, who it went to, and what became of it — sent,
+filed, logged, blocked and by which interlock, refused, failed, or no
+address on the roster — and an Admin reads it at **Email Log** under
+Administer, on the Audit Log's capability, filtered by outcome, purpose,
+date and recipient. Nothing about the interlocks moves and no body is kept.
+And **a team's roster shows who is on the way to it**: on View My Roster and
+My Roster Status, whenever the screen is a team view, every RCF *addition*
+the roster has not yet answered — a kept form's line not yet landed, or a
+request still in the chain — is drawn as a dashed, muted **ghost** row
+under the list with the chip *Pending RCF*, the team, the title asked for
+and where the form or request stands, counted on no card and in no total
+(`Rerm\Roster\PendingAdditions`, one partial for both screens). After
+Deploy HEAD Commit: `php bin/migrate.php`, then ask for a password reset
+and read the row on Email Log; then, through Sign In As, open a Captain's
+View My Roster for a team with an addition on a kept form and see the
+ghost. Three judgment calls are the owner's to overturn (§22.4): a pending
+*removal* does not mark the member's row; the log sits on `view_audit_log`
+rather than a row of its own; and a division view draws no ghosts. Before
+it, `main` was **1.14.7**, merged as
 [#39](https://github.com/adamdill-RE/rerostermanager/pull/39): Phase 14.7,
 the team on every line and four rules the paper form only implied
 (`docs/spec-v2.md` §21) — five requests from the owner after a round of

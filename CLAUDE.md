@@ -90,15 +90,20 @@ URL and cookie path is built from `app.base_path` (`/rerm/`) via
   recipient per request; **no member's details in it**; sent after the
   commit and never able to fail the write; behind the interlocks and its own
   switch, `mail.rcf_approval_notices`. A return, a withdrawal and a
-  generation email nobody.
+  generation email nobody. **Every attempt is logged** (Phase 14.8,
+  spec-v2 §22.1): the Mailer writes one `email_log` row per `send()` —
+  what prompted it, who it went to, what became of it and which interlock
+  stopped it — read at `/email-log` on the Audit Log's capability. The log
+  can never fail the send and never keeps a body.
 - **Nothing ever deletes a member or a contact.** Purge is `purged_at`; every
   foreign key referencing `member` is `RESTRICT`, never `CASCADE`. Contact
   history must still be queryable years from now (`docs/spec-v1.md` §5.5).
   Closing a show year **freezes**; a rollover **copies**; a revoked grant
   **deactivates**. A test names the tables that must never lose a row —
   `member`, `contact_log`, `assignment`, `member_metric`, `audit_log`,
-  `import_batch`, `import_warning`, `import_change`, `show_year` — and reads
-  every admin write path for a `DELETE` against them.
+  `import_batch`, `import_warning`, `import_change`, `show_year`,
+  `email_log` — and reads every admin write path for a `DELETE` against
+  them.
 - **"Dropped" is the word for a member an import did not list**, in the schema
   as well as on screen (`dropped_since_import_id`). It is not "purged": a drop
   is automatic and the next import undoes it, a purge is deliberate and only
@@ -430,6 +435,19 @@ Note, Stopped — rendered by the layout inside the sticky bar with
 `role="status"`, so a 303 that lands on the row it changed (`#m<id>`) still
 shows the word. No view renders a notice loop of its own; a test reads them
 all for one.
+
+**A team's roster shows who is on the way to it** (Phase 14.8, spec-v2
+§22.2). Whenever View My Roster or My Roster Status is a **team view** —
+the teams ticked or defaulted, or the team the caller's scope is
+(`ScopedQuery::teamIdsOf()`) — `Rerm\Roster\PendingAdditions` draws every
+**addition** asked for on an RCF that Rodeo Houston's roster does not list
+yet as a **ghost** row under the list, through one partial
+(`app/views/pending-rcf.php`): a kept form's line not yet landed by
+`RcfTracking::LANDED_EXISTS`, or a request still `pending` or `approved`.
+A ghost is dashed, muted, carries the chip **Pending RCF**, and is
+**counted nowhere** — not a card, not a total, not a figure — because it
+is not on the HLSR roster. Never under a drill-down, never for a division
+or the committee, never outside the roster's own scope, and nothing writes.
 
 **One person is one screen** (Phase 10.4): `/member?id=` renders
 `Rerm\Roster\MemberPage`, which reads through `ScopedQuery::forUser()` and
@@ -850,6 +868,7 @@ Each phase ends shippable. `docs/spec-v1.md` carries the detail through 8.7,
 | **14.5 · Two cells for one person, and the top of the chain** | The RCF grid's member control split into `HLS&R no.` and `Member name`, the number deciding: a known number carries the roster's name, a picked name takes its number, a newcomer is typed in both; tracking held to the number by a test; Create RCF Requests and Create Approval Flow name *top of the chain* as the missing row for a final approver whose own row was never drawn | A Division Chairman learns from the screen which one row an Admin has to draw, and a newcomer typed as "Bob" cannot stand beside a number the roster spells "Robert" |
 | **14.6 · The menu on sign-in, the approver's email, and `Last, First`** | A sign-in lands on the menu for every level, `/dashboard` one tap away; the application's second email — `Rerm\Forms\ApprovalNotice`, to the Vice Chairman or above that RCF requests have just been routed to, on submission and on an approval that passes them on, one message per recipient, no member's details in it, after the commit, behind the interlocks and `mail.rcf_approval_notices`; the flash says emailed or why not; the MEMBER NAME cell is `Last, First` from the roster, matched either way round | A Division Chairman learns from their inbox that three requests are waiting, opens the link, and reads every name last name first |
 | **14.7 · The team on every line, and four rules the form implied** | Every list of RCF lines and requests carries a **Team** column — the form's (an addition's destination, or the heading's team) first, the roster's second with a note saying so, from one `RcfTracking::teamFor()`; an addition's NEW SUB-COMMITTEE is the team they will join, filled from a team heading and required under a division one; a row naming no team is held for a **second look** that shows what the roster says and takes a key for exactly those rows (no script: a server round trip); INTERVIEW REQUIRED OR SPONSORED BY is a Division Vice Chairman's cell and above, disabled and dropped for everybody else, read off the title's breadth (`User::$title`); CHANGE/ADD TITLE is a `<select>` of the roster's titles and the export's spellings, required on an addition and a title change | A Division Chairman reads which team every request is about without opening a card, a request cannot carry a misspelled title or an addition with nowhere to go, and a forgotten team change is caught before it is a request |
+| **14.8 · The email log, and the people a team is waiting for** | `email_log` (`015_email_log.sql`) written by the Mailer on every attempt — purpose, reason, recipient, subject, transport, outcome and the interlock or error — and `/email-log` (Admin, on `view_audit_log`, read-only) to read it; and **ghost rows** on View My Roster and My Roster Status whenever the screen is a team view: every RCF addition the roster has not yet answered, from a kept form's line or a request in the chain, dashed and chipped *Pending RCF*, counted nowhere | An Admin answers "did Bob get the email" from a screen, and a Captain sees the recruit whose RCF went in last month beside the team they are joining, marked as not yet on the HLSR roster |
 | **10.x · v2** | Recruiting and retention automation; multi-year contact history (OI-12) | see `docs/spec-v2.md` |
 
 Phases 4 and 5 are the product. Everything before them is plumbing and

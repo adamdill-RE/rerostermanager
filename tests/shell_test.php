@@ -97,8 +97,10 @@ test('the groups are the owner\'s, in the owner\'s order, and nothing left the m
     assertSame([
         'Import Roster', 'Import History', 'Look Up Members', 'Import Contact History', 'Flagged for Purge',
         'Designate Users', 'Create Approval Flow', 'Sign In As', 'Manage Teams', 'Show Year', 'Audit Log',
+        // Phase 14.8: the Email Log, beside the Audit Log it shares a row with.
+        'Email Log',
     ], $byGroup['administer']);
-    assertSame(22, count(Menu::tiles()), 'twenty-two tiles, as at 14.1: a regrouping adds no screen');
+    assertSame(23, count(Menu::tiles()), 'twenty-three tiles: 14.1\'s twenty-two, and the Email Log (14.8)');
 
     // Every route named is a route the front controller guards.
     foreach (Menu::tiles() as $tile) {
@@ -130,7 +132,7 @@ test('forUser filters by capability and drops an empty group, so an Officer neve
 
     $admin = Menu::forUser(sh_user(Level::Admin));
     assertSame(['rcfs', 'chase', 'lead', 'administer'], array_keys($admin));
-    assertSame(22, array_sum(array_map(static fn (array $g): int => count($g['tiles']), $admin)));
+    assertSame(23, array_sum(array_map(static fn (array $g): int => count($g['tiles']), $admin)));
 });
 
 test('the page and the drop-down draw the same table, and neither spells a tile of its own', function (): void {

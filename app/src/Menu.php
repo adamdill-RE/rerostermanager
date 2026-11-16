@@ -74,6 +74,7 @@ final class Menu
             ['cap' => Capability::ManageTeams,           'label' => 'Manage Teams',        'route' => 'teams',  'phase' => '', 'group' => 'administer', 'why' => 'Which area a team groups under on the Committee Dashboard.'],
             ['cap' => Capability::ManageShowYear,        'label' => 'Show Year',           'route' => 'show-year', 'phase' => '', 'group' => 'administer', 'why' => 'Create, activate, close and carry assignments forward.'],
             ['cap' => Capability::ViewAuditLog,          'label' => 'Audit Log',           'route' => 'audit',  'phase' => '', 'group' => 'administer', 'why' => 'Every grant, import, purge and reset, with who and when.'],
+            ['cap' => Capability::ViewAuditLog,          'label' => 'Email Log',           'route' => 'email-log', 'phase' => '', 'group' => 'administer', 'why' => 'Every email the application tried to send: what prompted it, who it went to, and whether it went.'],
         ];
     }
 

@@ -367,10 +367,17 @@ function forgot_act(Rerm\App $app): array
             // in this roster serve two members each, holding different
             // titles, and an unqualified email hands the wrong account to
             // whoever opens it first (docs/data-findings.md 5).
+            // The email log's half of the row (Phase 14.8): why, and for
+            // whom. Nobody is signed in here, so there is no actor.
             Rerm\Mail\Mailer::fromApp($app)->send(
                 $email,
                 Rerm\Auth\PasswordReset::emailSubject((string) $account['member_number']),
-                Rerm\Auth\PasswordReset::emailBody((string) $account['member_number'], $link, $minutes)
+                Rerm\Auth\PasswordReset::emailBody((string) $account['member_number'], $link, $minutes),
+                [
+                    'purpose'           => Rerm\Mail\EmailLog::PURPOSE_PASSWORD_RESET,
+                    'reason'            => 'Password reset requested for member ' . (string) $account['member_number'],
+                    'recipient_user_id' => (int) $account['id'],
+                ]
             );
 
             $app->db()->prepare(
@@ -3066,6 +3073,24 @@ function audit_screen(Rerm\App $app, Rerm\Auth\User $user): void
 }
 
 // ---------------------------------------------------------------------------
+// The Email Log (Phase 14.8, spec-v2 §22) — Admin, through
+// Capability::ViewAuditLog: the second read-only log of what the application
+// did, guarded by the same row as the first. READ-ONLY, like the audit log:
+// no POST, no CSRF check, no write path. The Mailer writes it.
+// ---------------------------------------------------------------------------
+
+/** Renders the Email Log. */
+function email_log_screen(Rerm\App $app, Rerm\Auth\User $user): void
+{
+    render($app, 'email-log', 'Email Log', [
+        // A data screen (spec 8.2): the wide container above 720px.
+        'wide'  => true,
+        'user'  => $user,
+        'log'   => Rerm\Admin\EmailLogPage::fromApp($app)->page($_GET),
+    ]);
+}
+
+// ---------------------------------------------------------------------------
 // Look Up Members (Phase 12, spec-v2 §13) — Admin, through
 // Capability::LookUpMembers. A pasted list of member numbers, answered with
 // where each one stands: placement, on the roster or not, first seen, what
@@ -4019,6 +4044,10 @@ switch ($path) {
 
     case 'audit':
         audit_screen($app, $user);
+        break;
+
+    case 'email-log':
+        email_log_screen($app, $user);
         break;
 
     case 'lookup':

@@ -47,6 +47,14 @@ use RuntimeException;
  *
  * .github/check-mail-safety.php fails the build if the committed defaults
  * could ever deliver.
+ *
+ * SINCE PHASE 14.8 EVERY ATTEMPT IS LOGGED (spec-v2 §22): one `email_log`
+ * row per call to send(), written by this class because this is the one
+ * place that knows what became of the message — delivered, filed, logged,
+ * or blocked and by which interlock. The caller says WHY in $context
+ * (the purpose, a sentence, the recipient's account) and this class says
+ * what happened. The row is written after the attempt and can never fail
+ * it; a Mailer built without a log — a test's, or the CLI's — writes none.
  */
 final class Mailer
 {
@@ -74,6 +82,7 @@ final class Mailer
         private readonly bool $debug,
         private readonly string $mailDir,
         private $deliver = null,
+        private readonly ?EmailLog $log = null,
     ) {
     }
 
@@ -90,6 +99,8 @@ final class Mailer
             (string) $config->get('mail.from_name'),
             $app->debug(),
             $app->path('var/mail'),
+            null,
+            EmailLog::fromApp($app),
         );
     }
 
@@ -112,6 +123,10 @@ final class Mailer
     /**
      * Sends one message — or blocks it, and says which interlock did.
      *
+     * @param array{purpose?: string, reason?: string, recipient_user_id?: ?int,
+     *     actor_user_id?: ?int} $context why this message exists, for the
+     *     email log (Phase 14.8): the caller's half of the row.
+     *
      * @return bool true when the message was delivered, written or logged;
      *              false when an interlock blocked a real send. The recovery
      *              flow shows the same response either way (no enumeration),
@@ -119,13 +134,24 @@ final class Mailer
      *
      * @throws RuntimeException past mail.max_per_request — a loop, not a request
      */
-    public function send(string $to, string $subject, string $body): bool
+    public function send(string $to, string $subject, string $body, array $context = []): bool
     {
+        $transport = $this->effectiveTransport();
+
         // Interlock 4 first, and unconditionally: it counts attempts, not
         // deliveries, because the loop it exists to catch is a loop whatever
         // the other three would have done with its output.
         $this->sent++;
         if ($this->sent > $this->maxPerRequest) {
+            $this->log?->record(
+                $context,
+                $to,
+                $subject,
+                $transport,
+                EmailLog::REFUSED,
+                sprintf('message %d of a request; mail.max_per_request is %d', $this->sent, $this->maxPerRequest)
+            );
+
             throw new RuntimeException(sprintf(
                 'Refusing to send message %d of a request: mail.max_per_request is %d. '
                 . 'Nothing here sends more than one message per recipient, so this is a loop that '
@@ -135,21 +161,43 @@ final class Mailer
             ));
         }
 
-        return match ($this->effectiveTransport()) {
-            self::TRANSPORT_SEND => $this->sendForReal($to, $subject, $body),
-            self::TRANSPORT_LOG  => $this->sendToLog($to, $subject),
-            default              => $this->sendToFile($to, $subject, $body),
-        };
+        // What happened, as the log spells it, decided by the transport that
+        // ran it — the one place that knows.
+        try {
+            [$delivered, $outcome, $detail] = match ($transport) {
+                self::TRANSPORT_SEND => $this->sendForReal($to, $subject, $body),
+                self::TRANSPORT_LOG  => $this->sendToLog($to, $subject),
+                default              => $this->sendToFile($to, $subject, $body),
+            };
+        } catch (\Throwable $e) {
+            // The log gets the error and the caller gets the exception, as
+            // before: the callers that swallow a mail failure do so
+            // themselves, and the row says what they swallowed.
+            $this->log?->record($context, $to, $subject, $transport, EmailLog::FAILED, $e->getMessage());
+
+            throw $e;
+        }
+
+        $this->log?->record($context, $to, $subject, $transport, $outcome, $detail);
+
+        return $delivered;
     }
 
-    private function sendForReal(string $to, string $subject, string $body): bool
+    /**
+     * The three transports each answer with the same triple: whether the
+     * caller may say "sent", the log's word for what happened, and a
+     * detail — the interlock, or the error — where there is one.
+     *
+     * @return array{0: bool, 1: string, 2: string}
+     */
+    private function sendForReal(string $to, string $subject, string $body): array
     {
         // Interlock 1. The master switch, false until somebody edits
         // config.local.php on the machine that should be sending.
         if (!$this->enabled) {
             error_log("rerm mail: BLOCKED (mail.enabled is false) — would have sent \"{$subject}\"");
 
-            return false;
+            return [false, EmailLog::BLOCKED, 'mail.enabled is false'];
         }
 
         // Interlock 3. The one that survives human error: still standing when
@@ -159,7 +207,7 @@ final class Mailer
         if ($this->allowedRecipients !== [] && !$this->recipientAllowed($to)) {
             error_log("rerm mail: DROPPED (not on mail.allowed_recipients): {$to} — \"{$subject}\"");
 
-            return false;
+            return [false, EmailLog::BLOCKED, 'not on mail.allowed_recipients'];
         }
 
         $deliver = $this->deliver ?? static function (
@@ -182,7 +230,9 @@ final class Mailer
             return mail($to, $subject, $body, $headers, $envelopeFrom === '' ? '' : '-f' . $envelopeFrom);
         };
 
-        return (bool) $deliver($to, $subject, $body, $this->headers(), $this->envelopeFrom());
+        return (bool) $deliver($to, $subject, $body, $this->headers(), $this->envelopeFrom())
+            ? [true, EmailLog::SENT, '']
+            : [false, EmailLog::FAILED, 'mail() returned false'];
     }
 
     /**
@@ -198,11 +248,11 @@ final class Mailer
         return filter_var($this->fromAddress, FILTER_VALIDATE_EMAIL) !== false ? $this->fromAddress : '';
     }
 
-    private function sendToLog(string $to, string $subject): bool
+    private function sendToLog(string $to, string $subject): array
     {
         error_log("rerm mail: [log transport] to={$to} subject=\"{$subject}\"");
 
-        return true;
+        return [true, EmailLog::LOGGED, ''];
     }
 
     /**
@@ -210,7 +260,7 @@ final class Mailer
      * recovery link inside is real and clickable; the file cannot leave the
      * machine.
      */
-    private function sendToFile(string $to, string $subject, string $body): bool
+    private function sendToFile(string $to, string $subject, string $body): array
     {
         if (!is_dir($this->mailDir)) {
             mkdir($this->mailDir, 0700, true);
@@ -225,7 +275,9 @@ final class Mailer
             . "\r\n"
             . $body;
 
-        return file_put_contents($file, $message) !== false;
+        return file_put_contents($file, $message) !== false
+            ? [true, EmailLog::FILED, basename($file)]
+            : [false, EmailLog::FAILED, 'var/mail is not writable'];
     }
 
     private function recipientAllowed(string $to): bool
