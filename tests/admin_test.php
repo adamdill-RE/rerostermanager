@@ -176,6 +176,10 @@ test('nothing in the admin screens can delete a member, a contact or a record', 
         // app_user_team, and "not set" is written as empty values rather
         // than by deleting the row.
         'rcf_entry', 'rcf_entry_step', 'rcf_approver',
+        // Phase 14.8 (spec-v2 §22). Every message the application tried to
+        // send and what became of it: the answer to "did Bob get the
+        // email", and a log somebody can empty is no answer.
+        'email_log',
     ];
 
     foreach ([

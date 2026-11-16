@@ -548,6 +548,19 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
    contact that came out of a spreadsheet. Muted and small, because each
    qualifies the thing in front of it. */
 .roster .why { color: var(--muted); font-size: .88rem; }
+/* The people a team is waiting for (Phase 14.8, spec-v2 §22.2): a ghost row
+   is dashed in Rodeo Orange and muted, and the chip beside the name says
+   "Pending RCF" — the word first, the hue second, as everywhere. Orange is
+   an accent here (a border), never text: 2.9:1 on white. */
+.ghosts { margin-top: 2rem; }
+.ghosts h2 { margin-bottom: .25rem; }
+.ghosts tbody.ghost td { color: var(--muted); }
+.ghosts tbody.ghost td.who { font-style: italic; }
+.ghosts tbody.ghost td.who .chip { font-style: normal; margin-left: .35rem; }
+.ghosts tbody.ghost td.who .sub { font-style: normal; }
+/* The second line of a ghost's cell — the day asked, the link — stands
+   under the first rather than running into it. */
+.ghosts tbody.ghost td .sub { display: block; }
 .roster td.actions a {
     display: inline-flex;
     align-items: center;
@@ -583,6 +596,18 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
     }
     .roster td.expand { display: block; }
     .roster td.expand::before { content: none; }
+    /* A ghost's card is dashed where a member's is solid, and its cells
+       stack — label above, value below — because "where it stands" is a
+       sentence, not a value to right-align against its label. */
+    .ghosts .roster tbody.ghost { border: 2px dashed var(--rodeo-orange); }
+    .ghosts .roster tbody.ghost td { display: block; }
+    .ghosts .roster tbody.ghost td::before { display: block; }
+    /* The Email Log's cells are sentences with a second line each — what
+       prompted it, who it went to, what became of it — and stack the same
+       way on a phone. */
+    table.log td { display: block; }
+    table.log td::before { display: block; }
+    table.log td .sub { display: block; }
 }
 
 @media (min-width: 720px) {
@@ -597,6 +622,10 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
     .roster tr.detail td { padding-top: 0; border-bottom: 0; }
     .roster tr.entry td { border-bottom: 0; }
     .roster tbody.member tr:last-child td { border-bottom: 1px solid var(--border); }
+    /* A ghost's row is dashed where a member's is solid, with the orange
+       rule down its left edge so a page of two tables still reads as two. */
+    .ghosts .roster tbody.ghost tr:last-child td { border-bottom: 1px dashed var(--rodeo-orange); }
+    .ghosts .roster tbody.ghost td:first-child { border-left: 4px dashed var(--rodeo-orange); padding-left: .6rem; }
 }
 
 /* --- My Roster Status (spec 7.1, decided 4) ------------------------------

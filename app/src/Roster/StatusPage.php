@@ -397,6 +397,18 @@ final class StatusPage
 
         $pageCandidates = array_slice($candidates, $offset, $size);
 
+        // The people the team is waiting for (Phase 14.8, spec-v2 §22.2):
+        // additions asked for on an RCF that the roster does not list yet,
+        // drawn as ghost rows under the list whenever the screen shows a
+        // team — the picker's choice or default, or the team the caller's
+        // scope is. Never under a drill-down: §7.3's figures land on
+        // exactly the people they counted, and a ghost is not one of them.
+        // Counted on no card and in no total, for the same reason.
+        $teamsInView = $drilled ? [] : ($teamFilter !== [] ? $teamFilter : ScopedQuery::teamIdsOf($user));
+        $pending     = $teamsInView === []
+            ? []
+            : (new PendingAdditions($this->pdo))->forTeams($user, $teamsInView, $search);
+
         return [
             'mode'            => $mode,
             'has_assignments' => $hasAssignments,
@@ -418,6 +430,7 @@ final class StatusPage
             'size_large'   => $this->pageSizeLarge,
             'from'         => $listTotal === 0 ? 0 : $offset + 1,
             'to'           => $offset + count($pageCandidates),
+            'pending'      => $pending,
 
             // Which row's log-contact sheet is open with its per-metric
             // progress selects rendered (?log=id). One row per page: the

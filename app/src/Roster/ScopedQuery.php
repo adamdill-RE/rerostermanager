@@ -150,6 +150,39 @@ final class ScopedQuery
      *
      * @param string $alias the member table's alias in the caller's FROM
      */
+    /**
+     * The teams a scope is MADE OF, when it is made of teams (Phase 14.8):
+     * an Officer's own team, or the team set an Admin gave an Officer or a
+     * Senior Officer. Empty for a scope that is a division or the whole
+     * committee, and empty is "not a team view", never "no teams" — the
+     * roster screens read it to decide whose pending RCF additions to
+     * draw beside the members (PendingAdditions), and a Division Chairman
+     * looking at the whole division has not opened a team.
+     *
+     * The same resolution as scoped() above, read in the same order, so
+     * the teams this names are exactly the teams the predicate allows.
+     *
+     * @return array<int, int>
+     */
+    public static function teamIdsOf(User $user): array
+    {
+        if ($user->level->atLeast(Level::ExecutiveOfficer)) {
+            return [];
+        }
+
+        if ($user->scopeTeamIds !== []
+            && ($user->level === Level::SeniorOfficer || $user->level === Level::Officer)
+        ) {
+            return array_values(array_map('intval', $user->scopeTeamIds));
+        }
+
+        if ($user->level === Level::Officer && $user->scopeTeamId !== null) {
+            return [$user->scopeTeamId];
+        }
+
+        return [];
+    }
+
     public static function dropped(string $alias = 'm'): string
     {
         self::assertAlias($alias);

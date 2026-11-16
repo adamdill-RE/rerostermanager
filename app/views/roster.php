@@ -411,3 +411,12 @@ $number = static fn (int $n): string => number_format($n);
 
 <?php } ?>
 
+<?php
+// The people the team is waiting for (Phase 14.8, spec-v2 §22.2): the one
+// partial My Roster Status draws too, after the list and its paging, so a
+// ghost is never mistaken for a row of the roster or counted in it. Drawn
+// even when the roster itself is empty: a brand-new team is all ghosts.
+$pending = $roster['pending'];
+require $app->path('app/views/pending-rcf.php');
+?>
+

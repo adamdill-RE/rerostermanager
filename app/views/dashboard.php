@@ -867,6 +867,16 @@ $findTeam = $teams['may_choose'] || $filters['teams'] !== [] ? TeamFilter::param
 <?php } ?>
 
 <?php
+// The people the team is waiting for (Phase 14.8, spec-v2 §22.2): the one
+// partial View My Roster draws too, after the list and its paging, so a
+// ghost is never mistaken for a row of the list, and never on a card —
+// StatusPage draws none under a drill-down, for §7.3's sake. Outside the
+// empty-roster branch above: a team with nobody on it yet is all ghosts.
+$pending = $statusPage['pending'];
+require $app->path('app/views/pending-rcf.php');
+?>
+
+<?php
 // One popover per status, shared by every legend that mentions it —
 // declarative HTML: the button opens it, Esc / the backdrop / Close dismiss
 // it. No JavaScript anywhere (decided 6).
